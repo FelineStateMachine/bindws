@@ -4,7 +4,8 @@
 // secp256k1 are not in WebCrypto.
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure";
 import { BunkerSigner, parseBunkerInput, createNostrConnectURI } from "nostr-tools/nip46";
+import { SimplePool } from "nostr-tools/pool";
 import { npubEncode } from "nostr-tools/nip19";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-window.NostrSigner = { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent, BunkerSigner, parseBunkerInput, createNostrConnectURI, npubEncode, bytesToHex, hexToBytes };
+window.NostrSigner = { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent, SimplePool, BunkerSigner, parseBunkerInput, createNostrConnectURI, npubEncode, bytesToHex, hexToBytes };
