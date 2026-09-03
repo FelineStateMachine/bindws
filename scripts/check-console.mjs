@@ -10,25 +10,26 @@ const js = JSON.parse(src.match(/^const JS = (".*");$/m)[1]);
 // Every element lookup answers with an object that accepts any property and
 // any method call, so the script gets through its wiring.
 const element = () => new Proxy(function () {}, {
-  get: (t, k) => (k === Symbol.toPrimitive ? () => "" : k === "classList" ? { toggle() {}, add() {}, remove() {}, contains: () => false } : k === "style" ? { setProperty() {} } : element()),
+  get: (_, k) => (k === Symbol.toPrimitive ? () => "" : k === "classList" ? { toggle() {}, add() {}, remove() {}, contains: () => false } : k === "style" ? { setProperty() {} } : element()),
   set: () => true,
   apply: () => element(),
 });
 const doc = element();
-const g = globalThis;
-g.document = doc;
-g.window = g;
-g.location = { host: "check.localhost", hostname: "check.localhost", origin: "http://check.localhost", protocol: "http:", hash: "", pathname: "/", search: "" };
-g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-g.history = { replaceState() {} };
-g.navigator = { clipboard: { writeText: async () => {} } };
-g.confirm = () => false;
-g.prompt = () => null;
-g.alert = () => {};
-g.fetch = async () => ({ ok: true, json: async () => ({}), text: async () => "" });
-g.WebSocket = class { close() {} send() {} };
-g.SIGNER_URL = "/signer.js";
-g.addEventListener = () => {};
+const define = (k, v) => Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+define("document", doc);
+define("window", globalThis);
+define("location", { host: "check.localhost", hostname: "check.localhost", origin: "http://check.localhost", protocol: "http:", hash: "", pathname: "/", search: "" });
+define("localStorage", { getItem: () => null, setItem() {}, removeItem() {} });
+define("history", { replaceState() {} });
+define("navigator", { clipboard: { writeText: async () => {} } });
+define("confirm", () => false);
+define("prompt", () => null);
+define("alert", () => {});
+// fetch never answers, so the boot stops at its first await and only the synchronous start is judged.
+define("fetch", () => new Promise(() => {}));
+define("WebSocket", class { close() {} send() {} });
+define("SIGNER_URL", "/signer.js");
+define("addEventListener", () => {});
 
 let failed = null;
 process.on("unhandledRejection", (e) => { failed = e; });
@@ -39,7 +40,7 @@ try {
 } catch (e) {
   failed = e;
 }
-if (failed && !/fetch|json|network/i.test(String(failed))) {
+if (failed) {
   console.error("console script fails before it boots:", failed);
   process.exit(1);
 }
