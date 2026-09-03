@@ -447,6 +447,33 @@ export class Settings {
   isAllowed(pubkey: string) {
     return this.memberSet.has(pubkey) || this.isOwner(pubkey);
   }
+
+  // ---- the read rule ----
+
+  // mayRead applies the read rule to whoever is asking, given the pubkeys
+  // they have proved: "" admits, else the reason. This is the one gate every
+  // door that shows events, files, names or presence goes through, on the
+  // socket and over HTTP alike.
+  mayRead(pubkeys: string[]): string {
+    switch (this.policy.reads) {
+      case "open":
+        return "";
+      case "auth":
+        return pubkeys.length ? "" : "auth-required: this relay requires authentication";
+      case "members":
+        if (pubkeys.some((pk) => this.isAllowed(pk))) return "";
+        return pubkeys.length ? "restricted: this relay only serves its members" : "auth-required: this relay requires authentication";
+    }
+  }
+
+  // mayList says whether the member directory, names and counts, may be
+  // shown to this caller: to anyone when the directory is public, else only
+  // to members, whatever the read rule says.
+  mayList(pubkeys: string[]): string {
+    if (this.policy.directoryPublic) return "";
+    if (pubkeys.some((pk) => this.isAllowed(pk))) return "";
+    return pubkeys.length ? "restricted: the directory is for members" : "auth-required: the directory is for members; sign the request";
+  }
   // roleOf is the pubkey's role, or null for a stranger.
   roleOf(pubkey: string): Role | null {
     if (this.isOwner(pubkey)) return "owner";
