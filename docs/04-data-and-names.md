@@ -23,6 +23,10 @@ A job runs once, or every hour, six hours or day. Up to five standing jobs and 2
 
 **Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. A target that refuses five events in a row is left alone for that round. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
 
+## Import a file
+
+The reverse of a dump. Under **Import a file** on the Data tab, pick a JSONL of events, one per line, such as a dump from another bind.ws relay or a strfry export, or a JSON array. Up to 64 MB. The relay keeps the file next to your uploads and reads it back as a job, a slice at a time, so a large file survives the relay sleeping. Every event's signature is checked; your bans and kind rules apply; your write rule does not, since you asked for these. The Jobs table shows how many were stored, how many the relay already had and how many were skipped. When the job is done the file is deleted. While it exists it counts as a file for fuel.
+
 ## Dumps
 
 Under **Dumps**, choose daily or weekly and how many to keep, seven by default. The relay writes every event as one JSONL file and keeps the newest few. **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading takes your signature; the files are never a public link.

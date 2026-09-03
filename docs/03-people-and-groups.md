@@ -51,6 +51,8 @@ Your relay is also a group (NIP-29), one group per relay, so clients that unders
 
 The group follows your rules. Members-only reads make the group private. Anything but open writes makes it closed, so joining needs an invite code; with open writes, a join request is accepted at once. A member may leave from their client. Moderators act from their client with the same limits as on the page.
 
+Moderators can pin up to 20 events or addresses for the group, from the Moderation tab or with a pin list event (kind 9010) from a group client. The relay publishes the list as a signed record (kind 39005) that clients show at the top of the group.
+
 The group's address is on the Identity tab under **Share**. See [Your relay on the web](05-your-relay-on-the-web.md#the-card-and-the-group-address).
 
 ## Hand it over

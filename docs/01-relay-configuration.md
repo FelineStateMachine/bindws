@@ -35,7 +35,8 @@ Keeping order. Reports never show in the feed.
 - **Ban** a pubkey. Their events are refused and their open connections are closed. Tick **erase** and everything they wrote here, their profile included, and every file they uploaded goes too. The row action asks the same question; so does banning from a report.
 - **Hide after N reports.** Set a number and an event reported by that many different people is hidden: not served, counted, synced, rebroadcast or shown on a page, until a moderator resolves the reports. Dismissing the last open report shows it again; deleting or banning makes it permanent. Reports on a person or a file never hide anything. Hidden events are marked in the reports table.
 - **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
-- **Recent events** shows the feed with delete and ban actions.
+- **Recent events** shows the feed with pin, delete and ban actions. **Search** above it looks through notes, articles and profiles by words, the same index clients use (NIP-50), up to 200 results; **Clear** goes back to the feed.
+- **Pinned** is the group's pin list, up to 20 event ids or addresses in the order clients show them. Pin from the feed or by id; unpin from the list. Moderators may pin. The list is published as a record signed by the relay, so group clients see it.
 
 ## Rules
 
@@ -94,6 +95,7 @@ What is here, what moves, and what leaves.
 - **Files** lists uploads with sizes and a delete button.
 - **Jobs** is work the relay does on its own in small rounds: pulls, standing mirrors, fetch my history and rebroadcasts, with run-now and remove per job. See [Data and names](04-data-and-names.md#jobs).
 
+- **Import a file** takes a JSONL of events, one per line, such as a dump or a strfry export, or a JSON array, up to 64 MB, and stores what checks out as a job: signatures are verified, bans and kind rules apply, the write rule does not. The Jobs table shows stored, skipped and already-here counts. The file counts as a file for fuel until the job is done, then it is deleted.
 - **Dumps** writes every event as one JSONL file daily or weekly and keeps the newest few. **Dump now** writes one on the spot. Downloads are signed requests. See [Data and names](04-data-and-names.md#dumps).
 
 - **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. One fork an hour. See [Data and names](04-data-and-names.md#fork-this-relay).
@@ -102,7 +104,7 @@ What is here, what moves, and what leaves.
 
 Time since the last event, open connections, fuel status and a breakdown of kinds over the last 30 days. Below it, the usage meters and the list of zaps received.
 
-**Notifications.** Four switches, all off until you turn them on: a report arrives, fuel runs low, a pull finishes, the handover clock is running (this one switches itself on when you name an heir). The relay writes you a NIP-17 private message with its own key, sealed and gift wrapped, stored here as your inbox and pushed to the relays in your kind 10050 when this relay holds one. **Send a test message** proves the path end to end. Only the owner can read these; the catch-all keep-for rule leaves gift wraps alone, though a rule set on kind 1059 itself still applies. Fuel is reported once when it turns low and then once a day while it stays low.
+**Notifications.** Five switches, all off until you turn them on: a report arrives, fuel runs low, a pull finishes, a note every week on how the relay is doing, the handover clock is running (this one switches itself on when you name an heir). The relay writes you a NIP-17 private message with its own key, sealed and gift wrapped, stored here as your inbox and pushed to the relays in your kind 10050 when this relay holds one. **Send a test message** proves the path end to end. Only the owner can read these; the catch-all keep-for rule leaves gift wraps alone, though a rule set on kind 1059 itself still applies. Fuel is reported once when it turns low and then once a day while it stays low.
 
 ## Owner
 
