@@ -174,7 +174,7 @@ const moderation: View = {
   name: "moderation",
   trigger: "daily",
   about: "this month's moderation counts, no ids",
-  audience: () => "public",
+  audience: byReads,
   fold(relay) {
     const d = new Date(now() * 1000);
     const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
@@ -212,7 +212,7 @@ const zaps: View = {
   name: "zaps",
   trigger: "hourly",
   about: "zap totals for the top notes and authors here",
-  audience: () => "public",
+  audience: byReads,
   fingerprint(relay) {
     const r = relay.sql.exec<{ n: number; m: number | null }>(`SELECT count(*) AS n, max(created_at) AS m FROM events WHERE kind=9735`).one();
     return `${r.n}:${r.m ?? 0}`;

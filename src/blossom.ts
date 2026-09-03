@@ -10,12 +10,15 @@
 //   HEAD   /upload              t=upload; X-SHA-256, X-Content-Type, X-Content-Length (BUD-06)
 //   PUT    /mirror              t=upload, x=<sha256>; body {url}  -> descriptor (BUD-04)
 //   PUT    /report              body: kind 1984 with x tags        (BUD-09)
-//   GET    /<sha256>[.ext]      public
-//   HEAD   /<sha256>[.ext]      public
+//   GET    /<sha256>[.ext]      the read rule; t=get or NIP-98 when reads are not open
+//   HEAD   /<sha256>[.ext]      same
 //   DELETE /<sha256>            t=delete, x=<sha256>; uploader or owner
-//   GET    /list/<pubkey>       public
+//   GET    /list/<pubkey>       the read rule; t=list or NIP-98 when reads are not open
+//
+// Files follow the relay's read rule (Settings.mayRead), the same gate as
+// events: on a members-only relay a blob is a member's, not a public URL.
 import { sha256 } from "@noble/hashes/sha2.js";
-import { verifyBlossom } from "./auth.ts";
+import { verifyBlossom, whoAsks, denyStatus } from "./auth.ts";
 export { verifyBlossom } from "./auth.ts";
 import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
@@ -249,6 +252,10 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
     if (bad) return reason(bad, 400);
     if (e.kind !== KIND_REPORT) return reason("invalid: report must be kind 1984", 400);
     if (Math.abs(now - e.created_at) > 3600) return reason("invalid: report is too old or from the future", 400);
+    // The reporter must be someone the read rule admits, before any hash is
+    // looked up: whether this relay holds a file is a member's to know.
+    const gate = relay.settings.mayRead([e.pubkey]);
+    if (gate) return reason(gate, denyStatus(gate));
     const r = fileReport(relay, e);
     if (typeof r === "string") return reason(r, r.startsWith("not found") ? 404 : r.startsWith("invalid") ? 400 : 403);
     return json({ ok: true, filed: r });
@@ -257,11 +264,16 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
   if (req.method === "GET" && url.pathname.startsWith("/list/")) {
     const pk = url.pathname.slice(6);
     if (!/^[0-9a-f]{64}$/.test(pk)) return reason("invalid: bad pubkey", 400);
+    const who = whoAsks(req, "", "list");
+    if (typeof who === "string") return reason(who, 401);
+    const gate = relay.settings.mayRead(who.pubkeys);
+    if (gate) return reason(gate, denyStatus(gate));
     const rows = sql.exec<Blob>(`SELECT * FROM blobs WHERE uploader=? ORDER BY uploaded DESC LIMIT 500`, pk).toArray();
     return json(rows.map((b) => descriptor(host, b)));
   }
 
-  const m = SHA_RE.exec(url.pathname);
+  // /nip96/<sha> is the same door (nip96.ts hands it over unchanged).
+  const m = SHA_RE.exec(url.pathname.startsWith("/nip96/") ? url.pathname.slice("/nip96".length) : url.pathname);
   if (!m) return reason("not found", 404);
   const sha = m[1];
   const blob = sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
@@ -277,12 +289,19 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") return reason("method not allowed", 405);
+  // The read rule, before the lookup: a stranger learns nothing, not even
+  // whether the hash is here. A gated answer is not for shared caches.
+  const open = relay.settings.policy.reads === "open";
+  const who = whoAsks(req, "", "get", sha);
+  if (typeof who === "string") return reason(who, 401);
+  const gate = relay.settings.mayRead(who.pubkeys);
+  if (gate) return reason(gate, denyStatus(gate));
   if (!blob) return reason("not found", 404);
   const headers: Record<string, string> = {
     "content-type": blob.type,
     "content-length": String(blob.size),
     "accept-ranges": "bytes",
-    "cache-control": "public, max-age=31536000, immutable",
+    "cache-control": open ? "public, max-age=31536000, immutable" : "private, no-store",
     "access-control-allow-origin": "*",
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'",

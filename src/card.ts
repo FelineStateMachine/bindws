@@ -12,6 +12,7 @@ import { svg as qrSVG, encode as qrEncode } from "./qr.ts";
 import { KIND_GROUP_METADATA } from "./identity.ts";
 import { escapeHTML } from "./ui.ts";
 import type { Relay } from "./relay.ts";
+import { whoAsks } from "./auth.ts";
 
 export const KIND_APP_DATA = 30078;
 export const CARD_D = "bind.ws/card";
@@ -38,7 +39,8 @@ export interface Card {
   image?: string;
 }
 
-export function cardData(relay: Relay, host: string): Card {
+// caller is the pubkeys the request proved, for the directory switch.
+export function cardData(relay: Relay, host: string, caller: string[] = []): Card {
   const p = relay.settings.policy;
   const s = relay.settings;
   const url = relay.relayURL(host);
@@ -65,7 +67,7 @@ export function cardData(relay: Relay, host: string): Card {
     card.self = self;
     card.naddr = naddrEncode({ kind: KIND_GROUP_METADATA, pubkey: self, identifier: relay.slug, relays: [url] });
   }
-  if (p.directoryPublic) card.members = s.members().length;
+  if (s.mayList(caller) === "") card.members = s.members().length;
   return card;
 }
 
@@ -80,7 +82,9 @@ export function card(relay: Relay, req: Request): Response {
     if (bytes.length > QR_MAX_BYTES) return json({ error: `invalid: at most ${QR_MAX_BYTES} bytes` }, 413);
     return new Response(qrSVG(bytes, { margin: 2 }), { headers: headers("image/svg+xml") });
   }
-  const data = cardData(relay, url.host);
+  const who = whoAsks(req, "", null);
+  if (typeof who === "string") return json({ error: who }, 401);
+  const data = cardData(relay, url.host, who.pubkeys);
   if (url.pathname === "/card.json") return json(data);
   if (url.pathname === "/card.nostr") {
     if (data.state !== "claimed") return json({ error: "restricted: this relay has no owner to sign for it" }, 404);

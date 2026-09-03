@@ -10,8 +10,9 @@ export const KIND_AUTH = 22242;
 export const isEphemeral = (k: number) => k >= 20000 && k < 30000;
 export const isReplaceable = (k: number) => k === 0 || k === 3 || (k >= 10000 && k < 20000);
 export const isAddressable = (k: number) => k >= 30000 && k < 40000;
-// Only served to the parties involved (NIP-04 DMs, NIP-59 gift wraps), per NIP-17.
-export const isPrivate = (k: number) => k === 4 || k === 1059 || k === 21059;
+// Only served to the parties involved: NIP-04 DMs and NIP-59 gift wraps per
+// NIP-17, and NIP-46 signer traffic, which is ephemeral and addressed by p.
+export const isPrivate = (k: number) => k === 4 || k === 1059 || k === 21059 || k === 24133;
 
 export const now = () => Math.floor(Date.now() / 1000);
 

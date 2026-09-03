@@ -29,11 +29,19 @@ class WS {
       else this.queue.push(m);
     });
   }
+  challenge = "";
   static async connect(host: string) {
     const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
     const c = new WS(resp.webSocket!);
-    await c.expect("AUTH");
+    c.challenge = (await c.expect("AUTH"))[1];
     return c;
+  }
+  // auth proves a key over the socket: 24133 is a private kind, delivered
+  // only to a socket that has proved it is the sender or the recipient.
+  async auth(sk: Uint8Array, host: string) {
+    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
+    const m = await this.expect("OK");
+    expect(m[2], m[3]).toBe(true);
   }
   send(...m: unknown[]) {
     this.ws.send(JSON.stringify(m));
@@ -72,13 +80,22 @@ describe("NIP-46 transport", () => {
     const client = generateSecretKey();
     const listener = await WS.connect(host);
     expect(await listener.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).toBe("");
+    // A bystander with the same subscription, who has not proved the key.
+    const bystander = await WS.connect(host);
+    expect(await bystander.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).toBe("");
 
     const sender = await WS.connect(host);
+    const early = ev(client, 24133, "before auth", [["p", getPublicKey(signerKey)]]);
+    expect(await sender.ok(early)).toEqual({ ok: true, msg: "" });
+    // Nothing reaches a socket that has not authenticated as a party.
+    await listener.auth(signerKey, host);
     const req = ev(client, 24133, "ciphertext", [["p", getPublicKey(signerKey)]]);
     expect(await sender.ok(req)).toEqual({ ok: true, msg: "" });
     const got = await listener.expect("EVENT");
     expect(got[1]).toBe("nc");
     expect(got[2].id).toBe(req.id);
+    // The bystander saw neither; a later frame proves the queue is empty.
+    expect(await bystander.open("probe", { kinds: [24133] })).toBe("");
     // Anything else is still refused while unclaimed, and the request left no trace.
     expect((await sender.ok(ev(client, 1, "hello"))).msg).toMatch(/unclaimed/);
     const later = await WS.connect(host);

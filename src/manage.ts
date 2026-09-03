@@ -8,7 +8,7 @@ import { descriptor, type Blob } from "./blossom.ts";
 import { blockedWords, gateFields, isWriteRule, viewFields } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
-import { viewsSummary } from "./views.ts";
+import { VIEWS, viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
 import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
@@ -108,7 +108,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "stats": {
       const d = new Date(now() * 1000);
       const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
-      return reply({ result: { ...relay.store.stats(), kinds: relay.store.kinds(monthStart), connections: relay.connections(), name: relay.slug, owner: p.owner, fuel: relay.fuelStatus() } });
+      return reply({ result: { ...relay.store.stats(), kinds: relay.store.kinds(monthStart), connections: relay.connections(), name: relay.slug, owner: p.owner, fuel: relay.fuelStatus(), credits: relay.fuel.recentCredits() } });
     }
     case "getpolicy":
       return reply({ result: p });
@@ -130,9 +130,15 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (typeof clean.maxLimit === "number") clean.maxLimit = Math.min(Math.max(clean.maxLimit as number, 1), 5000);
       if (typeof clean.maxSubs === "number") clean.maxSubs = Math.min(Math.max(clean.maxSubs as number, 1), 200);
       s.update(clean);
+      // A read rule that tightened ends the subscriptions it no longer admits.
+      relay.enforceReads();
       await relay.publishMembership();
-      // A view switched off is taken down now; one switched on is published now.
-      if (patch.views && typeof patch.views === "object") for (const name of Object.keys(patch.views as object)) await relay.publishView(name);
+      // A view switched off is taken down now; one switched on is published
+      // now, and every view is republished when the rules changed, since
+      // the read rule and the directory decide each one's audience.
+      const names = patch.views && typeof patch.views === "object" ? Object.keys(patch.views as object) : [];
+      if (clean.reads !== undefined || clean.directoryPublic !== undefined) for (const v of VIEWS) if (!names.includes(v.name)) names.push(v.name);
+      for (const name of names) await relay.publishView(name);
       return reply({ result: s.policy });
     }
     case "listviews":
@@ -417,6 +423,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       }
       const err = applyPreset(s, preset.name);
       if (err) return reply({ error: err }, 400);
+      relay.enforceReads();
       for (const j of await relay.jobs()) if (j.label === "replica") await relay.removeJob(j.id);
       let job = null;
       if (source) {
@@ -425,6 +432,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
         job = r;
       }
       await relay.publishMembership();
+      // The read rule and the directory moved, so every view's audience may have.
+      for (const v of VIEWS) await relay.publishView(v.name);
       return reply({ result: { ...s.policy, job } });
     }
     case "forkrelay": {

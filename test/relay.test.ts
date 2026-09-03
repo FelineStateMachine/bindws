@@ -179,8 +179,9 @@ describe("policy", () => {
     expect((await c.ok(weak)).msg).toMatch(/^pow:/);
     await rpc(host, owner, "setpolicy", { minPow: 0 });
 
-    // reads need auth
+    // reads need auth: tightening the rule closes the subscription still open
     await rpc(host, owner, "setpolicy", { reads: "auth" });
+    expect((await c.expect("CLOSED"))[2]).toMatch(/^auth-required:/);
     expect((await c.req({ kinds: [1] })).closed).toMatch(/^auth-required:/);
     await c.auth(stranger, host);
     expect((await c.req({ kinds: [1] })).events.length).toBeGreaterThan(0);

@@ -43,13 +43,10 @@ export async function nip96(relay: Relay, req: Request): Promise<Response> {
     });
   }
 
-  // Downloads are the Blossom path with a different prefix.
+  // Downloads are the Blossom door under a different prefix; the request
+  // goes over unchanged so a signature over this URL still fits.
   const m = SHA_RE.exec(url.pathname);
-  if (m && (req.method === "GET" || req.method === "HEAD")) {
-    const target = new URL(req.url);
-    target.pathname = url.pathname.slice("/nip96".length);
-    return blossom(relay, new Request(target.toString(), req));
-  }
+  if (m && (req.method === "GET" || req.method === "HEAD")) return blossom(relay, req);
 
   const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, "");
   if (typeof auth === "string") return fail(auth, 401);
@@ -66,6 +63,8 @@ export async function nip96(relay: Relay, req: Request): Promise<Response> {
   if (url.pathname !== "/nip96") return fail("not found", 404);
 
   if (req.method === "GET") {
+    const gate = relay.settings.mayRead([auth.pubkey]);
+    if (gate) return fail(gate, 403);
     const count = Math.max(1, Math.min(MAX_PAGE, Number(url.searchParams.get("count")) || 20));
     const page = Math.max(0, Math.floor(Number(url.searchParams.get("page")) || 0));
     const total = relay.sql.exec<{ n: number }>(`SELECT count(*) AS n FROM blobs WHERE uploader=?`, auth.pubkey).one().n;

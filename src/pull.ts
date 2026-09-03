@@ -217,7 +217,11 @@ async function fetchEvents(relay: Relay, sock: Socket, ids: string[], job: PullJ
 // copyBlobs brings over a batch of the other relay's files. Returns true
 // when more remain.
 async function copyBlobs(relay: Relay, srcName: string, job: PullJob): Promise<boolean> {
-  const rows: Blob[] = await relay.relays.getByName(srcName).listBlobs();
+  // The source applies its read rule to the copier, who has proved no key
+  // (the pull never authenticates), so files come across from an open relay
+  // only, the same as its events.
+  const rows: Blob[] | string = await relay.relays.getByName(srcName).listBlobs([]);
+  if (typeof rows === "string") throw new Error("files refused: " + rows);
   let n = 0;
   for (const b of rows) {
     if (relay.sql.exec(`SELECT 1 FROM blobs WHERE sha256=?`, b.sha256).toArray().length) continue;

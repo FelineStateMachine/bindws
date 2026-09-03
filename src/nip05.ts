@@ -4,11 +4,14 @@
 // or clear names from the console.
 import type { Settings } from "./settings.ts";
 
-// nip05Document answers /.well-known/nostr.json?name=<name>.
-export function nip05Document(settings: Settings, name: string | null, relayURL: string): Record<string, unknown> {
+// nip05Document answers /.well-known/nostr.json?name=<name>. A lookup by
+// name answers for anyone: the member put that address in their own profile.
+// Without a name the document is the directory, so it is empty unless the
+// caller may list the members.
+export function nip05Document(settings: Settings, name: string | null, relayURL: string, caller: string[] = []): Record<string, unknown> {
   const names: Record<string, string> = {};
   const relays: Record<string, string[]> = {};
-  const rows = name === null ? settings.members().filter((m) => m.name) : [settings.memberByName(name)].filter((m) => m !== null);
+  const rows = name === null ? (settings.mayList(caller) ? [] : settings.members().filter((m) => m.name)) : [settings.memberByName(name)].filter((m) => m !== null);
   for (const m of rows) {
     names[m!.name!] = m!.pubkey;
     relays[m!.pubkey] = [relayURL];

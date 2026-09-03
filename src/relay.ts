@@ -23,7 +23,7 @@ import { KIND_GROUP_PINS } from "./identity.ts";
 import { DIGEST_DAYS, digestText } from "./notify.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98, whoAsks } from "./auth.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
@@ -419,6 +419,7 @@ export class Relay extends DurableObject<Env> {
       if (!s.authed.includes(pubkey)) continue;
       for (const id of Object.keys(s.subs)) this.send(ws, "CLOSED", id, reason);
       s.subs = {};
+      this.syncs.delete(ws);
       this.persist(ws, s);
       if (close) {
         try {
@@ -427,6 +428,26 @@ export class Relay extends DurableObject<Env> {
           /* already closed */
         }
       }
+    }
+  }
+
+  // enforceReads runs after the read rule changed: every open subscription
+  // is judged again and the ones the rule no longer admits are closed, so a
+  // relay that turned members-only stops feeding the sockets it let in
+  // while it was open. Sync sessions go with them.
+  enforceReads() {
+    for (const ws of this.ctx.getWebSockets()) {
+      const s = this.state(ws);
+      let changed = false;
+      for (const [id, filters] of Object.entries(s.subs)) {
+        const { reason } = this.allowFilters(s, filters);
+        if (!reason) continue;
+        this.send(ws, "CLOSED", id, reason);
+        delete s.subs[id];
+        changed = true;
+      }
+      if (this.settings.mayRead(s.authed)) this.syncs.delete(ws);
+      if (changed) this.persist(ws, s);
     }
   }
 
@@ -521,8 +542,11 @@ export class Relay extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM blobs WHERE sha256=?`, sha);
   }
 
-  // listBlobs is for another relay on this host pulling our files.
-  listBlobs(): Blob[] {
+  // listBlobs is for another relay on this host pulling our files. The
+  // caller says which pubkeys it has proved; the read rule decides.
+  listBlobs(pubkeys: string[]): Blob[] | string {
+    const gate = this.settings.mayRead(pubkeys);
+    if (gate) return gate;
     return this.sql.exec<Blob>(`SELECT * FROM blobs ORDER BY uploaded`).toArray();
   }
 
@@ -946,7 +970,7 @@ export class Relay extends DurableObject<Env> {
     // events or files. The page, NIP-11 and management stay reachable, so
     // an owner who blocked their own address can undo it.
     const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
-    const door = upgrade || (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count" || url.pathname === "/api/invites/claim" || url.pathname === "/fuel/invoice")) || url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname);
+    const door = upgrade || (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count" || url.pathname === "/api/invites/claim" || url.pathname === "/fuel/invoice")) || url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname);
     if (door && this.settings.isIPBlocked(clientIP(req))) {
       const msg = "blocked: this address is blocked from this relay";
       return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
@@ -960,11 +984,16 @@ export class Relay extends DurableObject<Env> {
     if (req.method === "POST" && req.headers.get("content-type")?.includes("application/nostr+json+rpc")) return manage(this, req);
     if (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count")) return bridge(this, req);
     if (url.pathname === "/.well-known/nostr.json") {
-      return Response.json(nip05Document(this.settings, url.searchParams.get("name"), this.relayURL(url.host)), { headers: { "access-control-allow-origin": "*" } });
+      const who = whoAsks(req, "", null);
+      if (typeof who === "string") return Response.json({ error: who }, { status: 401, headers: { "access-control-allow-origin": "*" } });
+      return Response.json(nip05Document(this.settings, url.searchParams.get("name"), this.relayURL(url.host), who.pubkeys), { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/people" && req.method === "GET") {
       const p = this.settings.policy;
-      const people = p.owner && p.directoryPublic ? this.settings.members().map((m) => ({ pubkey: m.pubkey, role: m.role, name: m.name })) : [];
+      const who = whoAsks(req, "", null);
+      if (typeof who === "string") return Response.json({ error: who }, { status: 401, headers: { "access-control-allow-origin": "*" } });
+      const listed = p.owner !== "" && this.settings.mayList(who.pubkeys) === "";
+      const people = listed ? this.settings.members().map((m) => ({ pubkey: m.pubkey, role: m.role, name: m.name })) : [];
       return Response.json({ public: p.directoryPublic, self: this.identity.pubkey, host: url.host, people }, { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/terms" && req.method === "GET") {
@@ -987,7 +1016,9 @@ export class Relay extends DurableObject<Env> {
     if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
     if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
     if (url.pathname === "/fuel" && req.method === "GET") {
-      return Response.json({ ...this.fuelStatus(), credits: this.fuel.recentCredits() }, { headers: { "access-control-allow-origin": "*" } });
+      // Meters and prices for anyone who might top up; who paid is the
+      // owner's, in the stats method.
+      return Response.json(this.fuelStatus(), { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/fuel/invoice" && req.method === "POST") return this.fuelInvoice(req);
     if (url.pathname === "/card.json" || url.pathname === "/card.nostr" || url.pathname === "/card.svg" || url.pathname === "/qr.svg") return card(this, req);
@@ -1491,13 +1522,13 @@ export class Relay extends DurableObject<Env> {
   // allowFilters returns a CLOSED reason, or "" plus whether an EOSE "auth"
   // hint applies because private kinds were silently filtered out.
   allowFilters(s: ConnState, filters: Filter[]): { reason: string; authHint: boolean } {
-    // A subscription to NIP-46 traffic alone is served under any read
-    // policy: see accept for why the relay carries it.
+    // A subscription to NIP-46 traffic alone may be opened under any read
+    // policy, so a signer can subscribe before its AUTH lands; the traffic
+    // itself is a private kind, delivered only to its parties (canSee).
     if (filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
     const authed = s.authed.length > 0;
-    const reads = this.settings.policy.reads;
-    if (reads !== "open" && !authed) return { reason: "auth-required: this relay requires authentication", authHint: false };
-    if (reads === "members" && !s.authed.some((pk) => this.settings.isAllowed(pk))) return { reason: "restricted: this relay only serves its members", authHint: false };
+    const gate = this.settings.mayRead(s.authed);
+    if (gate) return { reason: gate, authHint: false };
     if (authed) return { reason: "", authHint: false };
     let authHint = false;
     for (const f of filters) {

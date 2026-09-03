@@ -37,6 +37,14 @@ async function claim(host: string, sk: Uint8Array) {
   expect(r.status).toBe(200);
 }
 
+async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
+  const url = `http://${host}/`;
+  const payload = { method, params };
+  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
+  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
+  return { status: resp.status, ...(await resp.json<any>()) };
+}
+
 async function ws(host: string) {
   const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
   const sock = resp.webSocket!;
@@ -133,7 +141,9 @@ describe("fuel", () => {
     expect(r.msg).toMatch(/^duplicate:/);
     status = await (await SELF.fetch(`http://${host}/fuel`)).json();
     expect(status.creditedMsats).toBe(1_000_000);
-    expect(status.credits[0].payer).toBe(getPublicKey(payer));
+    // Who paid is the owner's to see, not the public meter's.
+    expect(status.credits).toBeUndefined();
+    expect((await rpc(host, owner, "stats")).result.credits[0].payer).toBe(getPublicKey(payer));
     expect(status.outOfFuel).toBe(false);
     expect((await c.ok(ev(owner, 1, "fueled"))).ok).toBe(true);
 
