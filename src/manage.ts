@@ -51,7 +51,7 @@ const METHODS = [
   "listreports", "resolvereport",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
-  "deleterelay", "exportconfig", "importconfig",
+  "deleterelay", "exportconfig", "importconfig", "resetrules",
 ];
 
 export async function manage(relay: Relay, req: Request): Promise<Response> {
@@ -77,15 +77,23 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
 
   if (method === "claim") {
     if (p.owner === "") {
-      s.update({ owner: caller });
+      // A leased relay converts in place, keeping its events and files. A
+      // lease taken with a signature is reserved for that key.
+      const lease = p.lease;
+      if (lease && lease.holder && lease.holder !== caller) return reply({ error: "restricted: this temporary relay is reserved for another key" }, 403);
+      if (lease && lease.until <= t) return reply({ error: "restricted: this temporary relay has expired" }, 403);
+      s.update(lease ? { owner: caller, lease: null, name: "", description: "" } : { owner: caller });
       s.upsertMember(caller, { via: "claimed" }, t);
       await relay.publishRoster();
-      return reply({ result: { owner: caller, claimed: true } });
+      return reply({ result: { owner: caller, claimed: true, ...(lease ? { converted: true } : {}) } });
     }
     return reply({ result: { owner: p.owner, claimed: s.isOwner(caller) } }, s.isOwner(caller) ? 200 : 403);
   }
   if (method === "supportedmethods") return reply({ result: METHODS });
-  if (!s.isOwner(caller)) return reply({ error: p.owner === "" ? "restricted: this relay is unclaimed" : "restricted: not the relay owner" }, 403);
+  if (!s.isOwner(caller)) {
+    const why = p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
+    return reply({ error: why }, 403);
+  }
 
   const str = (i: number) => (typeof params[i] === "string" ? (params[i] as string) : "");
   const num = (i: number) => (Number.isInteger(params[i]) ? (params[i] as number) : parseInt(str(i), 10));
@@ -260,6 +268,9 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: s.listKinds("allow") });
     case "listblockedkinds":
       return reply({ result: s.listKinds("block") });
+    case "resetrules":
+      s.resetRules();
+      return reply({ result: s.policy });
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
       return reply({ result: true });
