@@ -1,7 +1,16 @@
 // Per-relay settings and policy, kept in the same SQLite database.
 
+// A lease makes an unclaimed relay usable for a while: open to everyone,
+// then wiped at `until` unless somebody claims it first. holder "" means
+// anyone may claim; a pubkey means only that key.
+export interface Lease {
+  until: number;
+  holder: string;
+}
+
 export interface Policy {
   owner: string; // pubkey; "" while unclaimed
+  lease: Lease | null; // set while the relay is a temporary lease
   name: string;
   description: string;
   icon: string;
@@ -21,6 +30,7 @@ export interface Policy {
 
 export const DEFAULT_POLICY: Policy = {
   owner: "",
+  lease: null,
   name: "",
   description: "",
   icon: "",
@@ -120,6 +130,27 @@ export class Settings {
     return this.policy.owner !== "" && this.policy.owner === pubkey;
   }
 
+  // Three states: unclaimed (nobody, nothing), leased (nobody yet, open
+  // until a date), claimed (an owner). Only the first refuses writes.
+  isUnclaimed() {
+    return this.policy.owner === "" && this.policy.lease === null;
+  }
+  isLeased() {
+    return this.policy.owner === "" && this.policy.lease !== null;
+  }
+  leaseExpired(now: number) {
+    return this.isLeased() && (this.policy.lease as Lease).until <= now;
+  }
+
+  // resetRules puts the access rules, limits, kind rules and retention back
+  // to the defaults. Identity, people and bans stay.
+  resetRules() {
+    const d = DEFAULT_POLICY;
+    this.update({ writes: d.writes, reads: d.reads, directoryPublic: d.directoryPublic, maxBlobMB: d.maxBlobMB, eventsPerMinute: d.eventsPerMinute, reqsPerMinute: d.reqsPerMinute, minPow: d.minPow, maxFuture: d.maxFuture, maxLimit: d.maxLimit, maxSubs: d.maxSubs });
+    for (const k of [...this.listKinds("allow"), ...this.listKinds("block")]) this.setKind(k, null);
+    for (const r of this.listRetention()) this.setRetention(r.kind, 0);
+  }
+
   // ---- people ----
 
   members(): Member[] {
@@ -178,7 +209,7 @@ export class Settings {
       format: "bind.ws/relay-config/1",
       exported_at: Math.floor(Date.now() / 1000),
       name,
-      policy: { ...this.policy, owner: undefined },
+      policy: { ...this.policy, owner: undefined, lease: undefined },
       members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),

@@ -28,6 +28,8 @@ client ──wss/https──▶ worker ──host→object──▶ durable obje
 - **Fuel** (`fuel.ts`): usage meters, credits, prices.
 - **Identity** (`identity.ts`): the relay's own keypair and the NIP-43 roster.
 
+A relay is in one of three states. Unclaimed: no owner, no lease, writes refused. Leased: no owner yet, `policy.lease` holds an expiry and, optionally, the one pubkey that may claim; reads and writes are open, management is refused except `claim`. Claimed: an owner. A lease is handed out by `POST /lease` on the apex (`index.ts`), which tries memorable names from `names.ts` until one is unclaimed and calls the object's `lease` method over RPC. A claim on a leased relay converts it in place and clears the lease; the events, files and the 14-day retention rule stay until the owner resets the rules.
+
 The constructor runs schema setup inside `blockConcurrencyWhile`, then handles fetches. Websockets use the hibernation API. Per-connection state (NIP-42 challenge, authenticated pubkeys, open subscriptions) is stored on the socket with `serializeAttachment`, so it survives hibernation. Negentropy sessions are in memory only and end with `closed:` when the object sleeps.
 
 ## Storage
@@ -43,7 +45,9 @@ Blobs live in R2 under `<name>/<sha256>`. Their descriptors live in the relay's 
 
 ## Alarm
 
-One alarm per object, at most a day out, sooner if a NIP-40 expiry is due. It flushes usage counters, charges storage, applies retention rules and sweeps expired events.
+One alarm per object, at most a day out, sooner if a NIP-40 expiry is due or a lease expires. It flushes usage counters, charges storage, applies retention rules and sweeps expired events. A lease past its expiry is torn down whole, which returns the name to unclaimed.
+
+The alarm also drives pulls (`pull.ts`). `pullfrom` records a job and wakes the alarm; each round opens one websocket to the source, reconciles with NIP-77 as the initiator, fetches a bounded batch of the missing ids, verifies signatures, and stores them through the normal write path minus the client policy. Sources on this host are dialled through their object stub and their files copied in R2 by prefix. Rounds repeat until nothing is missing, so a pull survives the object sleeping, and a second pull only fetches the difference.
 
 ## Fuel
 

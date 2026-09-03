@@ -59,6 +59,7 @@ What is taking space and what to do about it.
 - **Purge** deletes a kind older than a number of days, now. Zero means all of them.
 - Kinds marked **required** are never expired or purged: profiles, contact lists, relay lists, zap receipts and the roster. The relay depends on them.
 - **Files** lists uploads with sizes and a delete button.
+- **Pull from a relay** copies what another relay has and this one lacks, by NIP-77 sync. It runs in the background and the line under it follows along. Running it again fetches only what is new. Files come along from relays on this host. Bans and kind rules apply to what arrives; the write rule does not. The other relay has to let anyone read.
 - **Browse recent events** at the bottom shows the feed with delete and ban actions.
 
 ## Health

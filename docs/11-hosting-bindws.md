@@ -19,6 +19,8 @@ Edit `wrangler.jsonc`:
 | `SERVICE_PUBKEY` | the nostr pubkey zap requests must name |
 | `FREE_*` | monthly allowances per relay |
 | `SATS_PER_*` | prices past the allowances |
+| `LEASE_DAYS` | how long a temporary relay from `POST /lease` lives; 14 if unset |
+| `ratelimits` | how many leases a minute, per address and overall; the defaults are 5 and 60 |
 
 The prices carry a comment with the Cloudflare rates they were set from. Revisit them when the exchange rate moves.
 

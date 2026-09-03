@@ -20,12 +20,17 @@ import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, invitePage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
+import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
+import type { Blob } from "./blossom.ts";
 
 export interface Env {
   RELAY: DurableObjectNamespace<Relay>;
   MEDIA: R2Bucket;
   DOMAIN: string;
   DEV_RELAY: string;
+  LEASE_DAYS?: string; // how long a temporary relay lives; 14 by default
+  LEASE_LIMIT_IP: RateLimit; // leases per address per minute
+  LEASE_LIMIT_ALL: RateLimit; // leases per minute, everyone together
   // Fuel (see fuel.ts); all optional.
   LIGHTNING_ADDRESS?: string;
   SERVICE_PUBKEY?: string;
@@ -46,6 +51,9 @@ export const VERSION = "0.1.0";
 export const MAX_MESSAGE = 128 * 1024;
 const FAVICON = FAVICON_SVG;
 const MAX_SYNC = 100_000;
+// How long a leased relay keeps everything, so a claim inherits a bounded
+// window until the owner resets the rules.
+const LEASE_RETENTION_DAYS = 14;
 
 // ConnState is everything about a websocket that must survive hibernation.
 interface ConnState {
@@ -76,6 +84,8 @@ export class Relay extends DurableObject<Env> {
   private lnurl: LnurlParams | null = null;
   // Outbound HTTP to the lightning provider; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
+  // A pull round in flight, so overlapping alarms do not run two.
+  private pulling = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -99,6 +109,15 @@ export class Relay extends DurableObject<Env> {
 
   get media(): R2Bucket {
     return this.env.MEDIA;
+  }
+
+  get domain(): string {
+    return this.env.DOMAIN;
+  }
+
+  // relays reaches the other objects on this host, for pulls between them.
+  get relays(): DurableObjectNamespace<Relay> {
+    return this.env.RELAY;
   }
 
   // meterBytes lets HTTP paths (bridge, media) add to the traffic counters.
@@ -188,7 +207,8 @@ export class Relay extends DurableObject<Env> {
   // mayUpload applies the write policy to Blossom uploads. "" allows.
   mayUpload(pubkey: string, host: string): string {
     const p = this.settings.policy;
-    if (p.owner === "") return "restricted: this relay is unclaimed";
+    if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed";
+    if (this.settings.leaseExpired(now())) return "restricted: this temporary relay has expired";
     if (this.settings.isBanned(pubkey)) return "blocked: this pubkey is banned from this relay";
     if (p.writes === "owner" && !this.settings.isOwner(pubkey)) return "restricted: only the relay owner may upload here";
     if (p.writes === "allowlist" && !this.settings.isAllowed(pubkey)) return "restricted: this relay only accepts uploads from its members";
@@ -234,6 +254,82 @@ export class Relay extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM blobs WHERE sha256=?`, sha);
   }
 
+  // listBlobs is for another relay on this host pulling our files.
+  listBlobs(): Blob[] {
+    return this.sql.exec<Blob>(`SELECT * FROM blobs ORDER BY uploaded`).toArray();
+  }
+
+  // ---- temporary leases ----
+
+  // lease turns an unclaimed relay into a temporary one: open to everyone,
+  // everything kept for a bounded window, wiped at `until` unless claimed.
+  // holder "" lets anyone claim; a pubkey reserves the claim. Returns "" or
+  // a reason.
+  async lease(name: string, host: string, until: number, holder: string): Promise<string> {
+    if (!this.settings.isUnclaimed()) return "taken";
+    if (this.slug !== name) {
+      this.slug = name;
+      await this.ctx.storage.put("slug", name);
+    }
+    const day = new Date(until * 1000).toISOString().slice(0, 10);
+    this.settings.update({
+      lease: { until, holder },
+      writes: "open",
+      reads: "open",
+      name: "",
+      description: `Temporary relay. Anyone can read and write here until ${day}; then everything on it is deleted. To keep it, claim it at https://${host}/ (sign once). Or claim a new name and pull from this one.`,
+    });
+    this.settings.setRetention(null, LEASE_RETENTION_DAYS);
+    await this.ensureAlarm(until);
+    return "";
+  }
+
+  // ---- pulling from another relay ----
+
+  // pullStart records the job and wakes the alarm, which runs it in rounds.
+  async pullStart(url: string): Promise<string> {
+    if (await this.ctx.storage.get<PullJob>("pull")) return "restricted: a pull is already running";
+    if (this.fuelStatus().outOfFuel) return "restricted: this relay is out of fuel";
+    const job: PullJob = { url, startedAt: now(), rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0 };
+    await this.ctx.storage.put("pull", job);
+    await this.ctx.storage.delete("lastPull");
+    await this.ctx.storage.setAlarm(Date.now() + 50);
+    return "";
+  }
+
+  async pullStatus(): Promise<{ running: PullJob | null; last: PullResult | null }> {
+    return { running: (await this.ctx.storage.get<PullJob>("pull")) ?? null, last: (await this.ctx.storage.get<PullResult>("lastPull")) ?? null };
+  }
+
+  // pullTick runs one round of the job. Returns whether another is due. A
+  // few failed rounds in a row end the job with the reason.
+  private async pullTick(): Promise<boolean> {
+    if (this.pulling) return true;
+    const job = await this.ctx.storage.get<PullJob>("pull");
+    if (!job) return false;
+    this.pulling = true;
+    let r: { more: boolean; error: string };
+    try {
+      r = await runPullRound(this, job);
+    } finally {
+      this.pulling = false;
+    }
+    const finish = async (error: string) => {
+      await this.ctx.storage.put("lastPull", { ...job, finishedAt: now(), error } satisfies PullResult);
+      await this.ctx.storage.delete("pull");
+      return false;
+    };
+    if (r.error) {
+      job.failures++;
+      if (job.failures >= 3) return finish(r.error);
+    } else {
+      job.failures = 0;
+      if (!r.more) return finish("");
+    }
+    await this.ctx.storage.put("pull", job);
+    return true;
+  }
+
   // ---- fuel plumbing ----
 
   tally() {
@@ -268,6 +364,8 @@ export class Relay extends DurableObject<Env> {
   // ensureAlarm keeps a daily tick scheduled for storage charging and usage
   // flushes, without pre-empting a sooner NIP-40 expiry.
   private async ensureAlarm(latest = now() + 86400) {
+    const lease = this.settings.policy.lease;
+    if (this.settings.isLeased() && lease && lease.until < latest) latest = lease.until;
     const cur = await this.ctx.storage.getAlarm();
     if (cur === null || cur > latest * 1000) await this.ctx.storage.setAlarm(latest * 1000);
   }
@@ -434,7 +532,7 @@ export class Relay extends DurableObject<Env> {
         max_subid_length: 64,
         auth_required: p.reads === "auth",
         payment_required: false,
-        restricted_writes: p.writes !== "open" || p.owner === "",
+        restricted_writes: p.writes !== "open" || this.settings.isUnclaimed(),
         created_at_upper_limit: p.maxFuture || undefined,
         min_pow_difficulty: p.minPow || undefined,
       },
@@ -449,6 +547,7 @@ export class Relay extends DurableObject<Env> {
       doc.payments_url = "https://" + host + "/";
     }
     if (p.owner) doc.pubkey = p.owner;
+    if (this.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
     if (host) doc.self_url = this.relayURL(host);
     if (this.identity.pubkey) {
       doc.self = this.identity.pubkey;
@@ -620,7 +719,7 @@ export class Relay extends DurableObject<Env> {
   // acceptReport files a NIP-56 report in the moderation queue. It is never
   // stored as an event or served: reports are for the owner, not the feed.
   private acceptReport(e: Event): { ok: boolean; msg: string; stored: boolean } {
-    if (this.settings.policy.owner === "") return { ok: false, msg: "restricted: this relay is unclaimed", stored: false };
+    if (this.settings.policy.owner === "") return { ok: false, msg: this.settings.isLeased() ? "restricted: this temporary relay has no owner to report to" : "restricted: this relay is unclaimed", stored: false };
     if (this.settings.isBanned(e.pubkey)) return { ok: false, msg: "blocked: this pubkey is banned from this relay", stored: false };
     const p = tagValues(e, "p")[0] ?? "";
     const et = e.tags.find((t) => t[0] === "e");
@@ -647,7 +746,8 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.isBanned(e.pubkey)) return no("blocked: this pubkey is banned from this relay");
     if (this.settings.isEventBanned(e.id)) return no("blocked: this event is banned from this relay");
     if (conn) {
-      if (p.owner === "") return no("restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it");
+      if (this.settings.isUnclaimed()) return no("restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it");
+      if (this.settings.leaseExpired(t)) return no("restricted: this temporary relay has expired");
       const f = this.fuelStatus();
       if (f.outOfFuel) {
         return no(f.enabled ? "restricted: this relay is out of fuel; zap it at https://" + conn.host + "/ to top up" : "restricted: this relay has reached its storage or traffic limit");
@@ -689,6 +789,15 @@ export class Relay extends DurableObject<Env> {
   async alarm() {
     this.touch();
     const t = now();
+    // A lease that has run out is wiped whole: the name is free again.
+    if (this.settings.leaseExpired(t)) {
+      await this.teardown();
+      return;
+    }
+    if (await this.pullTick()) {
+      await this.ctx.storage.setAlarm(Date.now() + 250);
+      return;
+    }
     this.flushUsage();
     this.fuel.chargeStorage(t, this.eventBytes(), this.mediaBytes());
     this.store.drain();
@@ -696,6 +805,8 @@ export class Relay extends DurableObject<Env> {
     const next = this.store.sweepExpired(t);
     let at = t + 86400;
     if (next > 0 && next < at) at = next;
+    const lease = this.settings.policy.lease;
+    if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
     await this.ctx.storage.setAlarm(at * 1000 + 500);
   }
 
