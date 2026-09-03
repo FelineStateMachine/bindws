@@ -61,7 +61,7 @@ The conformance suite needs a claimed relay. Against a dev server:
 CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 ```
 
-CI runs typecheck and the object tests on every push and pull request. `main` only takes pull requests with a green check.
+CI runs typecheck and the object tests on every push. Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
 
 ## Add a management method
 
