@@ -21,6 +21,8 @@ import { checkInvite, claimInvite, invitePage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
+import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState } from "./groups.ts";
+import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -44,7 +46,7 @@ export interface Env {
   SATS_PER_MILLION_ROWS?: string;
 }
 
-export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 40, 42, 45, 50, 56, 59, 62, 67, 70, 77, 86, 98];
+export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 50, 56, 59, 62, 67, 70, 77, 86, 98];
 export const KIND_REPORT = 1984;
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";
@@ -145,8 +147,43 @@ export class Relay extends DurableObject<Env> {
     await this.identity.ensure();
     const t = now();
     const events: Event[] = [];
-    if (change) events.push(this.identity.delta(change.added, change.pubkey));
+    if (change) {
+      events.push(this.identity.delta(change.added, change.pubkey));
+      events.push(change.added ? this.identity.putUser(this.slug, change.pubkey, this.rolesOf(change.pubkey)) : this.identity.removeUser(this.slug, change.pubkey));
+    }
     events.push(this.identity.roster(this.settings.members(), t));
+    events.push(...this.groupState(t));
+    this.emit(events, t);
+  }
+
+  // publishGroup refreshes the NIP-29 state after something other than a
+  // membership change: a rule, the name, or, with a pubkey, that person's role.
+  async publishGroup(roleChanged?: string) {
+    if (this.settings.policy.owner === "") return;
+    await this.identity.ensure();
+    const t = now();
+    const events: Event[] = roleChanged ? [this.identity.putUser(this.slug, roleChanged, this.rolesOf(roleChanged))] : [];
+    events.push(...this.groupState(t));
+    this.emit(events, t);
+  }
+
+  private rolesOf(pubkey: string): string[] {
+    const r = this.settings.roleOf(pubkey);
+    return r && r !== "member" ? [r] : [];
+  }
+
+  // groupState signs the group's metadata, admins, roles and, when the
+  // directory is public, members. A members list that is no longer public is
+  // taken down.
+  private groupState(t: number): Event[] {
+    const f = groupFacts(this);
+    if (f.members === null) {
+      for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM events WHERE kind=? AND pubkey=?`, KIND_GROUP_MEMBERS, this.identity.pubkey).toArray()) this.store.deleteEvent(r.id);
+    }
+    return this.identity.group(f, t);
+  }
+
+  private emit(events: Event[], t: number) {
     for (const e of events) {
       const err = this.store.save(e, t);
       if (!err) this.broadcast(e);
@@ -713,7 +750,47 @@ export class Relay extends DurableObject<Env> {
       if (r) return r;
     }
     if (e.kind === KIND_REPORT) return this.acceptReport(e);
+    if (isGroupManagement(e.kind) && hasTag(e, "h")) return this.acceptGroup(e, conn);
     return this.accept(e, conn);
+  }
+
+  // acceptGroup handles NIP-29 joins, leaves and moderation: the common gate,
+  // then role checks instead of the write policy, then stored like any event.
+  private async acceptGroup(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
+    const t = now();
+    const reason = this.gate(e, conn, t);
+    if (reason) return { ok: false, msg: reason, stored: false };
+    if (this.sql.exec(`SELECT 1 FROM events WHERE id=?`, e.id).toArray().length) return { ok: true, msg: ERR_DUPLICATE, stored: false };
+    const r = await handleGroupEvent(this, e);
+    if (!r.ok) return r;
+    const err = this.store.save(e, t);
+    if (err) return { ok: false, msg: err, stored: false };
+    return { ok: true, msg: "", stored: true };
+  }
+
+  // gate is what every write must pass, whoever sends it: shape, bans, the
+  // relay's state, fuel, and the one-group rule. "" lets it through.
+  private gate(e: Event, conn: ConnState | null, t: number): string {
+    const p = this.settings.policy;
+    if (e.kind === KIND_AUTH) return "blocked: kind 22242 is only accepted inside an AUTH message";
+    if (p.maxFuture > 0 && e.created_at > t + p.maxFuture) return "invalid: event creation date is too far off from the current time";
+    const exp = expiration(e);
+    if (exp > 0 && exp <= t) return "invalid: event has already expired";
+    if (this.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
+    if (this.settings.isEventBanned(e.id)) return "blocked: this event is banned from this relay";
+    const h = tagValues(e, "h")[0];
+    if (h !== undefined && h !== this.slug) return "blocked: this relay hosts one group: " + this.slug;
+    if (conn) {
+      if (isGroupState(e.kind)) return "blocked: group metadata is written by the relay";
+      if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it";
+      if (this.settings.leaseExpired(t)) return "restricted: this temporary relay has expired";
+      const f = this.fuelStatus();
+      if (f.outOfFuel) {
+        return f.enabled ? "restricted: this relay is out of fuel; zap it at https://" + conn.host + "/ to top up" : "restricted: this relay has reached its storage or traffic limit";
+      }
+      if (hasTag(e, "-") && !conn.authed.includes(e.pubkey)) return "auth-required: this event may only be published by its author";
+    }
+    return "";
   }
 
   // acceptReport files a NIP-56 report in the moderation queue. It is never
@@ -739,19 +816,10 @@ export class Relay extends DurableObject<Env> {
     const p = this.settings.policy;
     const t = now();
     const no = (msg: string) => ({ ok: false, msg, stored: false });
-    if (e.kind === KIND_AUTH) return no("blocked: kind 22242 is only accepted inside an AUTH message");
-    if (p.maxFuture > 0 && e.created_at > t + p.maxFuture) return no("invalid: event creation date is too far off from the current time");
+    const gate = this.gate(e, conn, t);
+    if (gate) return no(gate);
     const exp = expiration(e);
-    if (exp > 0 && exp <= t) return no("invalid: event has already expired");
-    if (this.settings.isBanned(e.pubkey)) return no("blocked: this pubkey is banned from this relay");
-    if (this.settings.isEventBanned(e.id)) return no("blocked: this event is banned from this relay");
     if (conn) {
-      if (this.settings.isUnclaimed()) return no("restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it");
-      if (this.settings.leaseExpired(t)) return no("restricted: this temporary relay has expired");
-      const f = this.fuelStatus();
-      if (f.outOfFuel) {
-        return no(f.enabled ? "restricted: this relay is out of fuel; zap it at https://" + conn.host + "/ to top up" : "restricted: this relay has reached its storage or traffic limit");
-      }
       if (!this.settings.kindAllowed(e.kind)) return no("blocked: this relay does not accept kind " + e.kind);
       const keep = this.settings.retentionDays(e.kind);
       if (keep > 0 && e.created_at < t - keep * 86400) return no(`blocked: this relay keeps kind ${e.kind} for ${keep} days and this event is older`);
@@ -762,7 +830,6 @@ export class Relay extends DurableObject<Env> {
         if (d.difficulty < p.minPow) return no(`pow: difficulty ${d.difficulty} is less than ${p.minPow}`);
         if (d.target > 0 && d.target < p.minPow) return no(`pow: committed target ${d.target} is less than ${p.minPow}`);
       }
-      if (hasTag(e, "-") && !conn.authed.includes(e.pubkey)) return no("auth-required: this event may only be published by its author");
     }
     if (e.kind === KIND_VANISH) {
       const host = conn?.host ?? "";
