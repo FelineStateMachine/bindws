@@ -9,6 +9,7 @@ import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
+import { can, METHOD_ACTIONS } from "./roles.ts";
 
 // verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
 // the request: kind 27235, fresh, u tag naming this URL, method tag, and a
@@ -53,7 +54,7 @@ const METHODS = [
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules",
-  "pullfrom", "pullstatus",
+  "pullfrom", "pullstatus", "transferowner",
 ];
 
 export async function manage(relay: Relay, req: Request): Promise<Response> {
@@ -92,10 +93,15 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     return reply({ result: { owner: p.owner, claimed: s.isOwner(caller) } }, s.isOwner(caller) ? 200 : 403);
   }
   if (method === "supportedmethods") return reply({ result: METHODS });
-  if (!s.isOwner(caller)) {
-    const why = p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
+  // One permission table for the console and for NIP-29 (roles.ts).
+  const role = s.roleOf(caller);
+  const action = METHOD_ACTIONS[method];
+  if (!action || !can(role, action)) {
+    const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
     return reply({ error: why }, 403);
   }
+  // Moderators keep their hands off the owner and each other.
+  const outranks = (pk: string) => role !== "owner" && (s.isOwner(pk) || s.roleOf(pk) === "moderator");
 
   const str = (i: number) => (typeof params[i] === "string" ? (params[i] as string) : "");
   const num = (i: number) => (Number.isInteger(params[i]) ? (params[i] as number) : parseInt(str(i), 10));
@@ -124,12 +130,14 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (typeof clean.maxLimit === "number") clean.maxLimit = Math.min(Math.max(clean.maxLimit as number, 1), 5000);
       if (typeof clean.maxSubs === "number") clean.maxSubs = Math.min(Math.max(clean.maxSubs as number, 1), 200);
       s.update(clean);
+      await relay.publishGroup();
       return reply({ result: s.policy });
     }
     case "banpubkey": {
       const pk = str(0);
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
       if (s.isOwner(pk)) return reply({ error: "invalid: cannot ban the owner" }, 400);
+      if (outranks(pk)) return reply({ error: "restricted: moderators cannot ban other moderators" }, 403);
       await relay.ban(pk, str(1));
       return reply({ result: true });
     }
@@ -138,16 +146,26 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       // NIP-86 allowpubkey(pubkey, reason) and the richer setmember(pubkey, {name, note}).
       const pk = str(0);
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
-      const patch = method === "allowpubkey" ? { note: str(1) } : (params[1] && typeof params[1] === "object" ? (params[1] as { name?: string | null; note?: string }) : {});
+      const patch = method === "allowpubkey" ? { note: str(1) } : (params[1] && typeof params[1] === "object" ? (params[1] as { name?: string | null; note?: string; role?: string }) : {});
+      if (outranks(pk)) return reply({ error: "restricted: moderators cannot edit the owner or other moderators" }, 403);
+      const wantsRole = patch.role === "moderator" || patch.role === "member" ? patch.role : undefined;
+      if (wantsRole && role !== "owner") return reply({ error: "restricted: only the owner sets roles" }, 403);
+      if (wantsRole && s.isOwner(pk)) return reply({ error: "invalid: the owner's role changes by transferowner" }, 400);
       if (s.isBanned(pk)) s.setBan(pk, false);
       const err = await relay.setMember(pk, { name: patch.name, note: typeof patch.note === "string" ? patch.note : undefined }, true);
-      return err ? reply({ error: err }, 400) : reply({ result: s.member(pk) });
+      if (err) return reply({ error: err }, 400);
+      if (wantsRole && s.roleOf(pk) !== wantsRole) {
+        s.setRole(pk, wantsRole);
+        await relay.publishGroup(pk);
+      }
+      return reply({ result: s.member(pk) });
     }
     case "unrulepubkey":
     case "removemember": {
       // Removes a ban or a membership, whichever the pubkey has; never the owner.
       const pk = str(0);
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
+      if (outranks(pk)) return reply({ error: "restricted: moderators cannot remove the owner or other moderators" }, 403);
       if (s.isBanned(pk)) s.setBan(pk, false);
       await relay.removeMember(pk);
       return reply({ result: true });
@@ -159,8 +177,10 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "listmembers":
     case "listpeople":
       return reply({ result: { self: relay.identity.pubkey, members: s.members() } });
-    case "createinvite":
-      return reply({ result: mintInvite(relay.sql, caller, num(0) || 0, num(1) || 0, str(2), t) });
+    case "createinvite": {
+      const inv = mintInvite(relay.sql, caller, num(0) || 0, num(1) || 0, str(2), t);
+      return typeof inv === "string" ? reply({ error: inv }, 400) : reply({ result: inv });
+    }
     case "listinvites":
       return reply({ result: listInvites(relay.sql, t) });
     case "revokeinvite":
@@ -187,6 +207,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (!["ban", "delete", "dismiss"].includes(action)) return reply({ error: "invalid: action must be ban, delete or dismiss" }, 400);
       if (action === "ban") {
         if (s.isOwner(row.target_pubkey)) return reply({ error: "invalid: cannot ban the owner" }, 400);
+        if (outranks(row.target_pubkey)) return reply({ error: "restricted: moderators cannot ban other moderators" }, 403);
         await relay.ban(row.target_pubkey, "report " + id.slice(0, 8));
         if (row.target_event) {
           s.setEvent(row.target_event, "ban", "report " + id.slice(0, 8), t);
@@ -272,6 +293,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: s.listKinds("block") });
     case "resetrules":
       s.resetRules();
+      await relay.publishGroup();
       return reply({ result: s.policy });
     case "pullfrom": {
       // (url): copy what another relay has that this one lacks. Runs in
@@ -285,14 +307,27 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     }
     case "pullstatus":
       return reply({ result: await relay.pullStatus() });
+    case "transferowner": {
+      // (pubkey): hands the relay to a member; the old owner stays as a moderator.
+      const pk = str(0);
+      if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
+      const err = s.transferOwner(pk);
+      if (err) return reply({ error: err }, 400);
+      await relay.publishRoster();
+      await relay.publishGroup(caller);
+      return reply({ result: { owner: pk, previous: caller } });
+    }
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
+      await relay.publishGroup();
       return reply({ result: true });
     case "changerelaydescription":
       s.update({ description: str(0).slice(0, 2000) });
+      await relay.publishGroup();
       return reply({ result: true });
     case "changerelayicon":
       s.update({ icon: str(0).slice(0, 2000) });
+      await relay.publishGroup();
       return reply({ result: true });
   }
   return reply({ error: "unsupported: " + method }, 400);

@@ -52,6 +52,18 @@ A new relay accepts writes from its members only. To add someone:
 
 To let anyone write, set **Rules > Writes** to *anyone*. To let only yourself write, set it to *only me*.
 
+## Moderators
+
+On the People tab, set a member's role to *moderator*. A moderator can add and remove members, ban, delete events, mint invites and work the reports queue, from the relay's page or from a group-aware client. Rules, identity, storage and fuel stay with you.
+
+## Hand it over
+
+On the Identity tab, **Transfer ownership** gives the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change.
+
+## Groups in clients
+
+Your relay is also a NIP-29 group, one group per relay, so clients that understand groups (Flotilla, Chachi, 0xchat, Coracle) show it as a community: name and picture, who is in it, a join button and moderation. The group id is the relay's name. Who may read and write follows your Rules tab: members-only reads make the group private, and anything but open writes makes it closed, so joining needs an invite code.
+
 ## Names
 
 Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it on the People tab, or a member sets it in their profile's NIP-05 field. Clients show the name next to the person.

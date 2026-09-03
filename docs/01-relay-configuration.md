@@ -19,8 +19,11 @@ Three things read that table: the write rule, the signed roster your relay publi
 - **Invite** with a link. Choose how long the link lives and how many people can use it.
 - **Ban** a pubkey. Their events are refused and their open connections are closed.
 - **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
+- **Role** is *member* or *moderator*, set from the selector next to the pubkey. A moderator can add and remove members, ban, delete events, mint invites and resolve reports, here or from a group-aware client. They cannot touch the owner, other moderators, rules, identity, storage or fuel.
 
 Removing a member ends their live subscriptions when reads are members-only.
+
+A moderator who signs in on the relay's page sees the People tab and the recent-events browser, nothing else.
 
 ## Rules
 
@@ -46,6 +49,8 @@ Name, description, icon and contact appear in your relay's public information do
 Join terms are shown to people who open an invite link. The public directory switch decides whether `/people` lists your members to visitors.
 
 **Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
+
+**Transfer ownership** hands the relay to a member you pick. You stay on as a moderator. The relay's key, events, files and fuel do not change. You type the relay's name to confirm.
 
 **Delete relay** removes everything and returns the name to unclaimed. You type the relay's name to confirm.
 

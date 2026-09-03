@@ -99,7 +99,7 @@ describe("claiming", () => {
     expect((await rpc(host, sk, "claim")).result.claimed).toBe(true);
 
     expect((await c.ok(ev(sk, 1, "hi"))).ok).toBe(true);
-    expect((await rpc(host, sk, "stats")).result.events).toBe(2); // the note plus the relay-signed roster
+    expect((await rpc(host, sk, "stats")).result.events).toBe(6); // the note, the relay-signed roster and the four NIP-29 state events
     const info2 = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
     expect(info2.pubkey).toBe(getPublicKey(sk));
     expect(info2.limitation.restricted_writes).toBe(false);

@@ -59,10 +59,25 @@ Credits come from NIP-57 receipts. A receipt is validated (provider signature, s
 
 On claim, the object generates a keypair, advertised as `self` in NIP-11. It signs the member roster (kind 13534) and its deltas (8000, 8001), all NIP-70 protected, with strictly increasing timestamps.
 
+## Groups and roles
+
+Every relay is one NIP-29 group (`src/groups.ts`). The group id is the relay's name. An event with an `h` tag for any other id is refused; events without one are ordinary relay events. The group's flags are derived from the rules: `private` is reads set to members, `restricted` and `closed` are writes not open. The identity signs the group's state as addressable events, kind 39000 metadata, 39001 admins, 39002 members (only while the directory is public), 39003 roles, on the same strictly increasing clock as the roster, and republishes them on every membership, role or rule change. Membership changes also produce relay-signed 9000 put-user and 9001 remove-user records next to the NIP-43 deltas. All of these are protected kinds.
+
+Joins (9021, with an optional invite `code`), leaves (9022) and the moderation kinds 9000, 9001, 9002, 9005 and 9009 are applied before the write policy and gated by role instead. Unsupported moderation kinds are refused with `unsupported:`. Timeline `previous` references, pins, subgroups and livekit are not implemented.
+
+`src/roles.ts` is the one permission table, used by the NIP-86 methods and the NIP-29 events alike:
+
+| Role | May |
+|---|---|
+| owner | everything, including rules, identity, storage, config, pull, transfer, delete |
+| moderator | read stats and lists, add and edit plain members, ban, delete events, invites, reports |
+
+Moderators cannot act on the owner or on each other; only the owner appoints or removes moderators. `transferowner` hands the relay to a member and leaves the old owner as a moderator; the identity key and fuel do not change.
+
 ## Management
 
 `src/manage.ts` implements NIP-86 over NIP-98. The console is a client of it. `verifyNIP98` is a local implementation: kind 27235, 60-second window, `u` matches host and path, method matches, payload hash matches.
 
 ## Protocol surface
 
-NIP-01, 09, 11, 13, 17/59 private kinds, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02/04/06. `test/conformance` is a black-box suite that runs against any relay URL.
+NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02/04/06. `test/conformance` is a black-box suite that runs against any relay URL.
