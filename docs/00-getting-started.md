@@ -7,25 +7,11 @@ audience: user
 
 bind.ws gives you a nostr relay at a name you choose. You claim it with your nostr key. There is no account, password or email.
 
-You need a nostr key and something that signs with it: a browser extension such as Alby, nos2x or Nostash, or a remote signer app such as Amber or nsec.app, which the relay's page connects to (NIP-46). Any nostr client works with the relay once it exists.
+You need a nostr key and something that signs with it: a browser extension such as Alby, nos2x or Nostash, or a signer app such as Amber or nsec.app on your phone. Any nostr client works with the relay once it exists.
 
-## Claim a name
+## Try one
 
-1. Open `https://<name>.bind.ws/` in your browser. Names are three to 32 lowercase letters, digits or hyphens.
-2. If the page says the relay is unclaimed, click **Claim**. Your extension asks you to sign one request.
-3. The page becomes your relay's console. You are the owner.
-
-If the page shows someone else's name, the relay is taken. Pick another.
-
-## From a phone
-
-No extension is needed. Open the relay's page, choose **Use a remote signer**, and tap **Open in your signer app**. The app asks you to approve the connection and the page continues where you left off, claiming or signing in. On a computer, paste the `bunker://` URL your signer app gives you instead. The relay itself carries the signer traffic, so this works on a relay nobody has claimed yet.
-
-The page remembers the connection until you sign out.
-
-## Try one first
-
-Not ready to pick a name? Click **Try one now** on the front page, or ask for one from a script:
+Not sure about a name yet? Click **Try one now** on the front page, or ask from a script:
 
 ```
 curl -X POST https://bind.ws/lease
@@ -33,11 +19,23 @@ curl -X POST https://bind.ws/lease
 
 You get a relay at a memorable name, such as `wss://brave-otter.bind.ws`. Anyone can read and write to it for 14 days. Then everything on it is deleted and the name is freed. Its page says when.
 
-To keep it, open its page and click **Claim** before it expires. The relay converts in place: the events and files stay, and you are the owner. The page then offers to switch to the default rules, since a temporary relay lets anyone write and keeps events for 14 days only.
+To keep it, open its page and click **Claim this relay** before then. The events and files stay, and you are the owner. The page then offers to switch to the default rules, since a temporary relay keeps events for 14 days only.
 
-If you sign the request with your key (NIP-98), only that key can claim the relay. Agents and scripts with a key get a relay that nobody else can take from them.
+If you sign the request with your key (a signed request, NIP-98), only that key can claim the relay.
 
-To keep the events but not the name, claim the name you want and pull the temporary relay into it. See [Bring events in](#bring-events-in).
+## Claim a name
+
+1. Open `https://<name>.bind.ws/`. Names are three to 32 lowercase letters, digits or hyphens.
+2. If the page says nobody owns the relay, click **Claim this relay**. Your extension asks you to sign once.
+3. The page becomes your relay's console. You are the owner.
+
+If the page shows someone else's name, the relay is taken. Pick another.
+
+## From a phone
+
+No extension is needed. Open the relay's page, choose **Use a remote signer** and tap **Open in your signer app**. The app asks you to approve the connection, and the page continues where you left off. On a computer, paste the `bunker://` URL your signer app gives you and click **Connect**.
+
+The relay carries the signer traffic itself, so this works on a relay nobody has claimed yet. The page remembers the connection until you sign out.
 
 ## Connect a client
 
@@ -51,102 +49,24 @@ That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrud
 
 ## Tell your clients
 
-A relay only helps once your clients know about it. On the Identity tab, **Tell your clients** has one row per list: your relay list (NIP-65), your DM inbox (NIP-17), your search relays and your Blossom servers. Each row fetches the newest copy of that list from this relay and a few well-known indexers, puts this relay first, and asks you to sign the result once. The merged list is sent here, to the relays it names, and to the indexers, so nothing you had listed is lost. **Remove me** publishes the list without this relay.
-
-## Share your relay
-
-Every relay has a card: `https://<name>.bind.ws/card.svg` is a picture with the name, who may read and write, the fuel state and a QR of the group address, and `/card.json` has the same facts as data. The **Share** block on the Identity tab shows the card, the group naddr with a copy button, and an embed snippet for a profile or a page.
-
-## Your own domain
-
-Your relay can answer at a hostname you own, such as `wss://relay.example.com`. On the Identity tab, under **Your own domain**, add the hostname. The page shows one record to create at your DNS: a CNAME from your hostname to the address it gives you. Once the record resolves, the certificate is issued on its own and **Check** turns green. Up to three hostnames per relay. Everything else stays the same: same events, same members, same console, reachable by either name.
-
-This needs the host to have switched custom domains on. If they have not, the block says so.
+Clients find your relay through the lists you publish: your relay list, your DM inbox, your search relays and your Blossom servers. On the Identity tab, **Tell your clients** has one row per list. **Check** finds your newest copy here and on a few indexers. **Add me** puts this relay first, asks you to sign once and publishes the merged list here, to the relays it names and to the indexers. Nothing you had listed is lost.
 
 ## Invite people
 
-A new relay accepts writes from its members only. To add someone:
+A fresh relay lets anyone write. To keep it to your people, set **Rules > Writes** to *members*. Then, on the People tab:
 
-- **Invite link.** On the People tab, mint an invite. Share the link. The person opens it, signs once and becomes a member.
-- **Add by key.** Paste a pubkey or npub on the People tab.
+- **New invite link** mints a link. The person opens it, signs once and becomes a member.
+- Paste a pubkey or npub in the top row to add someone directly.
 
-To let anyone write, set **Rules > Writes** to *anyone*. To let only yourself write, set it to *only me*.
-
-Members can bring people in too, if you let them. On the People tab, under the invites, set how many hops from you the tree may reach and how many live invites each member may hold. A member then sees a **Your invites** section on the relay's page. The People tab shows who invited whom, and removing a member can take everyone they invited along.
-
-## Moderators
-
-On the People tab, set a member's role to *moderator*. A moderator can add and remove members, ban, delete events, mint invites and work the reports queue, from the relay's page or from a group-aware client. Rules, identity, storage and fuel stay with you.
-
-## Hand it over
-
-On the Owner tab, **Transfer ownership** gives the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change.
-
-## If you lose your key
-
-Keys get lost. On the Owner tab, under **If I lose my key**, name a member as your heir and pick how long you can be away: three months, six, or a year. If you do not sign in for that long, the relay writes to you once a week for a month, in your own inbox and on your DM relays. If you still do not show up, it hands itself to the heir and keeps you on as a moderator. Any signed action on the relay, a console visit, a post, a signed request, resets the clock. Nothing else changes: the relay's key, events, files and fuel stay as they are.
-
-## Groups in clients
-
-Your relay is also a NIP-29 group, one group per relay, so clients that understand groups (Flotilla, Chachi, 0xchat, Coracle) show it as a community: name and picture, who is in it, a join button and moderation. The group id is the relay's name. Who may read and write follows your Rules tab: members-only reads make the group private, and anything but open writes makes it closed, so joining needs an invite code.
-
-## Names
-
-Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it on the People tab, or a member sets it in their profile's NIP-05 field. Clients show the name next to the person.
-
-The relay has a profile of its own, made from the name, description and icon on the Identity tab, so it appears like a person where clients show relays.
-
-## Media
-
-Your relay stores images and files too. Clients that support Blossom upload to `https://<name>.bind.ws` and get a link by hash. A client can ask first whether an upload would be accepted, and can have the relay copy a file from another server by URL instead of uploading it again. Set the maximum upload size on the Rules tab.
-
-Clients that speak NIP-96 instead find the same store through `/.well-known/nostr/nip96.json`. The two doors share one bucket and one file list, so a file uploaded through either is served, listed and deleted through both, and every answer carries the file's NIP-94 tags.
-
-To report a file, send a signed NIP-56 report that names its hash to `PUT /report`. It lands in the owner's reports queue next to reported events. Deleting a reported file also blocks its hash, so it cannot be uploaded again.
-
-## Pages and feeds
-
-Every name is a site as well as a relay. A note has a page at `https://<name>.bind.ws/e/<id>` and an article at `/a/<d>` (yours) or `/a/<npub>/<d>` (anyone's), with the tags link previews need, so a link to your relay unfurls in chat apps and on social sites. `/feed.xml` is an Atom feed of the relay's notes and articles; add `?kinds=30023` for articles only or `?author=<hex>` for one person.
-
-Pages exist only while **Rules > Reads** is *anyone*. On a members-only relay they answer 404, so nothing leaks.
-
-## Scripts
-
-If you write scripts, the relay has an HTTP door. Sign a request with your key (NIP-98) and post to `/events`, `/query` or `/count`. No websocket needed.
-
-## Bring events in
-
-The Data tab has a **Jobs** block: work your relay does on its own, in the background, in small rounds, so it keeps going while the relay sleeps between them.
-
-- **Pull** copies what another relay has and yours lacks, by NIP-77 sync. Run it again later and only new events come over. Files come along when the other relay is on bind.ws. Pick an interval and it becomes a standing mirror that keeps your name in sync every hour, six hours or day.
-- **Fetch my history** pulls your own events from every relay in your relay list (kind 10002), if a client has published it here. Or give it relays to fetch from.
-- **Rebroadcast** sends what your relay holds to other relays, like a blaster. Choose kinds and a day window, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. Events only their author may publish are left out, and a members-only relay never rebroadcasts private messages.
-
-Jobs spend awake time, which fuel counts. Up to five standing jobs per relay.
-
-Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
-
-## Notifications
-
-The relay can write to you. On the Health tab, switch on what you want to hear about: a report arriving, fuel running low, a pull finishing. Each is a NIP-17 private message signed by the relay's own key, stored on your relay as your inbox and pushed to your DM relays when your kind 10050 is here. It shows up in whatever client you already use for messages.
-
-## One name per job
-
-Names are cheap, so a relay does not have to do everything. Two ways to spread a life over several names:
-
-- **Presets that mirror.** On the Rules tab, the `search`, `articles`, `media` and `dm` presets turn a name into a single-purpose relay. `search` and `articles` take a source relay and keep a standing pull of their kinds from it, every six hours or daily, so `alice-search` stays a read-only copy of `alice` that clients can point search at. `media` is a file host whose only events are profiles and Blossom server lists. `dm` is an inbox for private messages that only members can read.
-- **Fork this relay.** On the Data tab, a fork leases a new name, copies this relay into it (everything, only your events, or chosen kinds, with or without the people) and reserves the claim for a key: yours, to split a name by job, or someone else's, to hand a community its own relay with its history. The new name is temporary until it is claimed, and one fork an hour is allowed.
-
-## Leave
-
-Your data is yours. Any relay that supports sync (NIP-77) can pull everything from your relay:
-
-```
-nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
-```
-
-Or download a dump. On the Data tab, turn on **Dumps** and the relay writes every event as one JSONL file daily or weekly, keeping the last few. **Dump now** writes one on the spot. Downloading takes your signature; the files are never a public link.
+Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it in their row, or they set it in their profile.
 
 ## What it costs
 
-Nothing until you pass the free allowance. See [Understanding fuel](02-understanding-fuel.md).
+Nothing until the relay passes its monthly free allowance. Past that, use is paid in sats, and anyone can zap the relay to top it up. See [Understanding fuel](02-understanding-fuel.md).
+
+## Where next
+
+- [Relay configuration](01-relay-configuration.md): the console, tab by tab.
+- [People and groups](03-people-and-groups.md): invites, moderators, groups in clients, handing the relay over.
+- [Data and names](04-data-and-names.md): pulls, mirrors, dumps, presets and forks.
+- [Your relay on the web](05-your-relay-on-the-web.md): pages, the feed, the card, your own domain and media.
