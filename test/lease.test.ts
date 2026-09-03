@@ -1,5 +1,6 @@
 // Temporary leases: a memorable name anyone can use for a while, a claim
-// that converts it in place, and an expiry that wipes it.
+// that converts it in place, an expiry that wipes it, and a pull that
+// copies one relay into another.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
@@ -90,6 +91,20 @@ async function upload(host: string, sk: Uint8Array, text: string) {
   const token = "Nostr " + btoa(JSON.stringify(ev(sk, 24242, "upload", [["t", "upload"], ["x", sha], ["expiration", String(now() + 300)]])));
   const resp = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: token, "content-type": "text/plain" }, body });
   return { status: resp.status, sha };
+}
+
+// pull drives the alarm until the job is done; the runtime may fire it too.
+async function pull(host: string, owner: Uint8Array, from: string) {
+  const started = await rpc(host, owner, "pullfrom", from);
+  expect(started.status, JSON.stringify(started)).toBe(200);
+  const stub = env.RELAY.getByName(host.split(".")[0]);
+  for (let i = 0; i < 40; i++) {
+    await runInDurableObject(stub, async (r: Relay) => r.alarm());
+    const st = (await rpc(host, owner, "pullstatus")).result;
+    if (!st.running) return st.last;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error("pull did not finish");
 }
 
 describe("temporary leases", () => {
@@ -202,3 +217,61 @@ describe("temporary leases", () => {
   });
 });
 
+describe("pull from another relay", () => {
+  it("copies events and files from a lease into a claimed relay, and again only what is new", async () => {
+    const l = await lease();
+    const src = `${l.name}.bind.ws`;
+    const a = generateSecretKey();
+    const b = generateSecretKey();
+    const c = await WS.connect(src);
+    const e1 = ev(a, 1, "one", [], now() - 30);
+    const e2 = ev(b, 1, "two", [], now() - 20);
+    const e3 = ev(a, 7, "+", [["e", e1.id]], now() - 10);
+    for (const e of [e1, e2, e3]) expect((await c.ok(e)).ok).toBe(true);
+    const { sha } = await upload(src, a, "a picture, allegedly");
+
+    const owner = generateSecretKey();
+    const host = "fresh.bind.ws";
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setpolicy", { writes: "owner" });
+    expect((await rpc(host, owner, "pullfrom", "https://" + src)).status).toBe(400);
+    expect((await rpc(host, owner, "pullfrom", "wss://" + host)).error).toMatch(/itself/);
+    expect((await rpc(host, generateSecretKey(), "pullfrom", "wss://" + src)).status).toBe(403);
+
+    let last = await pull(host, owner, "wss://" + src);
+    expect(last.error).toBe("");
+    expect(last.stored).toBe(3);
+    expect(last.blobs).toBe(1);
+    const mine = await WS.connect(host);
+    expect((await mine.req({ kinds: [1, 7] })).map((e) => e.id).sort()).toEqual([e1.id, e2.id, e3.id].sort());
+    expect((await SELF.fetch(`http://${host}/${sha}`)).status).toBe(200);
+    expect((await rpc(host, owner, "listblobs")).result.map((x: any) => x.sha256)).toEqual([sha]);
+
+    // A second pull after one more event on the source fetches only that one.
+    const e4 = ev(b, 1, "four");
+    expect((await c.ok(e4)).ok).toBe(true);
+    last = await pull(host, owner, "wss://" + src);
+    expect(last.stored).toBe(1);
+    expect(last.blobs).toBe(0);
+    expect((await mine.req({ ids: [e4.id] })).length).toBe(1);
+    // Kind rules on the puller apply; the write policy does not.
+    await rpc(host, owner, "disallowkind", 7);
+    const e5 = ev(a, 7, "-", [["e", e2.id]]);
+    expect((await c.ok(e5)).ok).toBe(true);
+    last = await pull(host, owner, "wss://" + src);
+    expect(last.stored).toBe(0);
+    expect(last.skipped).toBe(1);
+  });
+
+  it("gives up on a source that refuses to sync, and says why", async () => {
+    const owner = generateSecretKey();
+    const closedHost = "closed.bind.ws";
+    await rpc(closedHost, owner, "claim");
+    await rpc(closedHost, owner, "setpolicy", { reads: "members" });
+    const host = "puller.bind.ws";
+    await rpc(host, owner, "claim");
+    const last = await pull(host, owner, "wss://" + closedHost);
+    expect(last.error).toMatch(/^sync refused: auth-required/);
+    expect(last.rounds).toBe(3);
+  });
+});

@@ -20,6 +20,8 @@ import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, invitePage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
+import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
+import type { Blob } from "./blossom.ts";
 
 export interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -82,6 +84,8 @@ export class Relay extends DurableObject<Env> {
   private lnurl: LnurlParams | null = null;
   // Outbound HTTP to the lightning provider; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
+  // A pull round in flight, so overlapping alarms do not run two.
+  private pulling = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -105,6 +109,15 @@ export class Relay extends DurableObject<Env> {
 
   get media(): R2Bucket {
     return this.env.MEDIA;
+  }
+
+  get domain(): string {
+    return this.env.DOMAIN;
+  }
+
+  // relays reaches the other objects on this host, for pulls between them.
+  get relays(): DurableObjectNamespace<Relay> {
+    return this.env.RELAY;
   }
 
   // meterBytes lets HTTP paths (bridge, media) add to the traffic counters.
@@ -241,6 +254,11 @@ export class Relay extends DurableObject<Env> {
     this.sql.exec(`DELETE FROM blobs WHERE sha256=?`, sha);
   }
 
+  // listBlobs is for another relay on this host pulling our files.
+  listBlobs(): Blob[] {
+    return this.sql.exec<Blob>(`SELECT * FROM blobs ORDER BY uploaded`).toArray();
+  }
+
   // ---- temporary leases ----
 
   // lease turns an unclaimed relay into a temporary one: open to everyone,
@@ -264,6 +282,52 @@ export class Relay extends DurableObject<Env> {
     this.settings.setRetention(null, LEASE_RETENTION_DAYS);
     await this.ensureAlarm(until);
     return "";
+  }
+
+  // ---- pulling from another relay ----
+
+  // pullStart records the job and wakes the alarm, which runs it in rounds.
+  async pullStart(url: string): Promise<string> {
+    if (await this.ctx.storage.get<PullJob>("pull")) return "restricted: a pull is already running";
+    if (this.fuelStatus().outOfFuel) return "restricted: this relay is out of fuel";
+    const job: PullJob = { url, startedAt: now(), rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0 };
+    await this.ctx.storage.put("pull", job);
+    await this.ctx.storage.delete("lastPull");
+    await this.ctx.storage.setAlarm(Date.now() + 50);
+    return "";
+  }
+
+  async pullStatus(): Promise<{ running: PullJob | null; last: PullResult | null }> {
+    return { running: (await this.ctx.storage.get<PullJob>("pull")) ?? null, last: (await this.ctx.storage.get<PullResult>("lastPull")) ?? null };
+  }
+
+  // pullTick runs one round of the job. Returns whether another is due. A
+  // few failed rounds in a row end the job with the reason.
+  private async pullTick(): Promise<boolean> {
+    if (this.pulling) return true;
+    const job = await this.ctx.storage.get<PullJob>("pull");
+    if (!job) return false;
+    this.pulling = true;
+    let r: { more: boolean; error: string };
+    try {
+      r = await runPullRound(this, job);
+    } finally {
+      this.pulling = false;
+    }
+    const finish = async (error: string) => {
+      await this.ctx.storage.put("lastPull", { ...job, finishedAt: now(), error } satisfies PullResult);
+      await this.ctx.storage.delete("pull");
+      return false;
+    };
+    if (r.error) {
+      job.failures++;
+      if (job.failures >= 3) return finish(r.error);
+    } else {
+      job.failures = 0;
+      if (!r.more) return finish("");
+    }
+    await this.ctx.storage.put("pull", job);
+    return true;
   }
 
   // ---- fuel plumbing ----
@@ -728,6 +792,10 @@ export class Relay extends DurableObject<Env> {
     // A lease that has run out is wiped whole: the name is free again.
     if (this.settings.leaseExpired(t)) {
       await this.teardown();
+      return;
+    }
+    if (await this.pullTick()) {
+      await this.ctx.storage.setAlarm(Date.now() + 250);
       return;
     }
     this.flushUsage();

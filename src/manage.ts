@@ -8,6 +8,7 @@ import type { Relay } from "./relay.ts";
 import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected } from "./settings.ts";
+import { checkPullURL } from "./pull.ts";
 
 // verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
 // the request: kind 27235, fresh, u tag naming this URL, method tag, and a
@@ -52,6 +53,7 @@ const METHODS = [
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules",
+  "pullfrom", "pullstatus",
 ];
 
 export async function manage(relay: Relay, req: Request): Promise<Response> {
@@ -271,6 +273,18 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "resetrules":
       s.resetRules();
       return reply({ result: s.policy });
+    case "pullfrom": {
+      // (url): copy what another relay has that this one lacks. Runs in
+      // the background; pullstatus reports on it.
+      const url = str(0).trim();
+      const bad = checkPullURL(url, relay.slug, relay.domain);
+      if (bad) return reply({ error: bad }, 400);
+      const err = await relay.pullStart(url);
+      if (err) return reply({ error: err }, 409);
+      return reply({ result: { started: true, url } });
+    }
+    case "pullstatus":
+      return reply({ result: await relay.pullStatus() });
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
       return reply({ result: true });
