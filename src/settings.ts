@@ -453,7 +453,7 @@ const RETENTION_ANY = -1;
 // its deltas, the NIP-29 put-user and remove-user records, and the group's
 // metadata, admins, members and roles). Never expired, never purged, only
 // deleted one at a time.
-export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 39000, 39001, 39002, 39003]);
+export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 33534, 39000, 39001, 39002, 39003]);
 export function isProtected(kind: number): boolean {
   return PROTECTED_KINDS.has(kind);
 }

@@ -251,7 +251,7 @@ describe("relay identity and NIP-43 roster", () => {
     expect(added[2].kind).toBe(8000);
     expect(added[2].tags).toContainEqual(["p", getPublicKey(bob)]);
     r = await c.req({ kinds: [13534] });
-    expect(r.events[0].tags).toContainEqual(["member", getPublicKey(bob), "member"]);
+    expect(r.events[0].tags).toContainEqual(["member", getPublicKey(bob)]);
     await rpc(host, owner, "unrulepubkey", getPublicKey(bob));
     expect((await c.expect("EVENT"))[2].kind).toBe(8001);
     // Nobody can forge relay-signed kinds: a client-signed 13534 is just another replaceable event by another author.
@@ -485,7 +485,7 @@ describe("configuration export and import", () => {
     const rc = await WS.connect(b);
     await rc.auth(ownerB, b);
     const r = await rc.req({ kinds: [13534] });
-    expect(r.events[0].tags).toContainEqual(["member", m1, "member"]);
+    expect(r.events[0].tags).toContainEqual(["member", m1]);
   });
 });
 
@@ -518,8 +518,8 @@ describe("storage: retention and purge", () => {
     await runInDurableObject(stub, async (r: Relay) => expect(r.sweepRetention(now())).toBe(1));
     let st = (await rpc(host, owner, "storagestats")).result;
     const byKind = Object.fromEntries(st.kinds.map((k: any) => [k.kind, k.n]));
-    expect(byKind).toEqual({ 1: 2, 7: 1, 0: 1, 13534: 1, 39000: 1, 39001: 1, 39002: 1, 39003: 1 }); // the roster and group state are the relay's own
-    expect(st.events).toBe(9);
+    expect(byKind).toEqual({ 1: 2, 7: 1, 0: 2, 13534: 1, 33534: 2, 39000: 1, 39001: 1, 39002: 1, 39003: 1 }); // the roster, profile, role definitions and group state are the relay's own
+    expect(st.events).toBe(12);
     expect(st.eventBytes).toBeGreaterThan(0);
     expect(st.retention).toEqual([{ kind: 7, days: 30 }, { kind: null, days: 100 }]);
 
@@ -527,7 +527,7 @@ describe("storage: retention and purge", () => {
     expect((await rpc(host, owner, "purgekind", 1, 10)).result).toEqual({ deleted: 1 });
     expect((await rpc(host, owner, "purgekind", 7, 0)).result).toEqual({ deleted: 1 });
     st = (await rpc(host, owner, "storagestats")).result;
-    expect(st.events).toBe(7);
+    expect(st.events).toBe(10);
 
     // Rules travel with the configuration; removing one is days 0.
     const cfg = (await rpc(host, owner, "exportconfig")).result;
@@ -540,6 +540,6 @@ describe("storage: retention and purge", () => {
     expect((await rpc(host, owner, "purgekind", 13534, 0)).status).toBe(400);
     await rpc(host, owner, "setretention", null, 1);
     expect((await rpc(host, owner, "purgekind", null, 0)).result.deleted).toBe(1); // the fresh note; profile, roster and group state stay
-    expect((await rpc(host, owner, "storagestats")).result.kinds.map((k: any) => k.kind).sort((a: number, b: number) => a - b)).toEqual([0, 13534, 39000, 39001, 39002, 39003]);
+    expect((await rpc(host, owner, "storagestats")).result.kinds.map((k: any) => k.kind).sort((a: number, b: number) => a - b)).toEqual([0, 13534, 33534, 39000, 39001, 39002, 39003]);
   });
 });

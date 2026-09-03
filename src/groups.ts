@@ -9,7 +9,7 @@
 // a moderator moderates whatever the write rule says.
 import { now, tagValues, type Event } from "./event.ts";
 import { claimInvite, mintInvite } from "./invites.ts";
-import { KIND_PUT_USER, KIND_REMOVE_USER, type GroupFacts } from "./identity.ts";
+import { KIND_PROFILE, KIND_PUT_USER, KIND_REMOVE_USER, type GroupFacts } from "./identity.ts";
 import { can, ROLES, type Action } from "./roles.ts";
 import type { Relay } from "./relay.ts";
 
@@ -21,9 +21,14 @@ export const KIND_CREATE_INVITE = 9009;
 export const KIND_PINS = 9010;
 export const KIND_JOIN = 9021;
 export const KIND_LEAVE = 9022;
+// NIP-43's own join and leave requests: ephemeral, no h tag, a claim tag
+// carries the invite code.
+export const KIND_NIP43_JOIN = 28934;
+export const KIND_NIP43_LEAVE = 28936;
 
 export const isModeration = (kind: number) => kind >= 9000 && kind <= 9020;
-export const isGroupManagement = (kind: number) => isModeration(kind) || kind === KIND_JOIN || kind === KIND_LEAVE;
+export const isNIP43Request = (kind: number) => kind === KIND_NIP43_JOIN || kind === KIND_NIP43_LEAVE;
+export const isGroupManagement = (kind: number) => isModeration(kind) || kind === KIND_JOIN || kind === KIND_LEAVE || isNIP43Request(kind);
 // The addressable state kinds only the relay writes.
 export const isGroupState = (kind: number) => kind >= 39000 && kind <= 39003;
 
@@ -33,6 +38,10 @@ const HEX64 = /^[0-9a-f]{64}$/;
 export function groupFacts(relay: Relay): GroupFacts {
   const p = relay.settings.policy;
   const members = relay.settings.members();
+  // The relay's profile: re-signed only when what it says would change.
+  const profile = JSON.stringify({ name: p.name || relay.slug, about: p.description, ...(p.icon ? { picture: p.icon } : {}) });
+  const row = relay.identity.pubkey ? relay.sql.exec<{ raw: string }>(`SELECT raw FROM events WHERE kind=? AND pubkey=? ORDER BY created_at DESC LIMIT 1`, KIND_PROFILE, relay.identity.pubkey).toArray()[0] : undefined;
+  const current = row ? (JSON.parse(row.raw) as { content: string }).content : undefined;
   return {
     id: relay.slug,
     name: p.name || relay.slug,
@@ -44,6 +53,7 @@ export function groupFacts(relay: Relay): GroupFacts {
     admins: members.filter((m) => m.role !== "member").map((m) => ({ pubkey: m.pubkey, role: m.role })),
     members: p.directoryPublic ? members.map((m) => m.pubkey) : null,
     roles: ROLES,
+    profile: current === profile ? null : profile,
   };
 }
 
@@ -86,6 +96,21 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       if (!(await relay.removeMember(e.pubkey))) return no("invalid: not a member");
       return OK;
     }
+    case KIND_NIP43_JOIN: {
+      // Ephemeral, so never stored or fanned out: the answer is the OK.
+      if (s.isAllowed(e.pubkey)) return { ok: true, msg: "duplicate: you are already a member of this relay.", stored: false };
+      const claim = tagValues(e, "claim")[0] ?? "";
+      if (!claim) return no("restricted: a join request needs a claim tag with an invite code.");
+      const r = claimInvite(relay.sql, claim, t);
+      if (r !== "ok") return no({ invite_invalid: "restricted: that is an invalid invite code.", invite_expired: "restricted: that invite code is expired.", invite_exhausted: "restricted: that invite code has been used up." }[r]);
+      const err = await relay.setMember(e.pubkey, { via: "invite " + claim.slice(0, 8) });
+      return err ? no(err) : { ok: true, msg: "info: welcome to " + relay.slug + "!", stored: false };
+    }
+    case KIND_NIP43_LEAVE: {
+      if (s.isOwner(e.pubkey)) return no("restricted: the owner cannot leave; transfer ownership first");
+      if (!(await relay.removeMember(e.pubkey))) return { ok: true, msg: "duplicate: you are not a member of this relay.", stored: false };
+      return { ok: true, msg: "info: access revoked.", stored: false };
+    }
     case KIND_PUT_USER: {
       const gate = need("members");
       if (gate) return no(gate);
@@ -101,7 +126,7 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       const next = wantsModerator ? "moderator" : "member";
       if ((cur ?? "member") !== next) {
         s.setRole(target, next);
-        await relay.publishGroup(target);
+        await relay.publishMembership({ pubkey: target });
       }
       return OK;
     }
@@ -125,7 +150,7 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       if (about !== undefined) patch.description = about.slice(0, 2000);
       if (picture !== undefined) patch.icon = picture.slice(0, 2000);
       s.update(patch);
-      await relay.publishGroup();
+      await relay.publishMembership();
       return OK;
     }
     case KIND_DELETE_EVENT: {

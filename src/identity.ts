@@ -3,7 +3,8 @@
 // for: the NIP-43 membership roster (kind 13534) and its added/removed
 // deltas (kinds 8000/8001), the NIP-29 put-user and remove-user records
 // (9000/9001) and the group's metadata, admins, members and roles
-// (39000-39003). All NIP-70 protected.
+// (39000-39003), the NIP-43 role definitions (33534), and its own profile
+// (kind 0). All but the profile NIP-70 protected.
 import { finalizeEvent, getPublicKey, generateSecretKey, type Event } from "nostr-tools/pure";
 import { bytesToHex, hexToBytes } from "./negentropy.ts";
 
@@ -16,6 +17,8 @@ export const KIND_GROUP_METADATA = 39000;
 export const KIND_GROUP_ADMINS = 39001;
 export const KIND_GROUP_MEMBERS = 39002;
 export const KIND_GROUP_ROLES = 39003;
+export const KIND_ROLE_DEF = 33534;
+export const KIND_PROFILE = 0;
 
 export interface GroupFacts {
   id: string;
@@ -28,6 +31,7 @@ export interface GroupFacts {
   admins: { pubkey: string; role: string }[];
   members: string[] | null; // null: not published
   roles: { role: string; about: string }[];
+  profile: string | null; // kind 0 content to sign, null when the stored one is current
 }
 
 export class Identity {
@@ -69,7 +73,9 @@ export class Identity {
     const at = Math.max(now, this.lastRoster + 1);
     this.lastRoster = at;
     this.storage.put("relay-roster-at", at);
-    return this.sign(KIND_ROSTER, [["-"], ...members.map((m) => ["member", m.pubkey, m.role])], "", at);
+    // A role is named only when it is one (NIP-43 roles are the 33534
+    // definitions); a plain member has none.
+    return this.sign(KIND_ROSTER, [["-"], ...members.map((m) => (m.role === "member" ? ["member", m.pubkey] : ["member", m.pubkey, m.role]))], "", at);
   }
 
   delta(added: boolean, pubkey: string): Event {
@@ -86,8 +92,9 @@ export class Identity {
   }
 
   // group signs the addressable NIP-29 state: metadata, admins, members
-  // (when published) and roles. Same strictly increasing clock as the roster,
-  // so a newer set always replaces an older one.
+  // (when published) and roles, plus the NIP-43 role definitions and, when
+  // it changed, the relay's own profile. Same strictly increasing clock as
+  // the roster, so a newer set always replaces an older one.
   group(f: GroupFacts, now = Math.floor(Date.now() / 1000)): Event[] {
     const at = Math.max(now, this.lastGroup + 1);
     this.lastGroup = at;
@@ -104,6 +111,8 @@ export class Identity {
       this.sign(KIND_GROUP_ROLES, [["-"], d, ...f.roles.map((r) => ["role", r.role, r.about])], "", at),
     ];
     if (f.members) out.push(this.sign(KIND_GROUP_MEMBERS, [["-"], d, ...f.members.map((p) => ["p", p])], "", at));
+    f.roles.forEach((r, i) => out.push(this.sign(KIND_ROLE_DEF, [["-"], ["d", r.role], ["label", r.role], ["description", r.about], ["order", String(i + 1)]], "", at)));
+    if (f.profile !== null) out.push(this.sign(KIND_PROFILE, [], f.profile, at));
     return out;
   }
 }

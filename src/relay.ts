@@ -21,7 +21,7 @@ import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
-import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState } from "./groups.ts";
+import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import type { Blob } from "./blossom.ts";
@@ -158,47 +158,37 @@ export class Relay extends DurableObject<Env> {
 
   // ---- relay identity and the NIP-43 roster ----
 
-  // publishRoster signs the current member list as kind 13534 and, when a
-  // single change is given, the matching 8000/8001 delta, and fans both out.
-  async publishRoster(change?: { added: boolean; pubkey: string }) {
+  // publishMembership signs everything the relay vouches for from its member
+  // list and settings, in one place so the NIP-43 roster and the NIP-29 group
+  // can never disagree: the roster (13534) and, for an add or a removal, its
+  // 8000/8001 delta; the NIP-29 put-user or remove-user record for each
+  // change given (a change without `added` is a role change); the group's
+  // metadata, admins, roles and, when the directory is public, members
+  // (39000-39003); the NIP-43 role definitions (33534); and the relay's own
+  // profile (kind 0) when its name, description or icon changed.
+  async publishMembership(...changes: { pubkey: string; added?: boolean }[]) {
     if (this.settings.policy.owner === "") return;
     await this.identity.ensure();
     const t = now();
     const events: Event[] = [];
-    if (change) {
-      events.push(this.identity.delta(change.added, change.pubkey));
-      events.push(change.added ? this.identity.putUser(this.slug, change.pubkey, this.rolesOf(change.pubkey)) : this.identity.removeUser(this.slug, change.pubkey));
+    for (const c of changes) {
+      if (c.added !== undefined) events.push(this.identity.delta(c.added, c.pubkey));
+      if (c.added === false) events.push(this.identity.removeUser(this.slug, c.pubkey));
+      else events.push(this.identity.putUser(this.slug, c.pubkey, this.rolesOf(c.pubkey)));
+    }
+    const f = groupFacts(this);
+    // A members list that is no longer public is taken down.
+    if (f.members === null) {
+      for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM events WHERE kind=? AND pubkey=?`, KIND_GROUP_MEMBERS, this.identity.pubkey).toArray()) this.store.deleteEvent(r.id);
     }
     events.push(this.identity.roster(this.settings.members(), t));
-    events.push(...this.groupState(t));
-    this.emit(events, t);
-  }
-
-  // publishGroup refreshes the NIP-29 state after something other than a
-  // membership change: a rule, the name, or, with a pubkey, that person's role.
-  async publishGroup(roleChanged?: string) {
-    if (this.settings.policy.owner === "") return;
-    await this.identity.ensure();
-    const t = now();
-    const events: Event[] = roleChanged ? [this.identity.putUser(this.slug, roleChanged, this.rolesOf(roleChanged))] : [];
-    events.push(...this.groupState(t));
+    events.push(...this.identity.group(f, t));
     this.emit(events, t);
   }
 
   private rolesOf(pubkey: string): string[] {
     const r = this.settings.roleOf(pubkey);
     return r && r !== "member" ? [r] : [];
-  }
-
-  // groupState signs the group's metadata, admins, roles and, when the
-  // directory is public, members. A members list that is no longer public is
-  // taken down.
-  private groupState(t: number): Event[] {
-    const f = groupFacts(this);
-    if (f.members === null) {
-      for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM events WHERE kind=? AND pubkey=?`, KIND_GROUP_MEMBERS, this.identity.pubkey).toArray()) this.store.deleteEvent(r.id);
-    }
-    return this.identity.group(f, t);
   }
 
   private emit(events: Event[], t: number) {
@@ -213,14 +203,14 @@ export class Relay extends DurableObject<Env> {
     const was = this.settings.isAllowed(pubkey);
     const err = this.settings.upsertMember(pubkey, patch, now(), force);
     if (err) return err;
-    if (!was) await this.publishRoster({ added: true, pubkey });
+    if (!was) await this.publishMembership({ pubkey, added: true });
     return "";
   }
 
   async removeMember(pubkey: string): Promise<boolean> {
     if (!this.settings.removeMember(pubkey)) return false;
     if (this.settings.policy.reads === "members") this.evict(pubkey, "restricted: this relay only serves its members", false);
-    await this.publishRoster({ added: false, pubkey });
+    await this.publishMembership({ pubkey, added: false });
     return true;
   }
 
@@ -228,7 +218,7 @@ export class Relay extends DurableObject<Env> {
     const was = this.settings.isAllowed(pubkey);
     this.settings.setBan(pubkey, true, reason, now());
     this.evict(pubkey, "blocked: you are banned from this relay", true);
-    if (was) await this.publishRoster({ added: false, pubkey });
+    if (was) await this.publishMembership({ pubkey, added: false });
   }
 
   // evict closes the door on a pubkey: subscriptions are ended and, for a
@@ -507,7 +497,7 @@ export class Relay extends DurableObject<Env> {
     const r = claimInvite(this.sql, code, now());
     if (r !== "ok") return json({ error: r }, 403);
     this.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8) }, now());
-    await this.publishRoster({ added: true, pubkey: auth.pubkey });
+    await this.publishMembership({ pubkey: auth.pubkey, added: true });
     return json({ status: "joined", role: "member" });
   }
 
@@ -551,7 +541,7 @@ export class Relay extends DurableObject<Env> {
     }
     const url = new URL(req.url);
     // Relays claimed before identities existed get theirs on first contact.
-    if (this.settings.policy.owner && !this.identity.pubkey) await this.publishRoster();
+    if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
     // A blocked address gets no socket and no door that writes or reads
     // events or files. The page, NIP-11 and management stay reachable, so
     // an owner who blocked their own address can undo it.
@@ -825,7 +815,7 @@ export class Relay extends DurableObject<Env> {
       if (r) return r;
     }
     if (e.kind === KIND_REPORT) return this.acceptReport(e);
-    if (isGroupManagement(e.kind) && hasTag(e, "h")) return this.acceptGroup(e, conn);
+    if (isGroupManagement(e.kind) && (hasTag(e, "h") || isNIP43Request(e.kind))) return this.acceptGroup(e, conn);
     return this.accept(e, conn);
   }
 
@@ -837,7 +827,7 @@ export class Relay extends DurableObject<Env> {
     if (reason) return { ok: false, msg: reason, stored: false };
     if (this.sql.exec(`SELECT 1 FROM events WHERE id=?`, e.id).toArray().length) return { ok: true, msg: ERR_DUPLICATE, stored: false };
     const r = await handleGroupEvent(this, e);
-    if (!r.ok) return r;
+    if (!r.ok || !r.stored) return r;
     const err = this.store.save(e, t);
     if (err) return { ok: false, msg: err, stored: false };
     return { ok: true, msg: "", stored: true };

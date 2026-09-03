@@ -94,7 +94,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (lease && lease.until <= t) return reply({ error: "restricted: this temporary relay has expired" }, 403);
       s.update(lease ? { owner: caller, lease: null, name: "", description: "" } : { owner: caller });
       s.upsertMember(caller, { via: "claimed" }, t);
-      await relay.publishRoster();
+      await relay.publishMembership();
       return reply({ result: { owner: caller, claimed: true, ...(lease ? { converted: true } : {}) } });
     }
     return reply({ result: { owner: p.owner, claimed: s.isOwner(caller) } }, s.isOwner(caller) ? 200 : 403);
@@ -138,7 +138,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (typeof clean.maxLimit === "number") clean.maxLimit = Math.min(Math.max(clean.maxLimit as number, 1), 5000);
       if (typeof clean.maxSubs === "number") clean.maxSubs = Math.min(Math.max(clean.maxSubs as number, 1), 200);
       s.update(clean);
-      await relay.publishGroup();
+      await relay.publishMembership();
       return reply({ result: s.policy });
     }
     case "banpubkey": {
@@ -164,7 +164,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (err) return reply({ error: err }, 400);
       if (wantsRole && s.roleOf(pk) !== wantsRole) {
         s.setRole(pk, wantsRole);
-        await relay.publishGroup(pk);
+        await relay.publishMembership({ pubkey: pk });
       }
       return reply({ result: s.member(pk) });
     }
@@ -257,9 +257,19 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "exportconfig":
       return reply({ result: s.exportConfig(relay.slug) });
     case "importconfig": {
+      // The import replaces the member list wholesale; the records say who
+      // came, who went and who changed role, one delta each.
+      const before = new Map(s.members().map((x) => [x.pubkey, x.role]));
       const err = s.importConfig(params[0], t);
       if (err) return reply({ error: err }, 400);
-      await relay.publishRoster();
+      const after = new Map(s.members().map((x) => [x.pubkey, x.role]));
+      const changes: { pubkey: string; added?: boolean }[] = [];
+      for (const [pk, role] of after) {
+        if (!before.has(pk)) changes.push({ pubkey: pk, added: true });
+        else if (before.get(pk) !== role) changes.push({ pubkey: pk });
+      }
+      for (const pk of before.keys()) if (!after.has(pk)) changes.push({ pubkey: pk, added: false });
+      await relay.publishMembership(...changes);
       return reply({ result: s.exportConfig(relay.slug) });
     }
     case "deleterelay": {
@@ -327,7 +337,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: s.listKinds("block") });
     case "resetrules":
       s.resetRules();
-      await relay.publishGroup();
+      await relay.publishMembership();
       return reply({ result: s.policy });
     case "pullfrom": {
       // (url): copy what another relay has that this one lacks. Runs in
@@ -347,21 +357,20 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
       const err = s.transferOwner(pk);
       if (err) return reply({ error: err }, 400);
-      await relay.publishRoster();
-      await relay.publishGroup(caller);
+      await relay.publishMembership({ pubkey: pk }, { pubkey: caller });
       return reply({ result: { owner: pk, previous: caller } });
     }
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
-      await relay.publishGroup();
+      await relay.publishMembership();
       return reply({ result: true });
     case "changerelaydescription":
       s.update({ description: str(0).slice(0, 2000) });
-      await relay.publishGroup();
+      await relay.publishMembership();
       return reply({ result: true });
     case "changerelayicon":
       s.update({ icon: str(0).slice(0, 2000) });
-      await relay.publishGroup();
+      await relay.publishMembership();
       return reply({ result: true });
   }
   return reply({ error: "unsupported: " + method }, 400);
