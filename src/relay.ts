@@ -16,6 +16,7 @@ import { Identity } from "./identity.ts";
 import { Bucket } from "./ratelimit.ts";
 import { bridge } from "./bridge.ts";
 import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
+import { nip96 } from "./nip96.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
@@ -582,6 +583,7 @@ export class Relay extends DurableObject<Env> {
     }
     if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
     if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
+    if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
     if (url.pathname === "/fuel" && req.method === "GET") {
       return Response.json({ ...this.fuelStatus(), credits: this.fuel.recentCredits() }, { headers: { "access-control-allow-origin": "*" } });
     }
