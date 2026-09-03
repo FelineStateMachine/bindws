@@ -16,7 +16,7 @@ Four things cost the host money, and those four are measured. Each mirrors a lin
 | Events stored | 100 MB |
 | Files stored | 1 GB |
 | Time awake | 100 hours |
-| Rows written | 1 million |
+| Rows written | 250,000 |
 
 Traffic in and out is free and not counted. The console shows it so you can see what the relay does.
 

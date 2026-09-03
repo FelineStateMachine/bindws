@@ -38,7 +38,7 @@ export function fuelConfig(env: Record<string, unknown>): FuelConfig {
     freeEventsMB: num("FREE_EVENTS_MB", 100),
     freeMediaMB: num("FREE_MEDIA_MB", 1024),
     freeActiveHours: num("FREE_ACTIVE_HOURS", 100),
-    freeRowsWritten: num("FREE_ROWS_WRITTEN", 1_000_000),
+    freeRowsWritten: num("FREE_ROWS_WRITTEN", 250_000),
     satsPerGBMonthEvents: num("SATS_PER_GB_MONTH_EVENTS", 400),
     satsPerGBMonthMedia: num("SATS_PER_GB_MONTH_MEDIA", 30),
     satsPerActiveHour: num("SATS_PER_ACTIVE_HOUR", 11),

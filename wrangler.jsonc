@@ -35,7 +35,7 @@
     "FREE_EVENTS_MB": "100",
     "FREE_MEDIA_MB": "1024",
     "FREE_ACTIVE_HOURS": "100",
-    "FREE_ROWS_WRITTEN": "1000000",
+    "FREE_ROWS_WRITTEN": "250000",
     // Prices follow what Cloudflare bills us for the same thing, at about
     // 1.5x, converted at 77,000 USD per bitcoin. `node scripts/margin.mjs`
     // checks them against the rate of the day (docs/15-costs-and-margins.md).
@@ -79,7 +79,7 @@
         "FREE_EVENTS_MB": "100",
         "FREE_MEDIA_MB": "1024",
         "FREE_ACTIVE_HOURS": "100",
-        "FREE_ROWS_WRITTEN": "1000000",
+        "FREE_ROWS_WRITTEN": "250000",
         "SATS_PER_GB_MONTH_EVENTS": "400",
         "SATS_PER_GB_MONTH_MEDIA": "30",
         "SATS_PER_ACTIVE_HOUR": "11",
