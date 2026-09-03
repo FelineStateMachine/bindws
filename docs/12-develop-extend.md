@@ -11,7 +11,8 @@ audience: developer
 src/
   index.ts      worker entry: hostname → object, POST /lease
   names.ts      valid names, reserved names, lease names
-  pull.ts       copy another relay in: NIP-77 as the initiator, in alarm rounds
+  pull.ts       copy another relay in: NIP-77 as the initiator, one round per connection
+  jobs.ts       the alarm's job list: pulls, backfills, rebroadcasts, once or standing
   relay.ts      the Durable Object: sockets, policy, fuel plumbing, NIP-11
   store.ts      SQLite schema and queries
   settings.ts   policy, members, bans, kind rules, retention, export/import

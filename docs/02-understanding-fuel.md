@@ -20,7 +20,7 @@ Four things cost the host money, and those four are measured. Each mirrors a lin
 
 Traffic in and out is free and not counted. The console shows it so you can see what the relay does.
 
-**Time awake** is how long the relay is in memory. It sleeps between messages and wakes when one arrives, so a relay nobody uses is awake for zero hours. A relay with a client connected all day is awake only while messages pass, plus a few seconds after each.
+**Time awake** is how long the relay is in memory. It sleeps between messages and wakes when one arrives, so a relay nobody uses is awake for zero hours. A relay with a client connected all day is awake only while messages pass, plus a few seconds after each. Jobs on the Storage tab, pulls, backfills and rebroadcasts, wake the relay on their own and spend this line while they run; a standing job spends it on every run.
 
 **Rows written** is database work. A note costs a few rows. Reactions and other small events cost about the same.
 

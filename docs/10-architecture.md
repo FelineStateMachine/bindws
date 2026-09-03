@@ -49,7 +49,9 @@ One alarm per object, at most a day out, sooner if a NIP-40 expiry is due or a l
 
 NIP-46 traffic (kind 24133) is ephemeral, never stored and encrypted end to end, so it passes the ownership and write gates, and a subscription to it alone passes the read gate. That lets the relay carry a remote signer's session for the console, including for someone about to claim it. Bans and the per-connection rate limit still apply.
 
-The alarm also drives pulls (`pull.ts`). `pullfrom` records a job and wakes the alarm; each round opens one websocket to the source, reconciles with NIP-77 as the initiator, fetches a bounded batch of the missing ids, verifies signatures, and stores them through the normal write path minus the client policy. Sources on this host are dialled through their object stub and their files copied in R2 by prefix. Rounds repeat until nothing is missing, so a pull survives the object sleeping, and a second pull only fetches the difference.
+The alarm also drives jobs (`jobs.ts`), a persisted list run one round at a time. `addjob` records one and wakes the alarm; the alarm runs the job that is running or due, saves it, and comes back a quarter second later while there is more. Three failed rounds in a row end a run with the reason. A once job is done after its run; a standing job is scheduled again at its interval, and the daily alarm is never set past the next run.
+
+A pull round (`pull.ts`) opens one websocket to the source, reconciles with NIP-77 as the initiator over the job's filter (authors, kinds, since), fetches a bounded batch of the missing ids, verifies signatures, and stores them through the normal write path minus the client policy. Sources on this host are dialled through their object stub and, on a whole-relay pull, their files copied in R2 by prefix. A pull job syncs its sources in turn, so a backfill is a pull with the owner as author from the relays in their kind 10002. A push round takes the next batch past a sequence cursor kept on the job, offers it to every target, counts OKs (a `duplicate:` counts as sent), and leaves a target alone for the round after several refusals in a row; the cursor survives sleeps and runs, so a standing push forwards only what arrived since. NIP-70 protected events are never pushed, nor private kinds from a members-only relay.
 
 ## Fuel
 
@@ -73,7 +75,7 @@ Joins (9021, with an optional invite `code`), leaves (9022) and the moderation k
 
 | Role | May |
 |---|---|
-| owner | everything, including rules, identity, storage, config, pull, transfer, delete |
+| owner | everything, including rules, identity, storage, config, jobs, transfer, delete |
 | moderator | read stats and lists, add and edit plain members, ban, delete events, invites, reports |
 
 Moderators cannot act on the owner or on each other; only the owner appoints or removes moderators. `transferowner` hands the relay to a member and leaves the old owner as a moderator; the identity key and fuel do not change.

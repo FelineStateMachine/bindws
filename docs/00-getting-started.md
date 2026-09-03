@@ -94,7 +94,13 @@ If you write scripts, the relay has an HTTP door. Sign a request with your key (
 
 ## Bring events in
 
-Any relay that lets you read can be copied into yours. On the Storage tab, under **Pull from a relay**, enter its URL. Your relay syncs with it (NIP-77) and fetches what it lacks, in the background. Run it again later and only new events come over. Files come along when the other relay is on bind.ws.
+The Storage tab has a **Jobs** block: work your relay does on its own, in the background, in small rounds, so it keeps going while the relay sleeps between them.
+
+- **Pull** copies what another relay has and yours lacks, by NIP-77 sync. Run it again later and only new events come over. Files come along when the other relay is on bind.ws. Pick an interval and it becomes a standing mirror that keeps your name in sync every hour, six hours or day.
+- **Fetch my history** pulls your own events from every relay in your relay list (kind 10002), if a client has published it here. Or give it relays to fetch from.
+- **Rebroadcast** sends what your relay holds to other relays, like a blaster. Choose kinds and a day window, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. Events only their author may publish are left out, and a members-only relay never rebroadcasts private messages.
+
+Jobs spend awake time, which fuel counts. Up to five standing jobs per relay.
 
 Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
 
