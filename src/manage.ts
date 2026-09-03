@@ -10,6 +10,7 @@ import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected, publicFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
+import { PRESETS, applyPreset } from "./presets.ts";
 
 // verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
 // the request: kind 27235, fresh, u tag naming this URL, method tag, and a
@@ -54,7 +55,7 @@ const METHODS = [
   "blockip", "unblockip", "listblockedips",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
-  "deleterelay", "exportconfig", "importconfig", "resetrules",
+  "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
   "pullfrom", "pullstatus", "transferowner",
 ];
 
@@ -342,6 +343,15 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       s.resetRules();
       await relay.publishMembership();
       return reply({ result: s.policy });
+    case "listpresets":
+      return reply({ result: PRESETS.map((x) => ({ name: x.name, title: x.title, about: x.about })) });
+    case "applypreset": {
+      // (name): writes, reads, directory, kind rules and keep-for rules in one go.
+      const err = applyPreset(s, str(0));
+      if (err) return reply({ error: err }, 400);
+      await relay.publishMembership();
+      return reply({ result: s.policy });
+    }
     case "pullfrom": {
       // (url): copy what another relay has that this one lacks. Runs in
       // the background; pullstatus reports on it.

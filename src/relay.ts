@@ -894,7 +894,10 @@ export class Relay extends DurableObject<Env> {
     if (e.kind === KIND_NOSTR_CONNECT) return { ok: true, msg: "", stored: true }; // see gate
     const exp = expiration(e);
     if (conn) {
-      if (!this.settings.kindAllowed(e.kind)) return no("blocked: this relay does not accept kind " + e.kind);
+      // The owner's own profile and lists always land, whatever the kind
+      // rules say: a relay that refuses its owner's relay list cannot be
+      // wired into it.
+      if (!this.settings.kindAllowed(e.kind) && !(isReplaceable(e.kind) && this.settings.isOwner(e.pubkey))) return no("blocked: this relay does not accept kind " + e.kind);
       const keep = this.settings.retentionDays(e.kind);
       if (keep > 0 && e.created_at < t - keep * 86400) return no(`blocked: this relay keeps kind ${e.kind} for ${keep} days and this event is older`);
       if (p.writes === "owner" && !this.settings.isOwner(e.pubkey)) return no("restricted: only the relay owner may publish here");

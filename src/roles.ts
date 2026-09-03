@@ -36,7 +36,7 @@ export const ROLES: { role: Role; about: string }[] = [
 // Every NIP-86 method and the action it needs. claim and supportedmethods
 // are open and not listed.
 export const METHOD_ACTIONS: Record<string, Action> = {
-  stats: "read", getpolicy: "read",
+  stats: "read", getpolicy: "read", listpresets: "read",
   listbannedpubkeys: "read", listallowedpubkeys: "read", listmembers: "read", listpeople: "read", listinvites: "read",
   listbannedevents: "read", listrecentevents: "read", listallowedkinds: "read", listblockedkinds: "read", listblobs: "read", listretention: "read", listreports: "read",
   setmember: "members", allowpubkey: "members", removemember: "members", unrulepubkey: "members",
@@ -44,7 +44,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   deleteevent: "deleteEvent",
   createinvite: "invites", revokeinvite: "invites",
   resolvereport: "reports", listeventsneedingmoderation: "reports",
-  setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules",
+  setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules", applypreset: "rules",
   changerelayname: "identity", changerelaydescription: "identity", changerelayicon: "identity",
   storagestats: "storage", deleteblob: "storage",
   exportconfig: "config", importconfig: "config",
