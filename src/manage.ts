@@ -14,6 +14,7 @@ import { notify, notifySettings } from "./notify.ts";
 import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
+import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
 
 // verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
 // the request: kind 27235, fresh, u tag naming this URL, method tag, and a
@@ -64,6 +65,7 @@ const METHODS = [
   "removesubtree",
   "forkrelay",
   "setsuccession", "clearsuccession", "successionstatus",
+  "adddomain", "removedomain", "checkdomain", "listdomains",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -519,6 +521,27 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       s.update({ icon: str(0).slice(0, 2000) });
       await relay.publishMembership();
       return reply({ result: true });
+    // Custom domains: the relay under a hostname the owner controls.
+    case "adddomain": {
+      const r = await addDomain(relay, str(0));
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("error:") ? 502 : 400);
+      return reply({ result: r });
+    }
+    case "checkdomain": {
+      const r = await checkDomain(relay, str(0));
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("error:") ? 502 : 400);
+      return reply({ result: r });
+    }
+    case "removedomain": {
+      const err = await removeDomain(relay, str(0));
+      if (err) return reply({ error: err }, err.startsWith("error:") ? 502 : 400);
+      return reply({ result: true });
+    }
+    case "listdomains": {
+      const r = listDomains(relay);
+      if (typeof r === "string") return reply({ error: r }, 400);
+      return reply({ result: r });
+    }
   }
   return reply({ error: "unsupported: " + method }, 400);
 }
