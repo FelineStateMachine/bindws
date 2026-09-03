@@ -22,7 +22,7 @@ Traffic in and out is free and not counted. The console shows it so you can see 
 
 **Time awake** is how long the relay is in memory. It sleeps between messages and wakes when one arrives, so a relay nobody uses is awake for zero hours. A relay with a client connected all day is awake only while messages pass, plus a few seconds after each. Jobs on the Data tab, pulls, backfills and rebroadcasts, wake the relay on their own and spend this line while they run; a standing job spends it on every run.
 
-Dumps, the JSONL files the Data tab can write on a schedule, live next to uploaded files and count as files stored.
+Dumps, the JSONL files the Data tab can write on a schedule, live next to uploaded files and count as files stored. What each job and dump does is in [Data and names](04-data-and-names.md).
 
 **Rows written** is database work. A note costs a few rows. Reactions and other small events cost about the same.
 

@@ -17,9 +17,9 @@ Three things read that table: the write rule, the signed roster your relay publi
 
 - **Add** a member by pubkey or npub. Give them a name and a note if you like.
 - **Invite** with a link. Choose how long the link lives and how many people can use it.
-- **Limits**, two small inputs per member, for the owner only. *Keep for* is a keep-for rule in days for that person's events, on top of the kind rules: older events are refused on arrival and swept once a day, never profiles, contact lists or the relay's own records. *Cap* is the most that person may have stored, in KB; the event that would cross it is refused. Neither applies to the owner.
-- **Members invite members**, the small form under the invites. *Hops deep* is how far from you the tree may reach: 1 means only people you added or invited may invite, 2 lets their invitees invite too. *Each* is how many live invites one member may hold. Zero hops turns it off, which is the default. The member list is drawn as that tree, with who invited whom, and removing or banning someone with invitees asks whether to remove everyone under them as well. Moderators, and everyone under a moderator, stay.
-- **Role** is *member* or *moderator*, set from the selector next to the pubkey. A moderator can add and remove members, ban, delete events, mint invites and resolve reports, here or from a group-aware client. They cannot touch the owner, other moderators, rules, identity, storage or fuel.
+- **Limits**, two inputs per member for the owner: a keep-for in days and a cap in kilobytes. See [People and groups](03-people-and-groups.md#members).
+- **Members invite members**, the small form under the invites: how many hops from you the tree reaches and how many live invites each member may hold. Zero hops turns it off. See [People and groups](03-people-and-groups.md#members-invite-members).
+- **Role** is *member* or *moderator*, set from the selector next to the pubkey. What a moderator may do is in [People and groups](03-people-and-groups.md#moderators).
 
 Removing a member ends their live subscriptions when reads are members-only.
 
@@ -67,11 +67,11 @@ Name, description, icon and contact appear in your relay's public information do
 
 Banner is a wide image for the same document. Posting policy and privacy policy are links to pages you host elsewhere; both must be https. Tags, languages and countries are short lists that tell relay directories what the relay is about: topic words, language codes such as `en` or `pt-BR`, and two-letter country codes.
 
-**Your own domain** puts the relay under a hostname you control. Add the hostname; the relay registers it with the host's Cloudflare zone and shows the CNAME to create at your DNS, plus an optional TXT record that activates the hostname before you switch the CNAME. **Check** asks where it stands: the hostname is live when both the hostname and its certificate read active. **Remove** deletes the hostname and its certificate. At most three per relay. Domains are not part of the exported configuration, because they belong to this relay instance rather than to its rules.
+**Your own domain** puts the relay under a hostname you control: add it, create the CNAME shown, **Check** until it reads live, **Remove** to take it down. At most three per relay, never part of the exported configuration. See [Your relay on the web](05-your-relay-on-the-web.md#your-own-domain).
 
 ### Tell your clients
 
-One row per list that names relays: relay list (kind 10002), DM inbox (10050), search relays (10007), Blossom servers (10063). **Check** looks for your newest copy here and on the indexers. **Add me** merges this relay into it and publishes the signed result here, to the relays the list names and to the indexers; the row shows which accepted it. **Remove me** does the reverse. Lists are never rebuilt from scratch, so what you had stays.
+One row per list that names relays: relay list, DM inbox, search relays and Blossom servers. **Check** finds your newest copy, **Add me** publishes a merged list with this relay first and **Remove me** publishes it without. See [Getting started](00-getting-started.md#tell-your-clients).
 
 ## Data
 
@@ -83,11 +83,11 @@ What is here, what moves, and what leaves.
 - **Purge** deletes a kind older than a number of days, now. Zero means all of them.
 - Kinds marked **required** are never expired or purged: profiles, contact lists, relay lists, zap receipts and the roster. The relay depends on them.
 - **Files** lists uploads with sizes and a delete button.
-- **Jobs** is work the relay does on its own, one round at a time, so it survives the relay sleeping. The table lists each job with its relays, filter, schedule and last result, with run-now and remove. Three forms add jobs. **Pull** copies what another relay has and this one lacks, by NIP-77 sync; running it again fetches only what is new, files come along from relays on this host, and with an interval it is a standing mirror. **Fetch my history** pulls the owner's own events from the relays in their kind 10002 stored here, or from a given list. **Rebroadcast** forwards events matching kinds and a day window to a list of relays, walking the store with a cursor so a standing rebroadcast forwards only what arrived since. Bans and kind rules apply to what arrives; the write rule does not. The other relay has to let anyone read, or write. Events that only their author may publish are never rebroadcast, and a members-only relay never rebroadcasts private kinds. Standing jobs run every hour, six hours or day, five at most. Jobs spend awake time, which fuel counts.
+- **Jobs** is work the relay does on its own in small rounds: pulls, standing mirrors, fetch my history and rebroadcasts, with run-now and remove per job. See [Data and names](04-data-and-names.md#jobs).
 
-- **Dumps** writes every event as one JSONL file to storage, daily or weekly, and keeps the newest few (seven by default). **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading is a signed request; the files are never public. Dumps count as files for fuel.
+- **Dumps** writes every event as one JSONL file daily or weekly and keeps the newest few. **Dump now** writes one on the spot. Downloads are signed requests. See [Data and names](04-data-and-names.md#dumps).
 
-- **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. Choose a name or take a memorable one, choose who claims it (you by default, or an npub), what to copy (everything, only your events, or a list of kinds) and whether the people come along. The result is the new console URL to hand over; the new name expires like any lease unless it is claimed. One fork an hour.
+- **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. One fork an hour. See [Data and names](04-data-and-names.md#fork-this-relay).
 
 ## Health
 
@@ -107,4 +107,4 @@ The relay as a thing you hold.
 
 ### If I lose my key
 
-Name a member as your heir and pick the delay: 90, 180 or 365 days. The relay records when you last signed in (any owner-signed action counts, at most once an hour). Past the delay it starts a warning month: a message to you at once and then weekly, and a `succession_pending` date in its NIP-11 document. Any signed action calls the warning off. After the month, the relay transfers itself to the heir the same way **Transfer ownership** does, notifies both of you, and clears the plan. The heir can read the plan's status with the `successionstatus` method; moderators cannot. The plan stays out of exported configuration. If the heir leaves the relay, the plan is dropped and you are told.
+Name a member as your heir and a delay of 90, 180 or 365 days of silence. Past it the relay warns you for 30 days, then hands itself to the heir. See [People and groups](03-people-and-groups.md#if-you-lose-your-key).
