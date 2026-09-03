@@ -30,6 +30,7 @@ define("fetch", () => new Promise(() => {}));
 define("WebSocket", class { close() {} send() {} });
 define("SIGNER_URL", "/signer.js");
 define("addEventListener", () => {});
+define("ResizeObserver", class { observe() {} disconnect() {} });
 
 let failed = null;
 process.on("unhandledRejection", (e) => { failed = e; });
