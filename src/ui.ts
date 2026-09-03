@@ -69,11 +69,12 @@ footer.pg p { margin: 0; } footer.pg a { font-family: var(--mono); font-size: 12
 `;
 
 // page wraps a body in the shared shell.
-export function page(title: string, body: string, extraCSS = ""): string {
+export function page(title: string, body: string, extraCSS = "", head = ""): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHTML(title)}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${head}
 ${FONTS}
 <style>${BASE_CSS}${extraCSS}</style>
 </head><body>${body}<div id="toast"></div></body></html>`;

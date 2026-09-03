@@ -118,6 +118,7 @@ export function landing(req: Request, env: Env): Response {
     ["PUT /upload, GET /&lt;sha256&gt;", "Blossom", "kind 24242", "Stored in R2. Counted as files. HEAD /upload checks first; PUT /mirror copies from a URL; PUT /report files a report."],
     ["POST /nip96, GET /.well-known/nostr/nip96.json", "NIP-96", "NIP-98", "Same bucket and file list as Blossom. NIP-94 tags in every answer."],
     ["GET /.well-known/nostr.json", "NIP-05", "none", "Members that have a name."],
+    ["GET /e/&lt;id&gt;, /a/&lt;d&gt;, /feed.xml", "pages, Atom", "none", "Notes and articles as pages with Open Graph tags, and a feed. Only when anyone may read."],
     ["GET /fuel, POST /fuel/invoice", "NIP-57", "none", "Gauges are public. The invoice comes from a signed zap request."],
   ]);
   const limits = table(["Parameter", "Default", "Range"], [

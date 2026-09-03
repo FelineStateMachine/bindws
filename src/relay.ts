@@ -26,6 +26,7 @@ import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, p
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
+import { isPagePath, pages } from "./pages.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -655,7 +656,8 @@ export class Relay extends DurableObject<Env> {
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } });
     }
-    if (url.pathname === "/") return new Response(dashboard(), { headers: { "content-type": "text/html; charset=utf-8" } });
+    if (isPagePath(url.pathname) && req.method === "GET") return pages(this, req);
+    if (url.pathname === "/") return new Response(dashboard(),{ headers: { "content-type": "text/html; charset=utf-8" } });
     if (url.pathname === "/signer.js") return new Response(SIGNER_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=604800, immutable" } });
     if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
     return new Response("not found", { status: 404 });
