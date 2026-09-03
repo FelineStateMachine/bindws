@@ -62,6 +62,8 @@ A new relay accepts writes from its members only. To add someone:
 
 To let anyone write, set **Rules > Writes** to *anyone*. To let only yourself write, set it to *only me*.
 
+Members can bring people in too, if you let them. On the People tab, under the invites, set how many hops from you the tree may reach and how many live invites each member may hold. A member then sees a **Your invites** section on the relay's page. The People tab shows who invited whom, and removing a member can take everyone they invited along.
+
 ## Moderators
 
 On the People tab, set a member's role to *moderator*. A moderator can add and remove members, ban, delete events, mint invites and work the reports queue, from the relay's page or from a group-aware client. Rules, identity, storage and fuel stay with you.
@@ -121,6 +123,8 @@ Your data is yours. Any relay that supports sync (NIP-77) can pull everything fr
 ```
 nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
 ```
+
+Or download a dump. On the Storage tab, turn on **Dumps** and the relay writes every event as one JSONL file daily or weekly, keeping the last few. **Dump now** writes one on the spot. Downloading takes your signature; the files are never a public link.
 
 ## What it costs
 

@@ -45,7 +45,9 @@ Blobs live in R2 under `<name>/<sha256>`. Their descriptors live in the relay's 
 
 ## Alarm
 
-One alarm per object, at most a day out, sooner if a NIP-40 expiry is due or a lease expires. It flushes usage counters, charges storage, applies retention rules and sweeps expired events. A lease past its expiry is torn down whole, which returns the name to unclaimed.
+One alarm per object, at most a day out, sooner if a NIP-40 expiry is due or a lease expires. It flushes usage counters, charges storage, applies retention rules (the kind rules, then each member's own keep-for), sweeps expired events and, when the owner turned dumps on, writes a JSONL of every event to R2 (`dumps.ts`): streamed by sequence into a multipart upload, recorded in the `dumps` table, counted as media, the newest `dumpsKeep` kept. A lease past its expiry is torn down whole, which returns the name to unclaimed.
+
+Per-member caps are checked on the write path from a per-author byte count the store caches; anything that deletes clears the cache.
 
 NIP-46 traffic (kind 24133) is ephemeral, never stored and encrypted end to end, so it passes the ownership and write gates, and a subscription to it alone passes the read gate. That lets the relay carry a remote signer's session for the console, including for someone about to claim it. Bans and the per-connection rate limit still apply.
 
@@ -95,6 +97,8 @@ Moderators cannot act on the owner or on each other; only the owner appoints or 
 ## Presets and lists
 
 `src/presets.ts` holds the rule bundles (`applypreset`, `listpresets` over NIP-86), applied through the same Settings methods the console uses one at a time. The owner's own replaceable kinds pass the kind rules, so a relay can always hold its owner's lists. Wiring the relay into those lists happens in the console: it fetches the newest copy from this relay over the NIP-98 bridge and from a few indexers over websockets, merges, signs once, and publishes to every relay the list names.
+
+Members inviting members is `invited_by` on the member row, set from the invite's minter on both join doors, and a `memberInvites` rule in policy. `Settings.inviteDepth` walks the chain to the owner; `Settings.subtree` collects a member and everyone under them, stopping at moderators; `removesubtree` removes them all and publishes membership once.
 
 ## Protocol surface
 
