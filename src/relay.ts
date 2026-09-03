@@ -493,7 +493,7 @@ export class Relay extends DurableObject<Env> {
       return Response.json({ terms: this.settings.policy.joinTerms }, { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
-    if (url.pathname === "/upload" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
+    if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
     if (url.pathname === "/fuel" && req.method === "GET") {
       return Response.json({ ...this.fuelStatus(), credits: this.fuel.recentCredits() }, { headers: { "access-control-allow-origin": "*" } });
     }

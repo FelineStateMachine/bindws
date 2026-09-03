@@ -4,6 +4,8 @@
 // remove them. Authorization is a kind 24242 event in the Authorization header.
 //
 //   PUT    /upload              t=upload, x=<sha256 of body>   -> descriptor
+//   HEAD   /upload              t=upload; X-SHA-256, X-Content-Type, X-Content-Length (BUD-06)
+//   PUT    /mirror              t=upload, x=<sha256>; body {url}  -> descriptor (BUD-04)
 //   GET    /<sha256>[.ext]      public
 //   HEAD   /<sha256>[.ext]      public
 //   DELETE /<sha256>            t=delete, x=<sha256>; uploader or owner
@@ -11,6 +13,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
+import { localName } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 
 export type Blob = {
@@ -26,7 +29,9 @@ const EXT: Record<string, string> = {
   "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
   "application/pdf": "pdf", "text/plain": "txt", "application/json": "json", "text/markdown": "md",
 };
+const TYPE_BY_EXT: Record<string, string> = Object.fromEntries(Object.entries(EXT).map(([type, ext]) => [ext, type]));
 const SHA_RE = /^\/([0-9a-f]{64})(?:\.[a-z0-9]{1,8})?$/;
+const HEX64 = /^[0-9a-f]{64}$/;
 
 // verifyBlossom checks a kind 24242 event for the given action.
 export function verifyBlossom(header: string, action: "upload" | "delete", now: number): Event | string {
@@ -61,6 +66,51 @@ export function blobBytes(sql: SqlStorage): number {
   return sql.exec<{ n: number | null }>(`SELECT sum(size) AS n FROM blobs`).one().n ?? 0;
 }
 
+// fetchOrigin gets a blob for mirroring. Our own relays are reached through
+// their object, which also works in wrangler dev and tests; anything else is
+// fetched over https. Returns a Response or a reason.
+async function fetchOrigin(relay: Relay, raw: string): Promise<Response | string> {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return "invalid: url is not a URL";
+  }
+  const local = localName(u, relay.domain);
+  try {
+    if (local) return await relay.relays.getByName(local).fetch(u.href, { headers: { "x-relay-name": local } });
+    if (u.protocol !== "https:") return "invalid: only https urls can be mirrored";
+    return await fetch(u.href, { redirect: "follow" });
+  } catch (err) {
+    return "error: could not fetch the origin: " + (err instanceof Error ? err.message : String(err));
+  }
+}
+
+// readCapped collects a body, giving up as soon as it passes max bytes.
+async function readCapped(body: ReadableStream<Uint8Array> | null, max: number): Promise<Uint8Array | "too big"> {
+  if (!body) return new Uint8Array();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  const reader = body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > max) {
+      await reader.cancel();
+      return "too big";
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
 export async function blossom(relay: Relay, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const host = url.host;
@@ -70,13 +120,71 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
     new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", ...extra } });
   const reason = (msg: string, status: number) => json({ error: msg }, status, { "x-reason": msg });
   const key = (sha: string) => `${relay.slug}/${sha}`;
+  const maxBytes = () => relay.settings.policy.maxBlobMB * 1024 * 1024;
+  const tooBig = () => `invalid: blob exceeds ${relay.settings.policy.maxBlobMB} MB`;
+
+  // BUD-06: would this upload be accepted? No body either way.
+  if (req.method === "HEAD" && url.pathname === "/upload") {
+    const head = (status: number, msg = "") => new Response(null, { status, headers: { "access-control-allow-origin": "*", ...(msg ? { "x-reason": msg } : {}) } });
+    const sha = (req.headers.get("x-sha-256") ?? "").trim().toLowerCase();
+    if (!HEX64.test(sha)) return head(400, "invalid: X-SHA-256 must be a lowercase hex sha256");
+    const lengthHeader = req.headers.get("x-content-length");
+    if (lengthHeader === null || lengthHeader.trim() === "") return head(411, "invalid: X-Content-Length is required");
+    const length = Number(lengthHeader);
+    if (!Number.isInteger(length) || length < 0) return head(400, "invalid: X-Content-Length must be a whole number of bytes");
+    const auth = verifyBlossom(req.headers.get("authorization") ?? "", "upload", now);
+    if (typeof auth === "string") return head(401, auth);
+    const gate = relay.mayUpload(auth.pubkey, host);
+    if (gate) return head(403, gate);
+    if (length === 0) return head(400, "invalid: empty body");
+    if (length > maxBytes()) return head(413, tooBig());
+    const claimed = tagValues(auth, "x");
+    if (claimed.length && !claimed.includes(sha)) return head(400, "invalid: token x tag does not match the blob");
+    return head(200);
+  }
+
+  // BUD-04: copy a blob from a URL instead of receiving the bytes.
+  if (req.method === "PUT" && url.pathname === "/mirror") {
+    const auth = verifyBlossom(req.headers.get("authorization") ?? "", "upload", now);
+    if (typeof auth === "string") return reason(auth, 401);
+    const gate = relay.mayUpload(auth.pubkey, host);
+    if (gate) return reason(gate, 403);
+    let from = "";
+    try {
+      from = String((JSON.parse(await req.text()) as { url?: unknown }).url ?? "");
+    } catch {
+      return reason("invalid: body is not JSON", 400);
+    }
+    if (!from) return reason("invalid: body needs a url", 400);
+    const origin = await fetchOrigin(relay, from);
+    if (typeof origin === "string") return reason(origin, origin.startsWith("invalid:") ? 400 : 502);
+    if (!origin.ok) return reason(`error: the origin answered ${origin.status}`, 502);
+    const declared = Number(origin.headers.get("content-length"));
+    if (declared > maxBytes()) return reason(tooBig(), 413);
+    const body = await readCapped(origin.body, maxBytes());
+    if (body === "too big") return reason(tooBig(), 413);
+    if (body.length === 0) return reason("error: the origin sent an empty body", 502);
+    const sha = bytesToHex(sha256(body));
+    const claimed = tagValues(auth, "x");
+    if (claimed.length && !claimed.includes(sha)) return reason("invalid: the mirrored blob does not match the token x tag", 409);
+    const originType = (origin.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    const ext = new URL(from).pathname.split(".").pop()?.toLowerCase() ?? "";
+    const type = originType && originType !== "application/octet-stream" ? originType : (TYPE_BY_EXT[ext] ?? originType) || "application/octet-stream";
+    const existing = sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
+    if (!existing) {
+      await relay.media.put(key(sha), body, { httpMetadata: { contentType: type } });
+      sql.exec(`INSERT INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, sha, body.length, type, auth.pubkey, now);
+    }
+    relay.meterBytes(body.length, 0);
+    return json(descriptor(host, existing ?? { sha256: sha, size: body.length, type, uploader: auth.pubkey, uploaded: now }), existing ? 200 : 201);
+  }
 
   if (req.method === "PUT" && url.pathname === "/upload") {
     const auth = verifyBlossom(req.headers.get("authorization") ?? "", "upload", now);
     if (typeof auth === "string") return reason(auth, 401);
     const gate = relay.mayUpload(auth.pubkey, host);
     if (gate) return reason(gate, 403);
-    const max = relay.settings.policy.maxBlobMB * 1024 * 1024;
+    const max = maxBytes();
     const declared = Number(req.headers.get("content-length"));
     if (declared > max) return reason(`invalid: blob exceeds ${relay.settings.policy.maxBlobMB} MB`, 413);
     const body = new Uint8Array(await req.arrayBuffer());
