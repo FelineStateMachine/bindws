@@ -63,6 +63,9 @@ export function searchable(kind: number): boolean {
 
 export class Store {
   private pending: SqlStorageCursor<Record<string, SqlStorageValue>>[] = [];
+  // Event ids under a report hold: left out of every read. Settings owns the
+  // Set; the relay hands the same instance here.
+  hidden: Set<string> = new Set();
 
   constructor(private sql: SqlStorage) {}
 
@@ -199,6 +202,10 @@ export class Store {
     }
     conds.push("(expires = 0 OR expires > ?)");
     args.push(now);
+    if (this.hidden.size > 0) {
+      conds.push(`id NOT IN (SELECT value FROM json_each(?))`);
+      args.push(JSON.stringify([...this.hidden]));
+    }
     if (!who.all) {
       if (who.pubkeys.length === 0) conds.push("kind NOT IN (4,1059)");
       else {
@@ -310,6 +317,16 @@ export class Store {
     }
     const cached = this.bytesByAuthor.get(pubkey);
     if (cached !== undefined) this.bytesByAuthor.set(pubkey, cached + bytes);
+  }
+
+  // eraseAuthor deletes everything one pubkey wrote, profile included.
+  eraseAuthor(pubkey: string): number {
+    const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE pubkey=?`, pubkey).one().n;
+    if (n > 0) {
+      this.x(`DELETE FROM events WHERE pubkey=?`, pubkey);
+      this.bytesByAuthor.delete(pubkey);
+    }
+    return n;
   }
 
   // purgeAuthor deletes one pubkey's events created before `before`, except

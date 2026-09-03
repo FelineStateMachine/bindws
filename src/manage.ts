@@ -7,6 +7,7 @@ import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
+import { blockedWords, gateFields, isWriteRule } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { relaysFromList } from "./jobs.ts";
@@ -56,7 +57,7 @@ const METHODS = [
   "changerelayname", "changerelaydescription", "changerelayicon",
   "createinvite", "listinvites", "revokeinvite", "listmembers",
   "listreports", "resolvereport", "listeventsneedingmoderation",
-  "blockip", "unblockip", "listblockedips",
+  "blockip", "unblockip", "listblockedips", "setblockedwords",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
@@ -143,8 +144,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean: Record<string, unknown> = {};
       for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
-      Object.assign(clean, publicFields(patch), dumpFields(patch));
-      if (patch.writes === "open" || patch.writes === "allowlist" || patch.writes === "owner") clean.writes = patch.writes;
+      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch));
+      if (isWriteRule(patch.writes)) clean.writes = patch.writes;
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
       if (typeof patch.directoryPublic === "boolean") clean.directoryPublic = patch.directoryPublic;
@@ -165,8 +166,16 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
       if (s.isOwner(pk)) return reply({ error: "invalid: cannot ban the owner" }, 400);
       if (outranks(pk)) return reply({ error: "restricted: moderators cannot ban other moderators" }, 403);
-      await relay.ban(pk, str(1));
+      // (pubkey, reason, erase): erase deletes everything they wrote and uploaded.
+      await relay.ban(pk, str(1), params[2] === true);
       return reply({ result: true });
+    }
+    case "setblockedwords": {
+      // (words[]): content containing one is refused; the owner and moderators are exempt.
+      const words = blockedWords(params[0]);
+      if (!words) return reply({ error: "invalid: give a list of words" }, 400);
+      s.update({ blockedWords: words });
+      return reply({ result: words });
     }
     case "allowpubkey":
     case "setmember": {
@@ -276,7 +285,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "listreports": {
       const status = str(0) || "open";
       // blob says whether target_event is a file this relay still holds (BUD-09).
-      return reply({ result: relay.sql.exec(`SELECT r.*, EXISTS(SELECT 1 FROM blobs b WHERE b.sha256=r.target_event) AS blob FROM reports r WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });
+      return reply({ result: relay.sql.exec(`SELECT r.*, EXISTS(SELECT 1 FROM blobs b WHERE b.sha256=r.target_event) AS blob, EXISTS(SELECT 1 FROM event_rules e WHERE e.id=r.target_event AND e.rule='hide') AS hidden FROM reports r WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });
     }
     case "resolvereport": {
       const id = str(0);
@@ -295,10 +304,12 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (action === "ban") {
         if (s.isOwner(row.target_pubkey)) return reply({ error: "invalid: cannot ban the owner" }, 400);
         if (outranks(row.target_pubkey)) return reply({ error: "restricted: moderators cannot ban other moderators" }, 403);
-        await relay.ban(row.target_pubkey, "report " + id.slice(0, 8));
+        await relay.ban(row.target_pubkey, "report " + id.slice(0, 8), params[2] === true);
         await remove();
       } else if (action === "delete") await remove();
       relay.sql.exec(`UPDATE reports SET status='resolved', resolved_by=?, resolved_at=?, action=? WHERE id=?`, caller, t, action, id);
+      // A dismissal that clears the last open report lifts the hold.
+      if (action === "dismiss" && row.target_event && s.isEventHidden(row.target_event) && relay.sql.exec(`SELECT 1 FROM reports WHERE target_event=? AND status='open'`, row.target_event).toArray().length === 0) s.setEvent(row.target_event, null);
       return reply({ result: true });
     }
     case "exportconfig":

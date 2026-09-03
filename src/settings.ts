@@ -39,7 +39,17 @@ export interface Policy {
   languageTags: string[]; // BCP-47, such as en or pt-BR
   relayCountries: string[]; // ISO 3166-1 alpha-2, such as US
   notify: NotifySettings; // relay-signed NIP-17 messages to the owner
-  writes: "open" | "allowlist" | "owner"; // who may publish
+  writes: "open" | "allowlist" | "wot" | "owner"; // who may publish; wot is members and their follows
+  // Guests: kinds anyone may write whatever the write rule says, and
+  // whether anyone may reply to a member's note or comment thread.
+  openKinds: number[];
+  guestReplies: boolean;
+  // Content containing one of these, case-insensitive, is refused unless the
+  // author is the owner or a moderator.
+  blockedWords: string[];
+  // Open reports from this many distinct reporters hide an event until a
+  // moderator resolves them; 0 turns it off.
+  reportThreshold: number;
   reads: "open" | "auth" | "members"; // whether REQ/COUNT need NIP-42, or membership
   joinTerms: string; // shown before an invite is accepted (markdown-ish plain text)
   directoryPublic: boolean; // whether the people directory is shown to visitors
@@ -77,6 +87,10 @@ export const DEFAULT_POLICY: Policy = {
   notify: { reports: false, fuel: false, jobs: false, succession: false },
   succession: null,
   writes: "open",
+  openKinds: [],
+  guestReplies: false,
+  blockedWords: [],
+  reportThreshold: 0,
   reads: "open",
   joinTerms: "",
   directoryPublic: true,
@@ -157,6 +171,44 @@ export function dumpFields(patch: Record<string, unknown>): Partial<Policy> {
 
 export const NAME_RE = /^[a-z0-9._-]{1,64}$/;
 
+export const WRITE_RULES = ["open", "allowlist", "wot", "owner"] as const;
+export type WriteRule = (typeof WRITE_RULES)[number];
+export const isWriteRule = (v: unknown): v is WriteRule => typeof v === "string" && (WRITE_RULES as readonly string[]).includes(v);
+
+const MAX_OPEN_KINDS = 50;
+const MAX_BLOCKED_WORDS = 200;
+// How many pubkeys the web of trust may hold; past it the newest lists are dropped.
+export const MAX_WOT = 50_000;
+
+// blockedWords cleans a list: lowercased, trimmed, 2 to 64 characters, unique, capped.
+export function blockedWords(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const seen = new Set<string>();
+  for (const x of v) {
+    if (typeof x !== "string") continue;
+    const w = x.trim().toLowerCase().replace(/\s+/g, " ");
+    if (w.length >= 2 && w.length <= 64) seen.add(w);
+    if (seen.size === MAX_BLOCKED_WORDS) break;
+  }
+  return [...seen];
+}
+
+// gateFields validates the guest, blocked-word and report-threshold parts of
+// a policy patch. Anything that does not fit is dropped.
+export function gateFields(patch: Record<string, unknown>): Partial<Policy> {
+  const out: Partial<Policy> = {};
+  if (Array.isArray(patch.openKinds)) {
+    const seen = new Set<number>();
+    for (const k of patch.openKinds) if (Number.isInteger(k) && (k as number) >= 0 && (k as number) <= 65535) seen.add(k as number);
+    out.openKinds = [...seen].sort((a, b) => a - b).slice(0, MAX_OPEN_KINDS);
+  }
+  if (typeof patch.guestReplies === "boolean") out.guestReplies = patch.guestReplies;
+  const words = blockedWords(patch.blockedWords);
+  if (words) out.blockedWords = words;
+  if (Number.isInteger(patch.reportThreshold) && (patch.reportThreshold as number) >= 0 && (patch.reportThreshold as number) <= 100) out.reportThreshold = patch.reportThreshold as number;
+  return out;
+}
+
 const TAG_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const LANG_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
 const COUNTRY_RE = /^[A-Z]{2}$/;
@@ -208,6 +260,12 @@ export class Settings {
   private banned = new Set<string>();
   private memberSet = new Set<string>();
   private bannedEvents = new Set<string>();
+  // Events hidden by reports until a moderator looks. The store holds the
+  // same Set and leaves them out of every read.
+  readonly hiddenEvents = new Set<string>();
+  // The web of trust: members and the owner, plus everyone in their newest
+  // contact lists. Only consulted when the write rule is wot.
+  private wot = new Set<string>();
   private blockedIPs = new Set<string>();
   private limits = new Map<string, MemberLimits>();
   private allowedKinds = new Set<number>();
@@ -228,12 +286,71 @@ export class Settings {
       this.memberSet.add(r.pubkey);
       if (r.keep_days > 0 || r.max_bytes > 0) this.limits.set(r.pubkey, { keep: r.keep_days, cap: r.max_bytes });
     }
-    for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM event_rules WHERE rule='ban'`)) this.bannedEvents.add(r.id);
+    for (const r of this.sql.exec<{ id: string; rule: string }>(`SELECT id, rule FROM event_rules WHERE rule IN ('ban','hide')`)) (r.rule === "ban" ? this.bannedEvents : this.hiddenEvents).add(r.id);
     for (const r of this.sql.exec<{ ip: string }>(`SELECT ip FROM ip_rules`)) this.blockedIPs.add(r.ip);
     for (const r of this.sql.exec<{ kind: number; rule: string }>(`SELECT kind, rule FROM kind_rules`)) {
       (r.rule === "allow" ? this.allowedKinds : this.blockedKinds).add(r.kind);
     }
     for (const r of this.sql.exec<{ kind: number; days: number }>(`SELECT kind, days FROM retention`)) this.retention.set(r.kind, r.days);
+    if (this.policy.writes === "wot") this.rebuildWot();
+  }
+
+  // ---- the write rule ----
+
+  // mayWrite applies the write rule to a pubkey: "" allows, else the reason.
+  mayWrite(pubkey: string): string {
+    switch (this.policy.writes) {
+      case "open":
+        return "";
+      case "owner":
+        return this.isOwner(pubkey) ? "" : "restricted: only the relay owner may publish here";
+      case "allowlist":
+        return this.isAllowed(pubkey) ? "" : "restricted: this relay only accepts events from its members";
+      case "wot":
+        return this.isAllowed(pubkey) || this.wot.has(pubkey) ? "" : "restricted: this relay only accepts events from its members and the people they follow";
+    }
+  }
+  isTrusted(pubkey: string) {
+    return this.wot.has(pubkey);
+  }
+  get wotSize() {
+    return this.wot.size;
+  }
+  // rebuildWot reads the newest kind 3 of the owner and every member, one hop.
+  rebuildWot() {
+    const next = new Set<string>();
+    const people = [this.policy.owner, ...this.memberSet].filter(Boolean);
+    for (const pk of people) {
+      const row = this.sql.exec<{ raw: string }>(`SELECT raw FROM events WHERE kind=3 AND pubkey=? ORDER BY created_at DESC LIMIT 1`, pk).toArray()[0];
+      if (!row) continue;
+      let tags: unknown;
+      try {
+        tags = (JSON.parse(row.raw) as { tags?: unknown }).tags;
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(tags)) continue;
+      for (const t of tags) {
+        if (Array.isArray(t) && t[0] === "p" && typeof t[1] === "string" && /^[0-9a-f]{64}$/.test(t[1])) next.add(t[1]);
+        if (next.size >= MAX_WOT) break;
+      }
+      if (next.size >= MAX_WOT) break;
+    }
+    this.wot = next;
+  }
+  // noteContacts is called when a kind 3 lands: a member's list changes the web.
+  noteContacts(pubkey: string) {
+    if (this.policy.writes === "wot" && this.isAllowed(pubkey)) this.rebuildWot();
+  }
+  private membersChanged() {
+    if (this.policy.writes === "wot") this.rebuildWot();
+  }
+
+  // hasBlockedWord says whether text contains one of the blocked words.
+  hasBlockedWord(text: string): boolean {
+    if (this.policy.blockedWords.length === 0 || text === "") return false;
+    const lower = text.toLowerCase();
+    return this.policy.blockedWords.some((w) => lower.includes(w));
   }
 
   // migrateMembers folds the earlier allow list and names table into members,
@@ -256,8 +373,11 @@ export class Settings {
   }
 
   update(patch: Partial<Policy>) {
+    const wasWot = this.policy.writes === "wot";
     this.policy = { ...this.policy, ...patch };
     this.sql.exec(`INSERT INTO settings(key,value) VALUES('policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, JSON.stringify(this.policy));
+    if (this.policy.writes === "wot" && !wasWot) this.rebuildWot();
+    if (this.policy.writes !== "wot") this.wot.clear();
   }
 
   isOwner(pubkey: string) {
@@ -280,7 +400,7 @@ export class Settings {
   // to the defaults. Identity, people and bans stay.
   resetRules() {
     const d = DEFAULT_POLICY;
-    this.update({ writes: d.writes, reads: d.reads, directoryPublic: d.directoryPublic, maxBlobMB: d.maxBlobMB, eventsPerMinute: d.eventsPerMinute, reqsPerMinute: d.reqsPerMinute, minPow: d.minPow, maxFuture: d.maxFuture, maxLimit: d.maxLimit, maxSubs: d.maxSubs });
+    this.update({ writes: d.writes, reads: d.reads, openKinds: d.openKinds, guestReplies: d.guestReplies, directoryPublic: d.directoryPublic, maxBlobMB: d.maxBlobMB, eventsPerMinute: d.eventsPerMinute, reqsPerMinute: d.reqsPerMinute, minPow: d.minPow, maxFuture: d.maxFuture, maxLimit: d.maxLimit, maxSubs: d.maxSubs });
     for (const k of [...this.listKinds("allow"), ...this.listKinds("block")]) this.setKind(k, null);
     for (const r of this.listRetention()) this.setRetention(r.kind, 0);
   }
@@ -329,6 +449,7 @@ export class Settings {
     this.update({ owner: pubkey, succession: null });
     this.sql.exec(`UPDATE members SET role='moderator' WHERE pubkey=?`, old);
     this.sql.exec(`UPDATE members SET role='owner' WHERE pubkey=?`, pubkey);
+    this.membersChanged();
     return "";
   }
 
@@ -403,6 +524,7 @@ export class Settings {
       const role = this.isOwner(pubkey) ? "owner" : "member";
       this.sql.exec(`INSERT INTO members(pubkey,role,name,note,joined_at,via,keep_days,max_bytes,invited_by) VALUES(?,?,?,?,?,?,?,?,?)`, pubkey, role, name, note, now, (patch.via ?? "added").slice(0, 40), keep, cap, patch.invitedBy ?? "");
       this.memberSet.add(pubkey);
+      this.membersChanged();
     }
     if (keep > 0 || cap > 0) this.limits.set(pubkey, { keep, cap });
     else this.limits.delete(pubkey);
@@ -413,7 +535,9 @@ export class Settings {
     if (this.isOwner(pubkey)) return false;
     this.memberSet.delete(pubkey);
     this.limits.delete(pubkey);
-    return this.sql.exec(`DELETE FROM members WHERE pubkey=?`, pubkey).rowsWritten > 0;
+    const gone = this.sql.exec(`DELETE FROM members WHERE pubkey=?`, pubkey).rowsWritten > 0;
+    if (gone) this.membersChanged();
+    return gone;
   }
 
   // ---- portable configuration ----
@@ -443,8 +567,8 @@ export class Settings {
     const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
     const clean: Partial<Policy> = {};
     for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
-    Object.assign(clean, publicFields(policy), dumpFields(policy));
-    if (policy.writes === "open" || policy.writes === "allowlist" || policy.writes === "owner") clean.writes = policy.writes;
+    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy));
+    if (isWriteRule(policy.writes)) clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
     const notify = notifySettings(policy.notify, this.policy.notify);
@@ -499,20 +623,25 @@ export class Settings {
     return this.banned.has(pubkey);
   }
 
-  // Event rules
-  setEvent(id: string, rule: "ban" | null, reason = "", now = 0) {
+  // Event rules: ban refuses an id for good; hide keeps it out of every read
+  // until a moderator resolves the reports on it.
+  setEvent(id: string, rule: "ban" | "hide" | null, reason = "", now = 0) {
     this.bannedEvents.delete(id);
+    this.hiddenEvents.delete(id);
     this.sql.exec(`DELETE FROM event_rules WHERE id=?`, id);
     if (rule) {
-      this.bannedEvents.add(id);
+      (rule === "ban" ? this.bannedEvents : this.hiddenEvents).add(id);
       this.sql.exec(`INSERT INTO event_rules(id,rule,reason,at) VALUES(?,?,?,?)`, id, rule, reason, now);
     }
   }
-  listEvents(rule: "ban") {
+  listEvents(rule: "ban" | "hide") {
     return this.sql.exec<{ id: string; reason: string }>(`SELECT id, reason FROM event_rules WHERE rule=? ORDER BY at DESC`, rule).toArray();
   }
   isEventBanned(id: string) {
     return this.bannedEvents.has(id);
+  }
+  isEventHidden(id: string) {
+    return this.hiddenEvents.has(id);
   }
 
   // Address blocks (NIP-86 blockip). Addresses churn, so these are not part

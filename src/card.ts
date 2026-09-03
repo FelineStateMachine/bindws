@@ -31,7 +31,7 @@ export interface Card {
   self?: string;
   members?: number; // only when the directory is public
   reads?: "open" | "auth" | "members";
-  writes?: "open" | "allowlist" | "owner";
+  writes?: "open" | "allowlist" | "wot" | "owner";
   fuel?: "allowance" | "burning" | "out";
   naddr?: string;
   signed_url?: string;
@@ -129,7 +129,7 @@ export function cardSVG(c: Card): string {
     lines = wrap(c.description || "A nostr relay on bind.ws.", 46, 2);
     const parts = [
       c.members !== undefined ? `${c.members} ${c.members === 1 ? "member" : "members"}` : "",
-      c.writes === "open" ? "anyone writes" : c.writes === "allowlist" ? "members write" : "owner writes",
+      c.writes === "open" ? "anyone writes" : c.writes === "allowlist" ? "members write" : c.writes === "wot" ? "members and follows write" : "owner writes",
       c.reads === "open" ? "anyone reads" : c.reads === "auth" ? "sign in to read" : "members read",
       c.fuel === "out" ? "out of fuel" : c.fuel === "burning" ? "burning sats" : "on free allowance",
     ].filter(Boolean);

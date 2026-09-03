@@ -150,6 +150,7 @@ export class Relay extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.store.init();
       this.settings.load();
+    this.store.hidden = this.settings.hiddenEvents;
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
       this.lnurl = (await ctx.storage.get<LnurlParams>("lnurl")) ?? null;
@@ -272,10 +273,16 @@ export class Relay extends DurableObject<Env> {
     return gone;
   }
 
-  async ban(pubkey: string, reason: string): Promise<void> {
+  // ban refuses a pubkey from now on; with erase, everything they wrote and
+  // uploaded goes too, their profile included.
+  async ban(pubkey: string, reason: string, erase = false): Promise<void> {
     const was = this.settings.isAllowed(pubkey);
     this.settings.setBan(pubkey, true, reason, now());
     this.evict(pubkey, "blocked: you are banned from this relay", true);
+    if (erase) {
+      this.store.eraseAuthor(pubkey);
+      for (const b of this.sql.exec<{ sha256: string }>(`SELECT sha256 FROM blobs WHERE uploader=?`, pubkey).toArray()) await this.deleteBlob(b.sha256);
+    }
     if (was) await this.publishMembership({ pubkey, added: false });
   }
 
@@ -342,8 +349,8 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed";
     if (this.settings.leaseExpired(now())) return "restricted: this temporary relay has expired";
     if (this.settings.isBanned(pubkey)) return "blocked: this pubkey is banned from this relay";
-    if (p.writes === "owner" && !this.settings.isOwner(pubkey)) return "restricted: only the relay owner may upload here";
-    if (p.writes === "allowlist" && !this.settings.isAllowed(pubkey)) return "restricted: this relay only accepts uploads from its members";
+    const why = this.settings.mayWrite(pubkey);
+    if (why) return why.replace("publish here", "upload here").replace("accepts events", "accepts uploads");
     if (this.fuelStatus().outOfFuel) return "restricted: this relay is out of fuel; zap it at https://" + host + "/ to top up";
     return "";
   }
@@ -379,6 +386,7 @@ export class Relay extends DurableObject<Env> {
     this.identity = new Identity(this.ctx.storage);
     this.store.init();
     this.settings.load();
+    this.store.hidden = this.settings.hiddenEvents;
     this.fuel.init();
     await this.ctx.storage.put("slug", this.slug);
   }
@@ -1117,6 +1125,11 @@ export class Relay extends DurableObject<Env> {
     if (exp > 0 && exp <= t) return "invalid: event has already expired";
     if (this.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
     if (this.settings.isEventBanned(e.id)) return "blocked: this event is banned from this relay";
+    // Blocked words: the owner and moderators may say anything, nobody else may say these.
+    if (e.content !== "" && this.settings.hasBlockedWord(e.content)) {
+      const role = this.settings.roleOf(e.pubkey);
+      if (role !== "owner" && role !== "moderator") return "blocked: content contains a blocked word";
+    }
     // NIP-46 traffic passes the ownership, fuel and write gates: it is
     // ephemeral, never stored, and readable only by its two parties, and
     // letting it through means this relay can carry a remote signer's
@@ -1152,9 +1165,31 @@ export class Relay extends DurableObject<Env> {
       `INSERT OR IGNORE INTO reports(id,reporter,target_pubkey,target_event,type,content,at) VALUES(?,?,?,?,?,?,?)`,
       e.id, e.pubkey, p, et?.[1] ?? "", type.slice(0, 32), e.content.slice(0, 2000), e.created_at,
     );
+    // Enough distinct reporters hide an event until a moderator looks.
+    const th = this.settings.policy.reportThreshold;
+    const target = et?.[1] ?? "";
+    if (th > 0 && /^[0-9a-f]{64}$/.test(target) && !this.settings.isEventHidden(target) && !this.settings.isEventBanned(target)) {
+      const n = this.sql.exec<{ n: number }>(`SELECT count(DISTINCT reporter) AS n FROM reports WHERE target_event=? AND status='open'`, target).one().n;
+      if (n >= th && this.sql.exec(`SELECT 1 FROM events WHERE id=?`, target).toArray().length) this.settings.setEvent(target, "hide", `${n} reports`, e.created_at);
+    }
     const where = host ? `https://${host}/#people` : "the People tab";
     void notify(this, "reports", `New report on ${this.slug}: ${type || "report"} about ${p.slice(0, 8)}${et ? " (event " + et[1].slice(0, 8) + ")" : ""} by ${e.pubkey.slice(0, 8)}.${e.content ? " " + e.content.slice(0, 300) : ""} Review it at ${where}`, "a report on " + this.slug);
     return { ok: true, msg: "info: report received", stored: false };
+  }
+
+  // guestPass lets a stranger through a limited write rule: a kind the owner
+  // opened to anyone, or, when replies are open, a note or comment that
+  // answers something a member or the owner wrote here.
+  private guestPass(e: Event): boolean {
+    const p = this.settings.policy;
+    if (p.openKinds.includes(e.kind)) return true;
+    if (!p.guestReplies || (e.kind !== 1 && e.kind !== 1111)) return false;
+    const parents = [...tagValues(e, "e"), ...tagValues(e, "E")].filter((id) => /^[0-9a-f]{64}$/.test(id)).slice(0, 5);
+    for (const id of parents) {
+      const row = this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM events WHERE id=?`, id).toArray()[0];
+      if (row && this.settings.isAllowed(row.pubkey)) return true;
+    }
+    return false;
   }
 
   // accept runs the write-side rules and stores the event. conn is null for
@@ -1181,8 +1216,8 @@ export class Relay extends DurableObject<Env> {
         if (lim.keep > 0 && !isProtected(e.kind) && !isReplaceable(e.kind) && e.created_at < t - lim.keep * 86400) return no(`blocked: this relay keeps your events for ${lim.keep} days and this event is older`);
         if (lim.cap > 0 && this.store.authorBytes(e.pubkey) + canonical(e).length > lim.cap) return no(`restricted: you have reached your storage cap of ${Math.max(1, Math.round(lim.cap / 1024))} KB on this relay`);
       }
-      if (p.writes === "owner" && !this.settings.isOwner(e.pubkey)) return no("restricted: only the relay owner may publish here");
-      if (p.writes === "allowlist" && !this.settings.isAllowed(e.pubkey)) return no("restricted: this relay only accepts events from its members");
+      const why = this.settings.mayWrite(e.pubkey);
+      if (why && !this.guestPass(e)) return no(why);
       if (p.minPow > 0) {
         const d = difficulty(e);
         if (d.difficulty < p.minPow) return no(`pow: difficulty ${d.difficulty} is less than ${p.minPow}`);
@@ -1199,6 +1234,7 @@ export class Relay extends DurableObject<Env> {
     const err = this.store.save(e, t);
     if (err === ERR_DUPLICATE) return { ok: true, msg: err, stored: false };
     if (err) return no(err);
+    if (e.kind === 3) this.settings.noteContacts(e.pubkey);
     this.store.noteSaved(e.pubkey, canonical(e).length, isReplaceable(e.kind));
     if (exp > 0) this.scheduleSweep(exp);
     else this.ensureAlarm();
