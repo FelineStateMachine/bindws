@@ -32,7 +32,8 @@ A moderator who signs in on the relay's page sees People and Moderation, nothing
 Keeping order. Reports never show in the feed.
 
 - **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
-- **Ban** a pubkey. Their events are refused and their open connections are closed.
+- **Ban** a pubkey. Their events are refused and their open connections are closed. Tick **erase** and everything they wrote here, their profile included, and every file they uploaded goes too. The row action asks the same question; so does banning from a report.
+- **Hide after N reports.** Set a number and an event reported by that many different people is hidden: not served, counted, synced, rebroadcast or shown on a page, until a moderator resolves the reports. Dismissing the last open report shows it again; deleting or banning makes it permanent. Reports on a person or a file never hide anything. Hidden events are marked in the reports table.
 - **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
 - **Recent events** shows the feed with delete and ban actions.
 
@@ -42,7 +43,8 @@ Who can do what, and how much.
 
 | Rule | Choices |
 |---|---|
-| Writes | anyone, members, only me |
+| Writes | anyone, members, members and their follows, only me |
+| Open to anyone | kinds anyone may write whatever the write rule says, and whether anyone may reply to a member |
 | Reads | anyone, signed in, members |
 | Proof of work | minimum bits an event must carry, 0 to disable |
 | Timestamp window | how far in the future an event may be dated |
@@ -50,8 +52,15 @@ Who can do what, and how much.
 | Rate limits | events and queries per minute, per connection; an address gets four times that across all its connections |
 | Upload size | largest file in megabytes, up to 95 |
 | Kinds | allow list and block list by kind number |
+| Blocked words | content containing one is refused |
 
 An empty allow list means every kind. Blocks always win.
+
+**Members and their follows** is a web of trust one hop wide: members and the owner may write, and so may everyone in their newest contact lists (kind 3) stored here. The web is rebuilt whenever a member's list arrives or the member list changes, and holds up to 50,000 pubkeys. Clients see the relay as restricted, and the group as closed, the same as the members rule.
+
+**Open to anyone** loosens a limited rule for guests without opening it. List kinds, such as 7 for reactions, and anyone may write those. Switch on replies and anyone may answer a note (kind 1) or a comment (kind 1111) by a member or by you, one hop: a reply to a guest's reply is not a reply to a member. Bans, blocked words, kind rules, proof of work, fuel and the rate limits still apply to guests.
+
+**Blocked words** is a list, one word or phrase per line, lowercased and matched anywhere in the content of any kind. An event that contains one is refused with a reason that says so. You and your moderators are exempt, and moderators may edit the list. Tags are not searched.
 
 The per-address limit is what stops a client from opening many sockets to multiply its allowance. It also serves as the HTTP bridge's rate limit, which has no socket to meter. Address buckets live in memory and reset when the relay sleeps.
 

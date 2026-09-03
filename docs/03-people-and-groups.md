@@ -17,6 +17,12 @@ Two limits sit in each row, for the owner only. **Keep for** is a keep-for rule 
 
 Removing a member ends their live subscriptions when reads are members-only.
 
+## Guests
+
+A members-only relay does not have to be silent to everyone else. On the Rules tab, **Open to anyone** lists kinds a stranger may write regardless of the write rule, reactions and zap receipts being the usual ones, and a switch lets anyone reply to a member's note or comment. A reply is one hop: answering a guest's reply is not answering a member. Everything else still applies to guests, bans and blocked words first.
+
+**Members and their follows** is the wider door: the write rule that admits every pubkey in a member's contact list, one hop from the member list. It rebuilds itself as lists arrive and members come and go.
+
 ## Invites
 
 **New invite link** mints a link that lives one hour to 30 days, three days by default, and takes as many people as you allow, or any number if you leave the count at zero. The person opens it, reads the join terms, signs once and becomes a member.
@@ -34,6 +40,10 @@ The member list is drawn as that tree, with who invited whom. Removing or bannin
 Set a member's role to *moderator* from the selector in their row. A moderator can add and edit plain members, ban, delete events, mint invites and resolve reports, from the relay's page or from a group-aware client. They cannot touch the owner or other moderators, and rules, identity, data and fuel stay with you. Only the owner appoints or removes moderators.
 
 A moderator who signs in on the relay's page sees the People and Moderation tabs, nothing else. What the Moderation tab holds is in [Relay configuration](01-relay-configuration.md#moderation).
+
+## Keeping order
+
+Three tools for the noise a bigger relay attracts, all on the Rules and Moderation tabs. **Blocked words** refuse any content that contains one, from anyone but you and your moderators. **Ban and erase** removes a person together with everything they wrote and uploaded. **Hide after N reports** takes an event out of view once that many different people have reported it, until a moderator looks. The [configuration guide](01-relay-configuration.md) has the details.
 
 ## Groups in clients
 
