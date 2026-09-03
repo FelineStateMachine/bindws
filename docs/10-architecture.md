@@ -65,4 +65,4 @@ On claim, the object generates a keypair, advertised as `self` in NIP-11. It sig
 
 ## Protocol surface
 
-NIP-01, 09, 11, 13, 17/59 private kinds, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02. `test/conformance` is a black-box suite that runs against any relay URL.
+NIP-01, 09, 11, 13, 17/59 private kinds, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02/04/06. `test/conformance` is a black-box suite that runs against any relay URL.
