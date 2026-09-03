@@ -8,7 +8,7 @@
 // the write policy: a join request comes from a stranger by definition, and
 // a moderator moderates whatever the write rule says.
 import { now, tagValues, type Event } from "./event.ts";
-import { claimInvite, mintInvite } from "./invites.ts";
+import { claimInvite, inviteCreator, memberInviteGate, mintInvite } from "./invites.ts";
 import { KIND_PROFILE, KIND_PUT_USER, KIND_REMOVE_USER, type GroupFacts } from "./identity.ts";
 import { can, ROLES, type Action } from "./roles.ts";
 import type { Relay } from "./relay.ts";
@@ -77,9 +77,13 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       if (s.isAllowed(e.pubkey)) return no("duplicate: already a member");
       const code = tagValues(e, "code")[0] ?? "";
       let via = "";
+      let invitedBy = "";
       if (code) {
         const r = claimInvite(relay.sql, code, t);
-        if (r === "ok") via = "invite " + code.slice(0, 8);
+        if (r === "ok") {
+          via = "invite " + code.slice(0, 8);
+          invitedBy = inviteCreator(relay.sql, code);
+        }
         else if (s.policy.writes !== "open") {
           return no("restricted: " + { invite_invalid: "that invite code is not valid", invite_expired: "that invite has expired", invite_exhausted: "that invite has been used up" }[r]);
         }
@@ -88,7 +92,7 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
         if (s.policy.writes !== "open") return no("restricted: this group is closed; join with an invite");
         via = "join";
       }
-      const err = await relay.setMember(e.pubkey, { via });
+      const err = await relay.setMember(e.pubkey, { via, invitedBy });
       return err ? no(err) : OK;
     }
     case KIND_LEAVE: {
@@ -103,7 +107,7 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       if (!claim) return no("restricted: a join request needs a claim tag with an invite code.");
       const r = claimInvite(relay.sql, claim, t);
       if (r !== "ok") return no({ invite_invalid: "restricted: that is an invalid invite code.", invite_expired: "restricted: that invite code is expired.", invite_exhausted: "restricted: that invite code has been used up." }[r]);
-      const err = await relay.setMember(e.pubkey, { via: "invite " + claim.slice(0, 8) });
+      const err = await relay.setMember(e.pubkey, { via: "invite " + claim.slice(0, 8), invitedBy: inviteCreator(relay.sql, claim) });
       return err ? no(err) : { ok: true, msg: "info: welcome to " + relay.slug + "!", stored: false };
     }
     case KIND_NIP43_LEAVE: {
@@ -166,7 +170,8 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       return OK;
     }
     case KIND_CREATE_INVITE: {
-      const gate = need("invites");
+      // Plain members may mint too when the owner opened the invite tree.
+      const gate = role === "member" ? memberInviteGate(s, relay.sql, e.pubkey, t) : need("invites");
       if (gate) return no(gate);
       const r = mintInvite(relay.sql, e.pubkey, 0, 0, e.content, t, tagValues(e, "code")[0] ?? "");
       return typeof r === "string" ? no(r) : OK;

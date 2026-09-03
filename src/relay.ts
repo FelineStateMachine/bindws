@@ -19,7 +19,7 @@ import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
 import { nip96 } from "./nip96.ts";
 import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
-import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
+import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import type { PullJob, PullResult } from "./pull.ts";
@@ -204,7 +204,7 @@ export class Relay extends DurableObject<Env> {
   }
 
   // setMember edits or adds a person and publishes the roster if membership changed.
-  async setMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; keepDays?: number; maxBytes?: number }, force = false): Promise<string> {
+  async setMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; invitedBy?: string; keepDays?: number; maxBytes?: number }, force = false): Promise<string> {
     const was = this.settings.isAllowed(pubkey);
     const err = this.settings.upsertMember(pubkey, patch, now(), force);
     if (err) return err;
@@ -217,6 +217,20 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.policy.reads === "members") this.evict(pubkey, "restricted: this relay only serves its members", false);
     await this.publishMembership({ pubkey, added: false });
     return true;
+  }
+
+  // removeSubtree removes a member and everyone they invited, plain members
+  // only (see Settings.subtree), and publishes membership once for all of
+  // them. Returns who went.
+  async removeSubtree(pubkey: string): Promise<string[]> {
+    const gone: string[] = [];
+    for (const pk of this.settings.subtree(pubkey)) {
+      if (!this.settings.removeMember(pk)) continue;
+      if (this.settings.policy.reads === "members") this.evict(pk, "restricted: this relay only serves its members", false);
+      gone.push(pk);
+    }
+    if (gone.length) await this.publishMembership(...gone.map((pk) => ({ pubkey: pk, added: false })));
+    return gone;
   }
 
   async ban(pubkey: string, reason: string): Promise<void> {
@@ -572,7 +586,7 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.isAllowed(auth.pubkey)) return json({ status: "already_member", role: this.settings.isOwner(auth.pubkey) ? "owner" : "member" });
     const r = claimInvite(this.sql, code, now());
     if (r !== "ok") return json({ error: r }, 403);
-    this.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8) }, now());
+    this.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8), invitedBy: inviteCreator(this.sql, code) }, now());
     await this.publishMembership({ pubkey: auth.pubkey, added: true });
     return json({ status: "joined", role: "member" });
   }

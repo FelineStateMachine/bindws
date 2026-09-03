@@ -5,7 +5,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { now, tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
-import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
+import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
@@ -61,6 +61,7 @@ const METHODS = [
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
   "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner", "notifytest",
   "listdumps", "deletedump", "dumpnow",
+  "removesubtree",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -108,7 +109,10 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
   // One permission table for the console and for NIP-29 (roles.ts).
   const role = s.roleOf(caller);
   const action = METHOD_ACTIONS[method];
-  if (!action || !can(role, action)) {
+  // A plain member reaches their own invites when the owner opened the
+  // invite tree (memberInvites); the cases below keep them to their own.
+  const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
+  if (!ownInvites && (!action || !can(role, action))) {
     const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
     return reply({ error: why }, 403);
   }
@@ -194,16 +198,37 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "listallowedpubkeys":
       return reply({ result: s.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, reason: m.note })) });
     case "listmembers":
-    case "listpeople":
-      return reply({ result: { self: relay.identity.pubkey, members: s.members() } });
+    case "listpeople": {
+      // Each member carries how many live invites they hold, for the tree.
+      const minted = new Map<string, number>();
+      for (const r of relay.sql.exec<{ created_by: string; n: number }>(`SELECT created_by, count(*) AS n FROM invites WHERE expires_at>=? AND (max_uses=0 OR uses<max_uses) GROUP BY created_by`, t)) minted.set(r.created_by, r.n);
+      return reply({ result: { self: relay.identity.pubkey, members: s.members().map((m) => ({ ...m, invites: minted.get(m.pubkey) ?? 0 })) } });
+    }
     case "createinvite": {
+      if (role === "member") {
+        const gate = memberInviteGate(s, relay.sql, caller, t);
+        if (gate) return reply({ error: gate }, 403);
+      }
       const inv = mintInvite(relay.sql, caller, num(0) || 0, num(1) || 0, str(2), t);
       return typeof inv === "string" ? reply({ error: inv }, 400) : reply({ result: inv });
     }
-    case "listinvites":
-      return reply({ result: listInvites(relay.sql, t) });
-    case "revokeinvite":
+    case "listinvites": {
+      const all = listInvites(relay.sql, t);
+      return reply({ result: role === "member" ? all.filter((i) => i.created_by === caller) : all });
+    }
+    case "revokeinvite": {
+      if (role === "member" && inviteCreator(relay.sql, str(0)) !== caller) return reply({ error: "restricted: not your invite" }, 403);
       return reply({ result: revokeInvite(relay.sql, str(0)) });
+    }
+    case "removesubtree": {
+      // (pubkey): the member and everyone they invited, plain members only.
+      const pk = str(0);
+      if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
+      if (s.isOwner(pk)) return reply({ error: "invalid: cannot remove the owner" }, 400);
+      if (outranks(pk)) return reply({ error: "restricted: moderators cannot remove the owner or other moderators" }, 403);
+      const removed = await relay.removeSubtree(pk);
+      return reply({ result: { removed } });
+    }
     case "banevent": {
       const id = str(0);
       if (!hex64(id)) return reply({ error: "invalid: id must be 64 hex chars" }, 400);

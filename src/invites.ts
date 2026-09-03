@@ -3,6 +3,7 @@
 // open to non-members: that is the whole point of an invite.
 import { bytesToHex } from "./negentropy.ts";
 import { page, escapeHTML } from "./ui.ts";
+import type { Settings } from "./settings.ts";
 
 export type Invite = {
   code: string;
@@ -37,6 +38,27 @@ export function listInvites(sql: SqlStorage, now: number): Invite[] {
 
 export function revokeInvite(sql: SqlStorage, code: string): boolean {
   return sql.exec(`DELETE FROM invites WHERE code=?`, code).rowsWritten > 0;
+}
+
+// inviteCreator is who minted a code, or "" for an unknown one.
+export function inviteCreator(sql: SqlStorage, code: string): string {
+  return sql.exec<{ created_by: string }>(`SELECT created_by FROM invites WHERE code=?`, code).toArray()[0]?.created_by ?? "";
+}
+
+// liveInvites counts a person's invites that can still be used.
+export function liveInvites(sql: SqlStorage, by: string, now: number): number {
+  return sql.exec<{ n: number }>(`SELECT count(*) AS n FROM invites WHERE created_by=? AND expires_at>=? AND (max_uses=0 OR uses<max_uses)`, by, now).one().n;
+}
+
+// memberInviteGate says whether a plain member may mint an invite under the
+// owner's memberInvites rule: the tree only reaches `depth` hops from the
+// owner, and each member holds at most `quota` live invites. "" allows.
+export function memberInviteGate(s: Settings, sql: SqlStorage, pubkey: string, now: number): string {
+  const mi = s.policy.memberInvites;
+  if (mi.depth <= 0 || mi.quota <= 0) return "restricted: only the owner and moderators mint invites here";
+  if (s.inviteDepth(pubkey) >= mi.depth) return "restricted: invites do not reach this far down the tree";
+  if (liveInvites(sql, pubkey, now) >= mi.quota) return `restricted: you already hold ${mi.quota} live invite${mi.quota === 1 ? "" : "s"}`;
+  return "";
 }
 
 export type ClaimResult = "ok" | "invite_invalid" | "invite_expired" | "invite_exhausted";

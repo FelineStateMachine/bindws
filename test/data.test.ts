@@ -1,4 +1,4 @@
-// Dumps to R2, and per-member keep-for and caps.
+// Dumps to R2, per-member keep-for and caps, and members inviting members.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
@@ -210,3 +210,67 @@ describe("per-member keep-for and caps", () => {
   });
 });
 
+describe("members invite members", () => {
+  it("depth and quota bound the tree, both join paths record the inviter, and a subtree goes in one publish", async () => {
+    const host = "treey.bind.ws";
+    const owner = generateSecretKey();
+    const a = generateSecretKey();
+    const b = generateSecretKey();
+    const c2 = generateSecretKey();
+    const e = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setpolicy", { writes: "allowlist", memberInvites: { depth: 2, quota: 1 } });
+    expect((await rpc(host, owner, "getpolicy")).result.memberInvites).toEqual({ depth: 2, quota: 1 });
+
+    // The owner invites A through the HTTP door.
+    const inv = (await rpc(host, owner, "createinvite", 86400, 0, "for a")).result;
+    expect((await post(host, a, "/api/invites/claim", { code: inv.code })).status).toBe("joined");
+    let members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.find((m: any) => m.pubkey === pk(a)).invited_by).toBe(pk(owner));
+
+    // A is one hop out and may hold one live invite.
+    const invA = await rpc(host, a, "createinvite", 86400, 1, "for b");
+    expect(invA.status, JSON.stringify(invA)).toBe(200);
+    expect((await rpc(host, a, "createinvite")).error).toMatch(/already hold 1 live invite/);
+    expect((await rpc(host, a, "listinvites")).result.map((i: any) => i.code)).toEqual([invA.result.code]);
+    expect((await rpc(host, a, "revokeinvite", inv.code)).status).toBe(403);
+    expect((await rpc(host, a, "listmembers")).status).toBe(403);
+
+    // B joins with A's code over the NIP-29 door; two hops out, B cannot invite.
+    const ws = await WS.connect(host);
+    expect((await ws.ok(ev(b, 9021, "", [["h", "treey"], ["code", invA.result.code]]))).ok).toBe(true);
+    members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.find((m: any) => m.pubkey === pk(b)).invited_by).toBe(pk(a));
+    expect((await rpc(host, b, "createinvite")).error).toMatch(/do not reach/);
+    // A's invite is used up, so A may mint again; C joins, then E, whom the owner makes a moderator.
+    const invA2 = (await rpc(host, a, "createinvite", 86400, 2, "more")).result;
+    expect((await ws.ok(ev(c2, 9021, "", [["h", "treey"], ["code", invA2.code]]))).ok).toBe(true);
+    expect((await ws.ok(ev(e, 9021, "", [["h", "treey"], ["code", invA2.code]]))).ok).toBe(true);
+    await rpc(host, owner, "setmember", pk(e), { role: "moderator" });
+    members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.find((m: any) => m.pubkey === pk(a)).invites).toBe(0);
+
+    // Switched off, members are back to asking the owner.
+    await rpc(host, owner, "setpolicy", { memberInvites: { depth: 0, quota: 0 } });
+    expect((await rpc(host, a, "createinvite")).status).toBe(403);
+
+    // Removing A takes B and C along, leaves the moderator E, and publishes once.
+    const stub = env.RELAY.getByName("treey");
+    await runInDurableObject(stub, async (r: Relay) => {
+      const orig = r.publishMembership.bind(r);
+      (r as any).__pub = 0;
+      (r as any).publishMembership = async (...changes: { pubkey: string; added?: boolean }[]) => {
+        (r as any).__pub++;
+        return orig(...changes);
+      };
+    });
+    // The moderator may do it: A is a plain member, and E's own branch stays.
+    const removed = (await rpc(host, e, "removesubtree", pk(a))).result.removed;
+    expect(removed.sort()).toEqual([pk(a), pk(b), pk(c2)].sort());
+    members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.map((m: any) => m.pubkey).sort()).toEqual([pk(owner), pk(e)].sort());
+    await runInDurableObject(stub, async (r: Relay) => expect((r as any).__pub).toBe(1));
+    expect((await ws.req({ kinds: [9001] })).length).toBe(3);
+    expect((await rpc(host, owner, "removesubtree", pk(owner))).status).toBe(400);
+  });
+});

@@ -40,6 +40,10 @@ export interface Policy {
   // kept for `dumpsKeep` runs. Counted as media for fuel.
   dumps: "off" | "daily" | "weekly";
   dumpsKeep: number;
+  // Members inviting members: a member whose distance from the owner along
+  // invited_by is below `depth` may hold up to `quota` live invites. depth 0
+  // turns it off, which leaves inviting to the owner and moderators.
+  memberInvites: { depth: number; quota: number };
 }
 
 export const DEFAULT_POLICY: Policy = {
@@ -69,6 +73,7 @@ export const DEFAULT_POLICY: Policy = {
   maxSubs: 20,
   dumps: "off",
   dumpsKeep: 7,
+  memberInvites: { depth: 0, quota: 0 },
 };
 
 export const SETTINGS_SCHEMA = `
@@ -93,6 +98,7 @@ CREATE TABLE IF NOT EXISTS dumps (name TEXT PRIMARY KEY, bytes INTEGER NOT NULL,
 const MEMBER_COLUMNS: [string, string][] = [
   ["keep_days", "INTEGER NOT NULL DEFAULT 0"], // per-member keep-for; 0 = the relay's rules
   ["max_bytes", "INTEGER NOT NULL DEFAULT 0"], // per-member storage cap; 0 = unlimited
+  ["invited_by", "TEXT NOT NULL DEFAULT ''"], // who minted the invite they joined with
 ];
 function ensureColumns(sql: SqlStorage, table: string, cols: [string, string][]) {
   for (const [col, decl] of cols) {
@@ -115,16 +121,21 @@ export type Member = {
   via: string; // claimed | invite <code> | added | profile
   keep_days: number; // 0 = the relay's rules
   max_bytes: number; // 0 = unlimited
+  invited_by: string; // pubkey of the inviter, "" when added by the owner or joined open
 };
 
 // Limits the write path checks per author, cached so a write costs no query.
 export type MemberLimits = { keep: number; cap: number };
 
-// dumpFields validates the dump settings of a policy patch.
+// dumpFields validates the dump and member-invite settings of a policy patch.
 export function dumpFields(patch: Record<string, unknown>): Partial<Policy> {
   const out: Partial<Policy> = {};
   if (patch.dumps === "off" || patch.dumps === "daily" || patch.dumps === "weekly") out.dumps = patch.dumps;
   if (Number.isInteger(patch.dumpsKeep) && (patch.dumpsKeep as number) >= 1 && (patch.dumpsKeep as number) <= 60) out.dumpsKeep = patch.dumpsKeep as number;
+  const mi = patch.memberInvites as Record<string, unknown> | undefined;
+  if (mi && typeof mi === "object" && Number.isInteger(mi.depth) && Number.isInteger(mi.quota) && (mi.depth as number) >= 0 && (mi.depth as number) <= 10 && (mi.quota as number) >= 0 && (mi.quota as number) <= 100) {
+    out.memberInvites = { depth: mi.depth as number, quota: mi.quota as number };
+  }
   return out;
 }
 
@@ -304,9 +315,43 @@ export class Settings {
     return [...this.limits].filter(([pk, l]) => l.keep > 0 && !this.isOwner(pk)).map(([pubkey, l]) => ({ pubkey, keep: l.keep }));
   }
 
+  // inviteDepth is a member's distance from the owner along invited_by:
+  // the owner is 0, someone the owner added or invited is 1, and so on. A
+  // chain that ends at a departed member counts the hops it has.
+  inviteDepth(pubkey: string): number {
+    if (this.isOwner(pubkey)) return 0;
+    let depth = 0;
+    let cur = pubkey;
+    const seen = new Set<string>();
+    while (depth < 50 && !seen.has(cur)) {
+      seen.add(cur);
+      depth++;
+      const m = this.member(cur);
+      if (!m || m.invited_by === "" || this.isOwner(m.invited_by)) break;
+      cur = m.invited_by;
+    }
+    return depth;
+  }
+  // subtree lists a member and everyone under them along invited_by, plain
+  // members only: a moderator in the tree, and everyone below them, stays.
+  subtree(pubkey: string): string[] {
+    const root = this.member(pubkey);
+    if (!root || root.role !== "member") return [];
+    const out = [pubkey];
+    const seen = new Set(out);
+    for (let i = 0; i < out.length; i++) {
+      for (const r of this.sql.exec<{ pubkey: string; role: string }>(`SELECT pubkey, role FROM members WHERE invited_by=?`, out[i])) {
+        if (seen.has(r.pubkey) || r.role !== "member") continue;
+        seen.add(r.pubkey);
+        out.push(r.pubkey);
+      }
+    }
+    return out;
+  }
+
   // upsertMember adds or edits a member. name "" clears the name; a name held
   // by someone else is refused unless force (owner action). Returns "" or a reason.
-  upsertMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; keepDays?: number; maxBytes?: number }, now: number, force = false): string {
+  upsertMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; invitedBy?: string; keepDays?: number; maxBytes?: number }, now: number, force = false): string {
     const cur = this.member(pubkey);
     let name = cur?.name ?? null;
     if (patch.name !== undefined) {
@@ -328,7 +373,7 @@ export class Settings {
     if (cur) this.sql.exec(`UPDATE members SET name=?, note=?, keep_days=?, max_bytes=? WHERE pubkey=?`, name, note, keep, cap, pubkey);
     else {
       const role = this.isOwner(pubkey) ? "owner" : "member";
-      this.sql.exec(`INSERT INTO members(pubkey,role,name,note,joined_at,via,keep_days,max_bytes) VALUES(?,?,?,?,?,?,?,?)`, pubkey, role, name, note, now, (patch.via ?? "added").slice(0, 40), keep, cap);
+      this.sql.exec(`INSERT INTO members(pubkey,role,name,note,joined_at,via,keep_days,max_bytes,invited_by) VALUES(?,?,?,?,?,?,?,?,?)`, pubkey, role, name, note, now, (patch.via ?? "added").slice(0, 40), keep, cap, patch.invitedBy ?? "");
       this.memberSet.add(pubkey);
     }
     if (keep > 0 || cap > 0) this.limits.set(pubkey, { keep, cap });
