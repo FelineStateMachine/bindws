@@ -1,0 +1,30 @@
+{
+  "name": "bindws-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:conformance": "vitest run --config vitest.conformance.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "nostr-tools": "^2.25.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260902.1",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.128.0",
+    "ws": "^8.21.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260815.1": true,
+    "workerd@1.20260831.1": true,
+    "esbuild@0.28.1": true
+  }
+}

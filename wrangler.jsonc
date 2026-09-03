@@ -1,0 +1,72 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bindws-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Production: the apex as a custom domain, every subdomain routed by the
+  // wildcard. The wildcard needs proxied placeholder DNS records for *.bind.ws.
+  "routes": [
+    { "pattern": "bind.ws", "custom_domain": true },
+    { "pattern": "*.bind.ws/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
+  ],
+  "vars": {
+    // Relays live at wss://<name>.<DOMAIN>; in `wrangler dev` use <name>.localhost.
+    // Requests for any other host fall back to the relay named DEV_RELAY.
+    "DOMAIN": "bind.ws",
+    "DEV_RELAY": "dev",
+    // Fuel: free allowances per relay per month, and the sats charged beyond
+    // them, paid by zaps to LIGHTNING_ADDRESS naming SERVICE_PUBKEY. Leave
+    // the address empty to run without top-ups (allowances still apply).
+    "LIGHTNING_ADDRESS": "bindws@getalby.com",
+    "SERVICE_PUBKEY": "6b559c0816c3b9ec03c2f0cedb8a56efe83746f8c56e543e36e1973c04ef0384",
+    "FREE_EVENTS_MB": "100",
+    "FREE_MEDIA_MB": "1024",
+    "FREE_ACTIVE_HOURS": "100",
+    "FREE_ROWS_WRITTEN": "1000000",
+    // Prices follow what Cloudflare bills us for the same thing, at about
+    // 1.5x, converted at 77,000 USD per bitcoin. Revisit when the rate moves.
+    //   SQLite storage  0.20 USD/GB-month  -> 260 sats
+    //   R2 storage      0.015 USD/GB-month -> 20 sats
+    //   DO duration     12.50 USD/M GB-s at 128 MB -> 7.3 sats per hour awake
+    //   rows written    1.00 USD/M         -> 1,300 sats
+    //   egress          free               -> not priced
+    "SATS_PER_GB_MONTH_EVENTS": "400",
+    "SATS_PER_GB_MONTH_MEDIA": "30",
+    "SATS_PER_ACTIVE_HOUR": "11",
+    "SATS_PER_MILLION_ROWS": "2000"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
+  },
+  // Blossom media for every relay, keyed <name>/<sha256> in one bucket.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "bindws-media" }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }],
+  // `wrangler dev --env dev`: no routes, so local hostnames (<name>.localhost)
+  // reach the Worker unchanged instead of being rewritten to the route host.
+  // vars and bindings are not inherited by environments, hence the repeat.
+  "env": {
+    "dev": {
+      "routes": [],
+      "vars": {
+        "DOMAIN": "bind.ws",
+        "DEV_RELAY": "dev",
+        "LIGHTNING_ADDRESS": "",
+        "SERVICE_PUBKEY": "",
+        "FREE_EVENTS_MB": "100",
+        "FREE_MEDIA_MB": "1024",
+        "FREE_ACTIVE_HOURS": "100",
+        "FREE_ROWS_WRITTEN": "1000000",
+        "SATS_PER_GB_MONTH_EVENTS": "400",
+        "SATS_PER_GB_MONTH_MEDIA": "30",
+        "SATS_PER_ACTIVE_HOUR": "11",
+        "SATS_PER_MILLION_ROWS": "2000"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
+      },
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "bindws-media" }]
+    }
+  }
+}
