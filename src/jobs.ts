@@ -10,7 +10,7 @@ import { Socket, dial, checkPullURL, runPullRound, type PullFilter, type PullJob
 import type { Relay } from "./relay.ts";
 
 export type JobKind = "pull" | "push";
-export type JobLabel = "pull" | "backfill" | "push";
+export type JobLabel = "pull" | "backfill" | "push" | "replica";
 export const EVERY = [0, 1, 6, 24] as const; // hours; 0 runs once
 
 export interface JobResult {
@@ -65,7 +65,7 @@ export function checkJob(raw: unknown, relay: Relay): JobSpec | string {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const kind = r.kind === "pull" || r.kind === "push" ? r.kind : null;
   if (!kind) return "invalid: kind must be pull or push";
-  const label: JobLabel = r.label === "backfill" && kind === "pull" ? "backfill" : kind;
+  const label: JobLabel = kind === "pull" && (r.label === "backfill" || r.label === "replica") ? r.label : kind;
   const list = Array.isArray(r.relays) ? r.relays : [];
   const relays: string[] = [];
   for (const u of list) {

@@ -6,6 +6,7 @@
 // rules and keep-for rules together and leaves limits, identity, people and
 // bans alone.
 import { DEFAULT_POLICY, type Policy, type Settings } from "./settings.ts";
+import { SEARCH_KINDS } from "./store.ts";
 
 export interface Preset {
   name: string;
@@ -17,7 +18,15 @@ export interface Preset {
   allow: number[];
   block: number[];
   retention: { kind: number | null; days: number }[];
+  // A replica keeps itself in step with a source relay through a standing
+  // pull of its kinds. "required" presets refuse to apply without one.
+  source?: "required" | "optional";
+  every?: number; // hours between pulls
 }
+
+// The kinds a search replica carries: what the full-text index covers,
+// minus drafts, which have no business on a public replica.
+const SEARCHABLE = [...SEARCH_KINDS].filter((k) => k !== 30024).sort((a, b) => a - b);
 
 export const PRESETS: Preset[] = [
   {
@@ -89,6 +98,70 @@ export const PRESETS: Preset[] = [
     reads: "members",
     directoryPublic: false,
     allow: [0, 7, 9, 11, 1059, 1111],
+    block: [],
+    retention: [],
+  },
+  // Kind-scoped names: cheap names plus standing pulls make single-purpose
+  // relays and specialised replicas nearly free. One name per job.
+  {
+    // A Blossom-only name, alice-media: the files live here, the notes do
+    // not. Members write, so their uploads pass the upload gate, but the
+    // only events they may post are profiles and Blossom server lists, so
+    // the name stays a media host and nothing else.
+    name: "media",
+    title: "Media",
+    about: "A media host. Members upload files; the only events accepted are profiles and Blossom server lists. Anyone reads.",
+    writes: "allowlist",
+    reads: "open",
+    directoryPublic: true,
+    allow: [0, 10063],
+    block: [],
+    retention: [],
+  },
+  {
+    // A search replica, alice-search: a standing pull of the searchable
+    // kinds from a source relay every six hours, readable by all, written
+    // only by the owner, so a client can point search at it without the
+    // source relay ever being asked.
+    name: "search",
+    title: "Search replica",
+    about: "A read-only copy of another relay's notes, threads, comments, highlights, articles and wiki pages, refreshed every six hours. Anyone reads.",
+    writes: "owner",
+    reads: "open",
+    directoryPublic: true,
+    allow: SEARCHABLE,
+    block: [],
+    retention: [],
+    source: "required",
+    every: 6,
+  },
+  {
+    // An articles name: long-form only, with the profiles that render the
+    // bylines. Pulls from a source when one is given, otherwise the owner
+    // publishes here directly.
+    name: "articles",
+    title: "Articles",
+    about: "Long-form articles and the profiles behind them, nothing else. Only you write, anyone reads. Give a source relay to mirror its articles daily.",
+    writes: "owner",
+    reads: "open",
+    directoryPublic: true,
+    allow: [0, 30023],
+    block: [],
+    retention: [],
+    source: "optional",
+    every: 24,
+  },
+  {
+    // A private-message inbox, alice-dm: anyone may drop a gift wrap, only
+    // members read them. Wraps carry no author, so an allow list of just
+    // the wrap kind and profiles keeps everything else out.
+    name: "dm",
+    title: "DM inbox",
+    about: "An inbox for private messages. Anyone drops gift wraps, only members read them. Nothing else is accepted.",
+    writes: "open",
+    reads: "members",
+    directoryPublic: false,
+    allow: [0, 1059],
     block: [],
     retention: [],
   },

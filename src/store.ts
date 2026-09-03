@@ -56,7 +56,7 @@ const inList = (col: string) => `${col} IN (SELECT value FROM json_each(?))`;
 // searchable says which kinds go into the full-text index: the ones whose
 // content is prose. Reactions, JSON blobs and private kinds are skipped; it
 // keeps the index small and every event a few rows cheaper to write.
-const SEARCH_KINDS = new Set([0, 1, 11, 1111, 9802, 30023, 30024, 30818]);
+export const SEARCH_KINDS = new Set([0, 1, 11, 1111, 9802, 30023, 30024, 30818]);
 export function searchable(kind: number): boolean {
   return SEARCH_KINDS.has(kind) && !isPrivate(kind);
 }

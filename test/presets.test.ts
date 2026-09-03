@@ -30,11 +30,14 @@ describe("presets", () => {
     const owner = generateSecretKey();
     await rpc(host, owner, "claim");
     const list = (await rpc(host, owner, "listpresets")).result;
-    expect(list.map((p: any) => p.name)).toEqual(["default", "outbox", "inbox", "private", "chat"]);
+    expect(list.map((p: any) => p.name)).toEqual(["default", "outbox", "inbox", "private", "chat", "media", "search", "articles", "dm"]);
     for (const p of list) expect(p.about.length).toBeGreaterThan(10);
+    expect(list.find((p: any) => p.name === "search").source).toBe("required");
+    expect(list.find((p: any) => p.name === "articles").source).toBe("optional");
+    expect(list.find((p: any) => p.name === "media").source).toBeUndefined();
     for (const preset of PRESETS) {
-      const r = await rpc(host, owner, "applypreset", preset.name);
-      expect(r.status, preset.name).toBe(200);
+      const r = await rpc(host, owner, "applypreset", preset.name, preset.source === "required" ? { source: "wss://elsewhere.bind.ws" } : undefined);
+      expect(r.status, preset.name + " " + JSON.stringify(r)).toBe(200);
       expect(r.result.writes).toBe(preset.writes);
       expect(r.result.reads).toBe(preset.reads);
       expect(r.result.directoryPublic).toBe(preset.directoryPublic);
@@ -49,6 +52,41 @@ describe("presets", () => {
     expect((await rpc(host, owner, "listallowedkinds")).result).toEqual([]);
     expect((await rpc(host, owner, "listretention")).result).toEqual([]);
     expect((await rpc(host, owner, "applypreset", "haven")).status).toBe(400);
+  });
+
+  it("a replica preset needs a source and keeps one standing pull of its kinds", async () => {
+    const host = "presets-replica.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    let r = await rpc(host, owner, "applypreset", "search");
+    expect(r.status).toBe(400);
+    expect(r.error).toMatch(/needs a source/);
+    r = await rpc(host, owner, "applypreset", "search", { source: "wss://" + host });
+    expect(r.status).toBe(400);
+    expect(r.error).toMatch(/itself/);
+    r = await rpc(host, owner, "applypreset", "media", { source: "wss://elsewhere.bind.ws" });
+    expect(r.status).toBe(400);
+    expect(r.error).toMatch(/does not mirror/);
+    r = await rpc(host, owner, "applypreset", "search", { source: "wss://elsewhere.bind.ws" });
+    expect(r.status, JSON.stringify(r)).toBe(200);
+    expect(r.result.job.kind).toBe("pull");
+    expect(r.result.job.label).toBe("replica");
+    expect(r.result.job.every).toBe(6);
+    expect(r.result.job.relays).toEqual(["wss://elsewhere.bind.ws"]);
+    expect(r.result.job.filter.kinds).toEqual([0, 1, 11, 1111, 9802, 30023, 30818]);
+    expect((await rpc(host, owner, "listallowedkinds")).result).toEqual([0, 1, 11, 1111, 9802, 30023, 30818]);
+    // Applying again replaces the standing job rather than adding one.
+    r = await rpc(host, owner, "applypreset", "articles", { source: "wss://other.bind.ws" });
+    expect(r.status).toBe(200);
+    expect(r.result.job.every).toBe(24);
+    const jobs = (await rpc(host, owner, "listjobs")).result.filter((j: any) => j.label === "replica");
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].filter.kinds).toEqual([0, 30023]);
+    // Articles without a source is a plain rule bundle; the replica job goes away.
+    r = await rpc(host, owner, "applypreset", "articles");
+    expect(r.status).toBe(200);
+    expect(r.result.job).toBeNull();
+    expect((await rpc(host, owner, "listjobs")).result.filter((j: any) => j.label === "replica")).toEqual([]);
   });
 
   it("needs the rules action: a moderator may list presets but not apply one", async () => {

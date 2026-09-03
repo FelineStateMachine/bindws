@@ -13,7 +13,7 @@ import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
 import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
-import { PRESETS, applyPreset } from "./presets.ts";
+import { PRESETS, applyPreset, findPreset } from "./presets.ts";
 
 // verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
 // the request: kind 27235, fresh, u tag naming this URL, method tag, and a
@@ -383,47 +383,32 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       await relay.publishMembership();
       return reply({ result: s.policy });
     case "listpresets":
-      return reply({ result: PRESETS.map((x) => ({ name: x.name, title: x.title, about: x.about })) });
+      return reply({ result: PRESETS.map((x) => ({ name: x.name, title: x.title, about: x.about, source: x.source, every: x.every })) });
     case "applypreset": {
-      // (name): writes, reads, directory, kind rules and keep-for rules in one go.
-      const err = applyPreset(s, str(0));
+      // (name, {source?}): writes, reads, directory, kind rules and keep-for
+      // rules in one go. A replica preset also gets a standing pull of its
+      // kinds from the source; an earlier replica job is replaced.
+      const preset = findPreset(str(0));
+      if (!preset) return reply({ error: "invalid: no preset named " + str(0) }, 400);
+      const opts = params[1] && typeof params[1] === "object" ? (params[1] as { source?: unknown }) : {};
+      const source = typeof opts.source === "string" ? opts.source.trim() : "";
+      if (preset.source === "required" && !source) return reply({ error: "invalid: this preset needs a source relay to mirror" }, 400);
+      if (source && !preset.source) return reply({ error: "invalid: this preset does not mirror a source" }, 400);
+      if (source) {
+        const bad = checkPullURL(source, relay.slug, relay.domain);
+        if (bad) return reply({ error: bad }, 400);
+      }
+      const err = applyPreset(s, preset.name);
       if (err) return reply({ error: err }, 400);
+      for (const j of await relay.jobs()) if (j.label === "replica") await relay.removeJob(j.id);
+      let job = null;
+      if (source) {
+        const r = await relay.addJob({ kind: "pull", label: "replica", relays: [source], filter: { kinds: preset.allow }, every: preset.every ?? 24 });
+        if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
+        job = r;
+      }
       await relay.publishMembership();
-      return reply({ result: s.policy });
-    }
-    case "pullfrom": {
-      // (url): copy what another relay has that this one lacks. Runs in
-      // the background; pullstatus reports on it.
-      const url = str(0).trim();
-      const bad = checkPullURL(url, relay.slug, relay.domain);
-      if (bad) return reply({ error: bad }, 400);
-      const err = await relay.pullStart(url);
-      if (err) return reply({ error: err }, 409);
-      return reply({ result: { started: true, url } });
-    }
-    case "pullstatus":
-      return reply({ result: await relay.pullStatus() });
-    case "listjobs":
-      return reply({ result: await relay.jobs() });
-    case "addjob": {
-      // ({kind, relays, filter?, every?, label?}): a pull or push, once or standing.
-      const r = await relay.addJob(params[0]);
-      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
-      return reply({ result: r });
-    }
-    case "removejob":
-      return reply({ result: await relay.removeJob(str(0)) });
-    case "runjob":
-      return reply({ result: await relay.runJob(str(0)) });
-    case "backfill": {
-      // (relays?): fetch the owner's own history from the relays in their
-      // kind 10002 stored here, or from the given list.
-      const given = Array.isArray(params[0]) ? (params[0] as unknown[]).filter((u): u is string => typeof u === "string" && u.trim() !== "") : [];
-      const relays = given.length ? given : relaysFromList(relay, p.owner);
-      if (relays.length === 0) return reply({ error: "invalid: no relay list (kind 10002) is stored here; give relays to fetch from" }, 400);
-      const r = await relay.addJob({ kind: "pull", label: "backfill", relays, filter: { authors: [p.owner] }, every: 0 });
-      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
-      return reply({ result: r });
+      return reply({ result: { ...s.policy, job } });
     }
     case "transferowner": {
       // (pubkey): hands the relay to a member; the old owner stays as a moderator.
