@@ -1,0 +1,71 @@
+---
+title: Data and names
+audience: user
+---
+
+# Data and names
+
+What your relay holds, how it moves and how a name can do one job.
+
+## What is stored
+
+The Data tab shows bytes by kind, the files people uploaded and a keep-for rule per kind. Kinds the relay depends on, such as profiles, contact lists, relay lists, zap receipts and the roster, are never expired or purged. The controls are in [Relay configuration](01-relay-configuration.md#data).
+
+## Jobs
+
+A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Data tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why.
+
+A job runs once, or every hour, six hours or day. Up to five standing jobs and 20 jobs in all per relay. Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
+
+**Pull** copies what another relay has and yours lacks, by sync (NIP-77). Run it again and only new events come over. Files come along when the other relay is on bind.ws and the pull has no filter. With an interval, a pull is a standing mirror that keeps your name in step with the other relay. The other relay has to let anyone read.
+
+**Fetch my history** pulls your own events from every relay in your relay list, if a client has published that list here. Or give it relays to fetch from, separated by commas.
+
+**Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. A target that refuses five events in a row is left alone for that round. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
+
+## Dumps
+
+Under **Dumps**, choose daily or weekly and how many to keep, seven by default. The relay writes every event as one JSONL file and keeps the newest few. **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading takes your signature; the files are never a public link.
+
+## Presets and one name per job
+
+Names are cheap, so a relay does not have to do everything. On the Rules tab, **Presets** sets writes, reads, the directory, the kind rules and the keep-for rules in one click. Limits, identity, people and bans stay. Your own profile and lists always land, whatever the kind rules say.
+
+| Preset | Writes | Reads | Keeps |
+|---|---|---|---|
+| default | anyone | anyone | every kind, forever |
+| outbox | only you | anyone | public notes and articles, forever; private kinds refused |
+| inbox | anyone | anyone | notes, replies, reactions, comments, reports and zaps, 90 days |
+| private | only you | members | every kind, forever; directory hidden |
+| chat | members | members | private messages and the group's chat, forever; directory hidden |
+| media | members upload files | anyone | profiles and Blossom server lists only |
+| search | only you | anyone | a copy of another relay's searchable kinds, refreshed every six hours |
+| articles | only you | anyone | long-form articles and profiles; mirrored daily from a source if you give one |
+| dm | anyone | members | private messages only; directory hidden |
+
+The search and articles presets take a source relay URL in the field next to the buttons. Applying one adds a standing pull of its kinds from that source. Applying any preset again replaces that pull rather than adding another, and applying one with no source removes it. The pull appears in the Jobs table.
+
+## Fork this relay
+
+Under **Fork this relay** on the Data tab, a fork leases a new name, copies this relay into it and reserves the claim for a key.
+
+- **Name**: choose one, or leave it blank for a memorable one.
+- **Who claims it**: you by default, or an npub or hex key to hand a community its own relay with its history.
+- **What to copy**: everything, only your events or a list of kinds.
+- **Copy the people**: bring the plain members along. Moderators and bans stay here.
+
+The result is the new console URL to hand over. The new name is temporary until it is claimed, like any lease. One fork an hour.
+
+## Leave
+
+Your data is yours. Any relay that speaks sync can pull everything from yours:
+
+```
+nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
+```
+
+Or download a dump.
+
+## What it spends
+
+Jobs wake the relay, so they spend awake time on every run. Pulled events count as events stored and rows written. Dumps count as files stored. See [Understanding fuel](02-understanding-fuel.md).
