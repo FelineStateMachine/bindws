@@ -1,0 +1,34 @@
+name: margin
+# Weekly: fuel prices against Cloudflare's rates at the current bitcoin price.
+# The table lands in the run summary; a line under the target margin opens or
+# refreshes one issue.
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  margin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Compute
+        id: compute
+        run: |
+          set +e
+          node scripts/margin.mjs > margin.md
+          echo "below=$?" >> "$GITHUB_OUTPUT"
+          cat margin.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Flag
+        if: steps.compute.outputs.below == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Fuel prices below the margin target"
+          n=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file margin.md; else gh issue create --title "$title" --body-file margin.md; fi

@@ -37,7 +37,8 @@
     "FREE_ACTIVE_HOURS": "100",
     "FREE_ROWS_WRITTEN": "1000000",
     // Prices follow what Cloudflare bills us for the same thing, at about
-    // 1.5x, converted at 77,000 USD per bitcoin. Revisit when the rate moves.
+    // 1.5x, converted at 77,000 USD per bitcoin. `node scripts/margin.mjs`
+    // checks them against the rate of the day (docs/15-costs-and-margins.md).
     //   SQLite storage  0.20 USD/GB-month  -> 260 sats
     //   R2 storage      0.015 USD/GB-month -> 20 sats
     //   DO duration     12.50 USD/M GB-s at 128 MB -> 7.3 sats per hour awake

@@ -22,7 +22,7 @@ Edit `wrangler.jsonc`:
 | `LEASE_DAYS` | how long a temporary relay from `POST /lease` lives; 14 if unset |
 | `ratelimits` | how many leases a minute, per address and overall; the defaults are 5 and 60 |
 
-The prices carry a comment with the Cloudflare rates they were set from. Revisit them when the exchange rate moves.
+The prices carry a comment with the Cloudflare rates they were set from. `node scripts/margin.mjs` compares them with those rates at the current bitcoin price, and a weekly workflow does the same; see [Costs and margins](15-costs-and-margins.md).
 
 Point `routes` at your zone: the apex as a custom domain and `*.<domain>/*` as a zone route. Create the R2 bucket named in `r2_buckets`.
 
