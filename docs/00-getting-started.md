@@ -47,6 +47,8 @@ wss://<name>.bind.ws
 
 That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrudel, Coracle and the rest need no special setup. Your notes, reactions and profile land on your relay the moment you publish.
 
+The relay's page has a shortcut for each app under **Open it in an app**. Relay apps such as Jumble, Coracle and Flotilla open the relay as a place, and 0xchat opens its group. Feed apps such as Primal, Damus, Amethyst, Nostur and YakiHonne have no relay pages, so their button opens the owner's profile with this relay attached as the hint; add the relay in the app's settings from there. Two QR codes carry the same links to a phone.
+
 ## Your relay lists
 
 Clients learn where to find you from lists you sign and publish: your relay list, your DM inbox, your search relays and your file servers. A new relay is not on any of them yet. On the Identity tab, **Your relay lists** has one row per list. **Check** reads your newest copy from here and from a few indexers. **Add this relay** puts this relay at the front and, with one signature, publishes the list back to every relay it names. Everything already on the list stays.
