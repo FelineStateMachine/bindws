@@ -80,6 +80,12 @@ Joins (9021, with an optional invite `code`), leaves (9022) and the moderation k
 
 Moderators cannot act on the owner or on each other; only the owner appoints or removes moderators. `transferowner` hands the relay to a member and leaves the old owner as a moderator; the identity key and fuel do not change.
 
+## Pages, feed and notifications
+
+`src/pages.ts` renders kind 1 at `/e/<id>` and kind 30023 at `/a/<d>` (the owner's) or `/a/<author>/<d>` with Open Graph tags, and `/feed.xml` as Atom, from the same store query the console uses, with an access of no pubkeys so private kinds can never appear. Every page path answers 404 unless reads are open. `nostr:` references become links here when the target is on this relay.
+
+`src/notify.ts` lets the relay write its owner: a kind 14 rumour sealed and gift wrapped with the identity key (NIP-59, NIP-44), stored as the owner's inbox and pushed best effort to the relays in the owner's kind 10050 through the pull code's `dial`. Hooks: a report filed (either door), the daily alarm when fuel turns low (once, then daily while low), a pull finishing, and the test button. Switched off by default in `policy.notify`. The catch-all retention rule skips kind 1059 so the inbox survives it.
+
 ## Management
 
 `src/manage.ts` implements NIP-86 over NIP-98. The console is a client of it. `verifyNIP98` is a local implementation: kind 27235, 60-second window, `u` matches host and path, method matches, payload hash matches.

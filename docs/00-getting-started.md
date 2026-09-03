@@ -88,6 +88,12 @@ Clients that speak NIP-96 instead find the same store through `/.well-known/nost
 
 To report a file, send a signed NIP-56 report that names its hash to `PUT /report`. It lands in the owner's reports queue next to reported events. Deleting a reported file also blocks its hash, so it cannot be uploaded again.
 
+## Pages and feeds
+
+Every name is a site as well as a relay. A note has a page at `https://<name>.bind.ws/e/<id>` and an article at `/a/<d>` (yours) or `/a/<npub>/<d>` (anyone's), with the tags link previews need, so a link to your relay unfurls in chat apps and on social sites. `/feed.xml` is an Atom feed of the relay's notes and articles; add `?kinds=30023` for articles only or `?author=<hex>` for one person.
+
+Pages exist only while **Rules > Reads** is *anyone*. On a members-only relay they answer 404, so nothing leaks.
+
 ## Scripts
 
 If you write scripts, the relay has an HTTP door. Sign a request with your key (NIP-98) and post to `/events`, `/query` or `/count`. No websocket needed.
@@ -103,6 +109,10 @@ The Storage tab has a **Jobs** block: work your relay does on its own, in the ba
 Jobs spend awake time, which fuel counts. Up to five standing jobs per relay.
 
 Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
+
+## Notifications
+
+The relay can write to you. On the Identity tab, switch on what you want to hear about: a report arriving, fuel running low, a pull finishing. Each is a NIP-17 private message signed by the relay's own key, stored on your relay as your inbox and pushed to your DM relays when your kind 10050 is here. It shows up in whatever client you already use for messages.
 
 ## Leave
 
