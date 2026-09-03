@@ -80,6 +80,10 @@ The relay has a profile of its own, made from the name, description and icon on 
 
 Your relay stores images and files too. Clients that support Blossom upload to `https://<name>.bind.ws` and get a link by hash. A client can ask first whether an upload would be accepted, and can have the relay copy a file from another server by URL instead of uploading it again. Set the maximum upload size on the Rules tab.
 
+Clients that speak NIP-96 instead find the same store through `/.well-known/nostr/nip96.json`. The two doors share one bucket and one file list, so a file uploaded through either is served, listed and deleted through both, and every answer carries the file's NIP-94 tags.
+
+To report a file, send a signed NIP-56 report that names its hash to `PUT /report`. It lands in the owner's reports queue next to reported events. Deleting a reported file also blocks its hash, so it cannot be uploaded again.
+
 ## Scripts
 
 If you write scripts, the relay has an HTTP door. Sign a request with your key (NIP-98) and post to `/events`, `/query` or `/count`. No websocket needed.

@@ -41,7 +41,7 @@ SQLite tables: `events`, `tags` (single-letter tags only), an FTS5 `search` tabl
 
 Only kinds that carry prose go into the search index: profiles, notes, threads, comments, highlights, articles and wiki pages.
 
-Blobs live in R2 under `<name>/<sha256>`. Their descriptors live in the relay's database, so they count toward storage and appear in the console.
+Blobs live in R2 under `<name>/<sha256>`. Their descriptors live in the relay's database, so they count toward storage and appear in the console. Two doors lead to the same bucket and table: Blossom (`blossom.ts`) and NIP-96 (`nip96.ts`), a thin adapter that reuses the Blossom store, gate and URLs. Descriptors and NIP-96 answers carry the NIP-94 tags the relay can vouch for without decoding the file: `url`, `m`, `x`, `ox` and `size`. Blob reports (BUD-09) go into the `reports` table with the sha256 in `target_event` and the uploader in `target_pubkey`; resolving one with delete removes the blob and puts its hash on the banned id list, which every upload door checks.
 
 ## Alarm
 
@@ -86,4 +86,4 @@ Moderators cannot act on the owner or on each other; only the owner appoints or 
 
 ## Protocol surface
 
-NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02/04/06. `test/conformance` is a black-box suite that runs against any relay URL.
+NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57, NIP-96 with NIP-94, and Blossom BUD-01/02/04/06/08/09. `test/conformance` is a black-box suite that runs against any relay URL.

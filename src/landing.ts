@@ -92,7 +92,8 @@ const PROTOCOL: [string, string][] = [
   ["05", "Members with a name are you@name.bind.ws."],
   ["43", "The relay signs and publishes its member list."],
   ["57", "Zaps to the relay add fuel. The receipt is stored on the relay."],
-  ["Blossom", "Upload and fetch files by hash on the same host. Check an upload before sending it, or mirror a file from a URL."],
+  ["Blossom", "Upload and fetch files by hash on the same host. Check an upload before sending it, mirror a file from a URL, report one by hash."],
+  ["94, 96", "The same files through the NIP-96 door, with NIP-94 metadata in every answer."],
 ];
 
 function table(heads: string[], rows: string[][], right: number[] = []): string {
@@ -114,7 +115,8 @@ export function landing(req: Request, env: Env): Response {
     ["POST /", "NIP-86", "NIP-98, owner", "claim and the management methods"],
     ["POST /lease", "lease", "optional NIP-98", `A temporary relay for ${leaseDays(env)} days. A signature reserves the claim for that key.`],
     ["POST /events /query /count", "HTTP bridge", "NIP-98", "The signer has the same access as an authenticated socket."],
-    ["PUT /upload, GET /&lt;sha256&gt;", "Blossom", "kind 24242", "Stored in R2. Counted as files. HEAD /upload checks first; PUT /mirror copies from a URL."],
+    ["PUT /upload, GET /&lt;sha256&gt;", "Blossom", "kind 24242", "Stored in R2. Counted as files. HEAD /upload checks first; PUT /mirror copies from a URL; PUT /report files a report."],
+    ["POST /nip96, GET /.well-known/nostr/nip96.json", "NIP-96", "NIP-98", "Same bucket and file list as Blossom. NIP-94 tags in every answer."],
     ["GET /.well-known/nostr.json", "NIP-05", "none", "Members that have a name."],
     ["GET /fuel, POST /fuel/invoice", "NIP-57", "none", "Gauges are public. The invoice comes from a signed zap request."],
   ]);

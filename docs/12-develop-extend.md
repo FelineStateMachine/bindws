@@ -20,7 +20,8 @@ src/
   manage.ts     NIP-86 methods over NIP-98
   fuel.ts       meters, prices, receipts, LNURL
   identity.ts   relay keypair and NIP-43 roster
-  blossom.ts    BUD-01/02 on R2
+  blossom.ts    BUD-01/02/04/06/08/09 on R2
+  nip96.ts      NIP-96 door to the same bucket and table
   bridge.ts     HTTP bridge
   invites.ts    invite codes and the invite page
   nip05.ts      names
