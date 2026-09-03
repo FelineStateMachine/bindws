@@ -19,7 +19,7 @@ async function rpc(method, ...params) {
 }
 
 await rpc("claim");
-await rpc("setpolicy", { name: "Kitchen", description: "Where the cooks talk. Members post, anyone reads.", writes: "allowlist" });
+await rpc("setpolicy", { name: "Kitchen", description: "Where the cooks talk. Members post, anyone reads.", writes: "allowlist", contact: "mailto:chef@kitchen.example", icon: "https://bind.ws/favicon.svg", banner: "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1600&q=70", tags: ["cooking", "recipes", "sunday"], languageTags: ["en", "fr"], relayCountries: ["FR"], postingPolicy: "https://kitchen.example/posting", privacyPolicy: "https://kitchen.example/privacy", joinTerms: "Be kind. Share the recipe." });
 const people = [
   ["alice", "brings the bread"],
   ["bo", "runs the pass"],
