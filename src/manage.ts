@@ -7,7 +7,7 @@ import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
 import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { isReplaceable, isProtected } from "./settings.ts";
+import { isReplaceable, isProtected, publicFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
 
@@ -126,6 +126,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean: Record<string, unknown> = {};
       for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
+      Object.assign(clean, publicFields(patch));
       if (patch.writes === "open" || patch.writes === "allowlist" || patch.writes === "owner") clean.writes = patch.writes;
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);

@@ -57,6 +57,23 @@ export function claimInvite(sql: SqlStorage, code: string, now: number): ClaimRe
 }
 
 // invitePage is the join page. It signs the claim with a NIP-07 extension.
+// termsPage is the relay's terms of service as a page: the join terms the
+// owner wrote, at a stable URL that NIP-11 can point to.
+export function termsPage(relayName: string, host: string, terms: string): string {
+  const css = `
+main { max-width: 44rem; padding-top: 10vh; }
+h1 { font-size: clamp(2.6rem, 8vw, 4.2rem); }
+.terms { white-space: pre-wrap; background: var(--butter); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); padding: 1rem 1.1rem; margin: 1.2rem 0 1.5rem; }
+`;
+  const body = `<main>
+  <h1><em>${escapeHTML(relayName)}</em> terms</h1>
+  <p class="lead">What the people who run <code class="pill">wss://${escapeHTML(host)}</code> ask of everyone who uses it.</p>
+  <div class="terms">${escapeHTML(terms)}</div>
+  <footer class="pg"><p><a href="/">back to the relay</a></p></footer>
+</main>`;
+  return page(relayName + " terms", body, css);
+}
+
 export function invitePage(relayName: string, host: string, code: string, status: ClaimResult, terms: string): string {
   const problem = { invite_invalid: "This invite link isn't valid.", invite_expired: "This invite has expired.", invite_exhausted: "This invite has been used up.", ok: "" }[status];
   const css = `

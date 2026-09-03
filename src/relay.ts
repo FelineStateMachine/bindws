@@ -17,7 +17,7 @@ import { Bucket } from "./ratelimit.ts";
 import { bridge } from "./bridge.ts";
 import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
-import { checkInvite, claimInvite, invitePage } from "./invites.ts";
+import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
@@ -47,6 +47,10 @@ export interface Env {
   SATS_PER_MILLION_ROWS?: string;
 }
 
+// The less obvious numbers: 43 is added by info() once the relay has an
+// identity; 62 is request-to-vanish (store.vanish); 67 is the EOSE hint
+// array at the end of the subscription handler; 70 is the "-" tag check in
+// gate(); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 50, 56, 59, 62, 67, 70, 77, 86, 98];
 export const KIND_REPORT = 1984;
 // NIP-46 remote signing traffic: ephemeral, encrypted end to end, never stored.
@@ -573,6 +577,11 @@ export class Relay extends DurableObject<Env> {
       const people = p.owner && p.directoryPublic ? this.settings.members().map((m) => ({ pubkey: m.pubkey, role: m.role, name: m.name })) : [];
       return Response.json({ public: p.directoryPublic, self: this.identity.pubkey, host: url.host, people }, { headers: { "access-control-allow-origin": "*" } });
     }
+    if (url.pathname === "/terms" && req.method === "GET") {
+      const terms = this.settings.policy.joinTerms;
+      if (!terms) return new Response("this relay has no terms", { status: 404 });
+      return new Response(termsPage(this.settings.policy.name || this.slug, url.host, terms), { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
     if (url.pathname.startsWith("/invite/") && req.method === "GET") {
       const code = url.pathname.slice(8);
       const status = this.settings.policy.owner === "" ? "invite_invalid" : checkInvite(this.sql, code, now());
@@ -606,6 +615,11 @@ export class Relay extends DurableObject<Env> {
     return (secure ? "wss://" : "ws://") + host;
   }
 
+  // webURL is the same address for a browser.
+  webURL(host: string): string {
+    return this.relayURL(host).replace(/^ws/, "http");
+  }
+
   info(host: string) {
     const p = this.settings.policy;
     const doc: Record<string, unknown> = {
@@ -628,6 +642,13 @@ export class Relay extends DurableObject<Env> {
       },
     };
     if (p.icon) doc.icon = p.icon;
+    if (p.banner) doc.banner = p.banner;
+    if (p.joinTerms && host) doc.terms_of_service = this.webURL(host) + "/terms";
+    if (p.postingPolicy) doc.posting_policy = p.postingPolicy;
+    if (p.privacyPolicy) doc.privacy_policy = p.privacyPolicy;
+    if (p.tags.length) doc.tags = p.tags;
+    if (p.languageTags.length) doc.language_tags = p.languageTags;
+    if (p.relayCountries.length) doc.relay_countries = p.relayCountries;
     if (p.contact) doc.contact = p.contact;
     const retention = this.settings.listRetention().map((r) => (r.kind === null ? { time: r.days * 86400 } : { kinds: [r.kind], time: r.days * 86400 }));
     if (retention.length) doc.retention = retention;

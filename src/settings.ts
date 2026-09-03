@@ -15,7 +15,14 @@ export interface Policy {
   name: string;
   description: string;
   icon: string;
+  banner: string; // NIP-11 banner image URL
   contact: string;
+  // NIP-11 extras: links to written policies, and what the relay is about.
+  postingPolicy: string; // URL
+  privacyPolicy: string; // URL
+  tags: string[]; // short topic words
+  languageTags: string[]; // BCP-47, such as en or pt-BR
+  relayCountries: string[]; // ISO 3166-1 alpha-2, such as US
   writes: "open" | "allowlist" | "owner"; // who may publish
   reads: "open" | "auth" | "members"; // whether REQ/COUNT need NIP-42, or membership
   joinTerms: string; // shown before an invite is accepted (markdown-ish plain text)
@@ -35,7 +42,13 @@ export const DEFAULT_POLICY: Policy = {
   name: "",
   description: "",
   icon: "",
+  banner: "",
   contact: "",
+  postingPolicy: "",
+  privacyPolicy: "",
+  tags: [],
+  languageTags: [],
+  relayCountries: [],
   writes: "open",
   reads: "open",
   joinTerms: "",
@@ -77,6 +90,52 @@ export type Member = {
 };
 
 export const NAME_RE = /^[a-z0-9._-]{1,64}$/;
+
+const TAG_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const LANG_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
+const COUNTRY_RE = /^[A-Z]{2}$/;
+const MAX_LIST = 20;
+
+// publicFields validates the NIP-11 extras of a policy patch: three https
+// links (an empty string clears one) and three short lists. Anything that
+// does not fit is dropped, never stored half-right.
+export function publicFields(patch: Record<string, unknown>): Partial<Policy> {
+  const out: Partial<Policy> = {};
+  const link = (v: unknown): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const s = v.trim().slice(0, 2000);
+    if (s === "") return "";
+    try {
+      const u = new URL(s);
+      return u.protocol === "https:" ? u.href : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const list = (v: unknown, re: RegExp, map: (s: string) => string): string[] | undefined => {
+    if (!Array.isArray(v)) return undefined;
+    const seen = new Set<string>();
+    for (const x of v) {
+      if (typeof x !== "string") continue;
+      const s = map(x.trim());
+      if (s !== "" && re.test(s)) seen.add(s);
+    }
+    return [...seen].slice(0, MAX_LIST);
+  };
+  const banner = link(patch.banner);
+  if (banner !== undefined) out.banner = banner;
+  const posting = link(patch.postingPolicy);
+  if (posting !== undefined) out.postingPolicy = posting;
+  const privacy = link(patch.privacyPolicy);
+  if (privacy !== undefined) out.privacyPolicy = privacy;
+  const tags = list(patch.tags, TAG_RE, (s) => s.toLowerCase());
+  if (tags) out.tags = tags;
+  const langs = list(patch.languageTags, LANG_RE, (s) => s);
+  if (langs) out.languageTags = langs;
+  const countries = list(patch.relayCountries, COUNTRY_RE, (s) => s.toUpperCase());
+  if (countries) out.relayCountries = countries;
+  return out;
+}
 
 export class Settings {
   policy: Policy = { ...DEFAULT_POLICY };
@@ -251,6 +310,7 @@ export class Settings {
     const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
     const clean: Partial<Policy> = {};
     for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
+    Object.assign(clean, publicFields(policy));
     if (policy.writes === "open" || policy.writes === "allowlist" || policy.writes === "owner") clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
