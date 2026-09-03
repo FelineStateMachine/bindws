@@ -43,7 +43,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   banpubkey: "ban", banevent: "ban", allowevent: "ban",
   deleteevent: "deleteEvent",
   createinvite: "invites", revokeinvite: "invites",
-  resolvereport: "reports",
+  resolvereport: "reports", listeventsneedingmoderation: "reports",
   setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules",
   changerelayname: "identity", changerelaydescription: "identity", changerelayicon: "identity",
   storagestats: "storage", deleteblob: "storage",

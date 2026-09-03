@@ -50,7 +50,7 @@ const METHODS = [
   "allowkind", "disallowkind", "unrulekind", "listallowedkinds", "listblockedkinds",
   "changerelayname", "changerelaydescription", "changerelayicon",
   "createinvite", "listinvites", "revokeinvite", "listmembers",
-  "listreports", "resolvereport",
+  "listreports", "resolvereport", "listeventsneedingmoderation",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules",
@@ -195,6 +195,18 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "allowevent":
       s.setEvent(str(0), null);
       return reply({ result: true });
+    case "listeventsneedingmoderation": {
+      // NIP-86's view of the reports queue: one entry per reported thing,
+      // event id or blob hash, with the report's type and words as the reason.
+      const seen = new Set<string>();
+      const out: { id: string; reason: string }[] = [];
+      for (const r of relay.sql.exec<{ target_event: string; type: string; content: string }>(`SELECT target_event, type, content FROM reports WHERE status='open' AND target_event<>'' ORDER BY at DESC LIMIT 500`)) {
+        if (seen.has(r.target_event)) continue;
+        seen.add(r.target_event);
+        out.push({ id: r.target_event, reason: [r.type, r.content.slice(0, 200)].filter(Boolean).join(": ") });
+      }
+      return reply({ result: out });
+    }
     case "listreports": {
       const status = str(0) || "open";
       return reply({ result: relay.sql.exec(`SELECT * FROM reports WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });
