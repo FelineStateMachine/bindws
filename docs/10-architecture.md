@@ -47,6 +47,8 @@ Blobs live in R2 under `<name>/<sha256>`. Their descriptors live in the relay's 
 
 One alarm per object, at most a day out, sooner if a NIP-40 expiry is due or a lease expires. It flushes usage counters, charges storage, applies retention rules and sweeps expired events. A lease past its expiry is torn down whole, which returns the name to unclaimed.
 
+NIP-46 traffic (kind 24133) is ephemeral, never stored and encrypted end to end, so it passes the ownership and write gates, and a subscription to it alone passes the read gate. That lets the relay carry a remote signer's session for the console, including for someone about to claim it. Bans and the per-connection rate limit still apply.
+
 The alarm also drives pulls (`pull.ts`). `pullfrom` records a job and wakes the alarm; each round opens one websocket to the source, reconciles with NIP-77 as the initiator, fetches a bounded batch of the missing ids, verifies signatures, and stores them through the normal write path minus the client policy. Sources on this host are dialled through their object stub and their files copied in R2 by prefix. Rounds repeat until nothing is missing, so a pull survives the object sleeping, and a second pull only fetches the difference.
 
 ## Fuel

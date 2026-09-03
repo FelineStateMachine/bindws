@@ -27,6 +27,7 @@ src/
   ratelimit.ts  token buckets
   negentropy.ts hll.ts event.ts filter.ts
   dashboard.ts  the console, one HTML file as three strings
+  gen/signer.ts generated: the NIP-46 client library the console loads from /signer.js
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
@@ -34,6 +35,7 @@ test/
   conformance/                               black-box suite for any relay URL
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
+  build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
 ```
 
 ## Run the tests
@@ -63,6 +65,10 @@ CI runs typecheck and the object tests on every push and pull request. `main` on
 ## Add a NIP
 
 Relay-side NIPs usually touch three places: `relay.ts` for the message handling, `store.ts` if the query surface changes and `SUPPORTED_NIPS` for the information document. Add a conformance test in `test/conformance` so the behavior is checked from outside.
+
+## The signer bundle
+
+The console has no build step, but remote signing needs NIP-44 and secp256k1, which browsers do not ship. `scripts/signer-entry.js` imports the pieces of nostr-tools the console uses and `npm run build:signer` bundles them with esbuild into `src/gen/signer.ts`, a string the relay serves at `/signer.js`. The console loads it only when someone picks a remote signer. The generated file is committed; `npm run typecheck` fails when it is stale.
 
 ## The console
 

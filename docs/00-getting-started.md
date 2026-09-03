@@ -7,7 +7,7 @@ audience: user
 
 bind.ws gives you a nostr relay at a name you choose. You claim it with your nostr key. There is no account, password or email.
 
-You need a nostr key and a browser extension that signs with it, such as Alby, nos2x or Nostash. Any nostr client works with the relay once it exists.
+You need a nostr key and something that signs with it: a browser extension such as Alby, nos2x or Nostash, or a remote signer app such as Amber or nsec.app, which the relay's page connects to (NIP-46). Any nostr client works with the relay once it exists.
 
 ## Claim a name
 
@@ -16,6 +16,12 @@ You need a nostr key and a browser extension that signs with it, such as Alby, n
 3. The page becomes your relay's console. You are the owner.
 
 If the page shows someone else's name, the relay is taken. Pick another.
+
+## From a phone
+
+No extension is needed. Open the relay's page, choose **Use a remote signer**, and tap **Open in your signer app**. The app asks you to approve the connection and the page continues where you left off, claiming or signing in. On a computer, paste the `bunker://` URL your signer app gives you instead. The relay itself carries the signer traffic, so this works on a relay nobody has claimed yet.
+
+The page remembers the connection until you sign out.
 
 ## Try one first
 
