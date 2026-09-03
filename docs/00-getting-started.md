@@ -76,6 +76,10 @@ On the People tab, set a member's role to *moderator*. A moderator can add and r
 
 On the Identity tab, **Transfer ownership** gives the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change.
 
+## If you lose your key
+
+Keys get lost. On the Identity tab, under **If I lose my key**, name a member as your heir and pick how long you can be away: three months, six, or a year. If you do not sign in for that long, the relay writes to you once a week for a month, in your own inbox and on your DM relays. If you still do not show up, it hands itself to the heir and keeps you on as a moderator. Any signed action on the relay, a console visit, a post, a signed request, resets the clock. Nothing else changes: the relay's key, events, files and fuel stay as they are.
+
 ## Groups in clients
 
 Your relay is also a NIP-29 group, one group per relay, so clients that understand groups (Flotilla, Chachi, 0xchat, Coracle) show it as a community: name and picture, who is in it, a join button and moderation. The group id is the relay's name. Who may read and write follows your Rules tab: members-only reads make the group private, and anything but open writes makes it closed, so joining needs an invite code.
