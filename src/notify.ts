@@ -8,11 +8,12 @@ import { dial } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 import type { FuelStatus } from "./fuel.ts";
 
-export type NotifyKind = "reports" | "fuel" | "jobs" | "test";
+export type NotifyKind = "reports" | "fuel" | "jobs" | "succession" | "test";
 export interface NotifySettings {
   reports: boolean;
   fuel: boolean;
   jobs: boolean;
+  succession: boolean; // the dead-man's switch warnings and the handover
 }
 
 const KIND_DM = 14;
@@ -28,19 +29,20 @@ export function notifySettings(raw: unknown, cur: NotifySettings): NotifySetting
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const pick = (k: keyof NotifySettings) => (typeof r[k] === "boolean" ? (r[k] as boolean) : cur[k]);
-  return { reports: pick("reports"), fuel: pick("fuel"), jobs: pick("jobs") };
+  return { reports: pick("reports"), fuel: pick("fuel"), jobs: pick("jobs"), succession: pick("succession") };
 }
 
-// notify sends the owner a message of the given kind if that kind is
-// switched on ("test" always sends). Returns whether a wrap was stored. A
-// leased relay has no owner to write to.
-export async function notify(relay: Relay, kind: NotifyKind, text: string, subject = "your relay"): Promise<boolean> {
+// notify sends the owner (or `to`, a member the relay may address) a message
+// of the given kind if that kind is switched on ("test" always sends).
+// Returns whether a wrap was stored. A leased relay has no owner to write to.
+export async function notify(relay: Relay, kind: NotifyKind, text: string, subject = "your relay", to = ""): Promise<boolean> {
   const p = relay.settings.policy;
   if (p.owner === "" || relay.settings.isLeased()) return false;
   if (kind !== "test" && !p.notify[kind]) return false;
+  const recipient = to || p.owner;
   await relay.identity.ensure();
   const t = now();
-  const wrap = relay.identity.wrap({ kind: KIND_DM, content: text, tags: [["p", p.owner], ["subject", subject]], created_at: t }, p.owner);
+  const wrap = relay.identity.wrap({ kind: KIND_DM, content: text, tags: [["p", recipient], ["subject", subject]], created_at: t }, recipient);
   const err = relay.store.save(wrap, t);
   if (err) return false;
   relay.broadcast(wrap);

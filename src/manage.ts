@@ -63,6 +63,7 @@ const METHODS = [
   "listdumps", "deletedump", "dumpnow",
   "removesubtree",
   "forkrelay",
+  "setsuccession", "clearsuccession", "successionstatus",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -101,18 +102,22 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (lease && lease.until <= t) return reply({ error: "restricted: this temporary relay has expired" }, 403);
       s.update(lease ? { owner: caller, lease: null, name: "", description: "" } : { owner: caller });
       s.upsertMember(caller, { via: "claimed" }, t);
+      await relay.ownerSeenNow();
       await relay.publishMembership();
       return reply({ result: { owner: caller, claimed: true, ...(lease ? { converted: true } : {}) } });
     }
     return reply({ result: { owner: p.owner, claimed: s.isOwner(caller) } }, s.isOwner(caller) ? 200 : 403);
   }
   if (method === "supportedmethods") return reply({ result: METHODS });
+  // The heir may read the succession status: a member, with no console otherwise.
+  if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.successionStatus() });
   // One permission table for the console and for NIP-29 (roles.ts).
   const role = s.roleOf(caller);
   const action = METHOD_ACTIONS[method];
   // A plain member reaches their own invites when the owner opened the
   // invite tree (memberInvites); the cases below keep them to their own.
   const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
+  if (role === "owner") void relay.ownerSeen(caller);
   if (!ownInvites && (!action || !can(role, action))) {
     const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
     return reply({ error: why }, 403);
@@ -472,6 +477,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
       const err = s.transferOwner(pk);
       if (err) return reply({ error: err }, 400);
+      await relay.ownerSeenNow();
       await relay.publishMembership({ pubkey: pk }, { pubkey: caller });
       return reply({ result: { owner: pk, previous: caller } });
     }
@@ -484,6 +490,23 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     }
     case "dumpnow":
       return reply({ result: await writeDump(relay, t) });
+    case "setsuccession": {
+      // ({heir, afterDays}) or (heir, afterDays): the heir must be a member.
+      const o = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : { heir: str(0), afterDays: num(1) };
+      const heir = typeof o.heir === "string" ? o.heir : "";
+      if (!hex64(heir)) return reply({ error: "invalid: heir must be a 64 hex pubkey" }, 400);
+      const err = s.setSuccession(heir, Number(o.afterDays));
+      if (err) return reply({ error: err }, 400);
+      await relay.ownerSeenNow();
+      return reply({ result: await relay.successionStatus() });
+    }
+    case "clearsuccession":
+      s.update({ succession: null });
+      await relay.ownerSeenNow();
+      return reply({ result: true });
+    case "successionstatus":
+      if (role !== "owner") return reply({ error: "restricted: only the owner and the heir may see this" }, 403);
+      return reply({ result: await relay.successionStatus() });
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
       await relay.publishMembership();

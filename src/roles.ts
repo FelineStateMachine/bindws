@@ -51,7 +51,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   removesubtree: "members",
   exportconfig: "config", importconfig: "config",
   pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",
-  transferowner: "transfer",
+  transferowner: "transfer", setsuccession: "transfer", clearsuccession: "transfer", successionstatus: "read",
   notifytest: "identity",
   forkrelay: "fork",
   deleterelay: "deleteRelay",

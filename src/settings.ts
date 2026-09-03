@@ -10,8 +10,20 @@ export interface Lease {
   holder: string;
 }
 
+// Succession is the dead-man's switch: when the owner has not signed in for
+// `afterDays`, the relay warns them for a month, then hands itself to the
+// heir, who must be a member.
+export interface Succession {
+  heir: string;
+  afterDays: number;
+}
+export const SUCCESSION_DAYS = [90, 180, 365];
+// How long the warnings run before the handover.
+export const SUCCESSION_WARN_DAYS = 30;
+
 export interface Policy {
   owner: string; // pubkey; "" while unclaimed
+  succession: Succession | null; // off until the owner names an heir
   lease: Lease | null; // set while the relay is a temporary lease
   name: string;
   description: string;
@@ -59,7 +71,8 @@ export const DEFAULT_POLICY: Policy = {
   tags: [],
   languageTags: [],
   relayCountries: [],
-  notify: { reports: false, fuel: false, jobs: false },
+  notify: { reports: false, fuel: false, jobs: false, succession: false },
+  succession: null,
   writes: "open",
   reads: "open",
   joinTerms: "",
@@ -294,11 +307,23 @@ export class Settings {
   }
   // transferOwner hands the relay to a member. The old owner stays on as a
   // moderator so nobody is locked out. Returns "" or a reason.
+  // setSuccession names an heir, who must be a member, and switches the
+  // warnings on. Returns "" or a reason.
+  setSuccession(heir: string, afterDays: number): string {
+    if (this.policy.owner === "") return "restricted: this relay has no owner";
+    if (heir === this.policy.owner) return "invalid: the heir must be someone else";
+    if (!this.member(heir)) return "invalid: the heir must be a member first";
+    if (!SUCCESSION_DAYS.includes(afterDays)) return "invalid: afterDays must be one of " + SUCCESSION_DAYS.join(", ");
+    this.update({ succession: { heir, afterDays }, notify: { ...this.policy.notify, succession: true } });
+    return "";
+  }
+
   transferOwner(pubkey: string): string {
     const old = this.policy.owner;
     if (old === "" || pubkey === old) return "invalid: that is already the owner";
     if (!this.member(pubkey)) return "invalid: the new owner must be a member first";
-    this.update({ owner: pubkey });
+    // A handover, by whatever route, ends the succession set for the old owner.
+    this.update({ owner: pubkey, succession: null });
     this.sql.exec(`UPDATE members SET role='moderator' WHERE pubkey=?`, old);
     this.sql.exec(`UPDATE members SET role='owner' WHERE pubkey=?`, pubkey);
     return "";
@@ -397,7 +422,7 @@ export class Settings {
       format: "bind.ws/relay-config/1",
       exported_at: Math.floor(Date.now() / 1000),
       name,
-      policy: { ...this.policy, owner: undefined, lease: undefined },
+      policy: { ...this.policy, owner: undefined, lease: undefined, succession: undefined },
       members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}), ...(m.keep_days ? { keepDays: m.keep_days } : {}), ...(m.max_bytes ? { maxBytes: m.max_bytes } : {}) })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),
