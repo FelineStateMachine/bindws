@@ -27,6 +27,7 @@ import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43R
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
+import { notify, fuelLow, fuelText } from "./notify.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -451,12 +452,19 @@ export class Relay extends DurableObject<Env> {
     const fresh = await this.jobs();
     const slot = fresh.findIndex((j) => j.id === job.id);
     if (slot < 0) return fresh.some((j) => j.running || (j.nextRun > 0 && j.nextRun <= now()));
+    // A finished run is worth a word to the owner, when they asked for one.
+    const finish = (error: string) => {
+      finishRun(job, error, now());
+      const where = (job.kind === "push" ? "to " : "from ") + job.relays.join(", ");
+      const outcome = error ? `failed after ${job.rounds} rounds: ${error}` : job.kind === "push" ? `finished: ${job.sent} events sent${job.refused ? ", " + job.refused + " refused" : ""}` : `finished: ${job.stored} events${job.blobs ? " and " + job.blobs + " files" : ""}${job.skipped ? ", " + job.skipped + " skipped" : ""}`;
+      void notify(this, "jobs", `${job.label} ${where} ${outcome}.`, "jobs on " + this.slug);
+    };
     if (r.error) {
       job.failures++;
-      if (job.failures >= 3) finishRun(job, r.error, now());
+      if (job.failures >= 3) finish(r.error);
     } else {
       job.failures = 0;
-      if (!r.more) finishRun(job, "", now());
+      if (!r.more) finish("");
     }
     fresh[slot] = job;
     await this.saveJobs(fresh);
@@ -882,7 +890,7 @@ export class Relay extends DurableObject<Env> {
       const r = await this.acceptReceipt(e, conn.host);
       if (r) return r;
     }
-    if (e.kind === KIND_REPORT) return this.acceptReport(e);
+    if (e.kind === KIND_REPORT) return this.acceptReport(e, conn.host);
     if (isGroupManagement(e.kind) && (hasTag(e, "h") || isNIP43Request(e.kind))) return this.acceptGroup(e, conn);
     return this.accept(e, conn);
   }
@@ -934,7 +942,7 @@ export class Relay extends DurableObject<Env> {
 
   // acceptReport files a NIP-56 report in the moderation queue. It is never
   // stored as an event or served: reports are for the owner, not the feed.
-  private acceptReport(e: Event): { ok: boolean; msg: string; stored: boolean } {
+  private acceptReport(e: Event, host = ""): { ok: boolean; msg: string; stored: boolean } {
     if (this.settings.policy.owner === "") return { ok: false, msg: this.settings.isLeased() ? "restricted: this temporary relay has no owner to report to" : "restricted: this relay is unclaimed", stored: false };
     if (this.settings.isBanned(e.pubkey)) return { ok: false, msg: "blocked: this pubkey is banned from this relay", stored: false };
     const p = tagValues(e, "p")[0] ?? "";
@@ -946,6 +954,8 @@ export class Relay extends DurableObject<Env> {
       `INSERT OR IGNORE INTO reports(id,reporter,target_pubkey,target_event,type,content,at) VALUES(?,?,?,?,?,?,?)`,
       e.id, e.pubkey, p, et?.[1] ?? "", type.slice(0, 32), e.content.slice(0, 2000), e.created_at,
     );
+    const where = host ? `https://${host}/#people` : "the People tab";
+    void notify(this, "reports", `New report on ${this.slug}: ${type || "report"} about ${p.slice(0, 8)}${et ? " (event " + et[1].slice(0, 8) + ")" : ""} by ${e.pubkey.slice(0, 8)}.${e.content ? " " + e.content.slice(0, 300) : ""} Review it at ${where}`, "a report on " + this.slug);
     return { ok: true, msg: "info: report received", stored: false };
   }
 
@@ -1012,6 +1022,15 @@ export class Relay extends DurableObject<Env> {
     this.fuel.chargeStorage(t, this.eventBytes(), this.mediaBytes());
     this.store.drain();
     this.sweepRetention(t);
+    // Fuel notice: once when it turns low, then once a day while it stays low.
+    if (this.settings.policy.notify.fuel) {
+      const low = fuelLow(this.fuelStatus());
+      const last = (await this.ctx.storage.get<number>("fuel-low-at")) ?? 0;
+      if (low && t - last >= 86400) {
+        await this.ctx.storage.put("fuel-low-at", t);
+        await notify(this, "fuel", fuelText(this, this.fuelStatus()), "fuel on " + this.slug);
+      } else if (!low && last) await this.ctx.storage.delete("fuel-low-at");
+    }
     const next = this.store.sweepExpired(t);
     let at = t + 86400;
     if (next > 0 && next < at) at = next;
@@ -1030,7 +1049,7 @@ export class Relay extends DurableObject<Env> {
     const own = rules.filter((r) => r.kind !== null).map((r) => r.kind as number);
     for (const r of rules) {
       if (r.kind !== null) gone += this.store.purge(r.kind, t - r.days * 86400);
-      else gone += this.store.purge(null, t - r.days * 86400, [...own, ...this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k))]);
+      else gone += this.store.purge(null, t - r.days * 86400, [...own, ...this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k) || k === 1059)]);
     }
     return gone;
   }

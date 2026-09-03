@@ -6,6 +6,7 @@
 // (39000-39003), the NIP-43 role definitions (33534), and its own profile
 // (kind 0). All but the profile NIP-70 protected.
 import { finalizeEvent, getPublicKey, generateSecretKey, type Event } from "nostr-tools/pure";
+import { wrapEvent } from "nostr-tools/nip59";
 import { bytesToHex, hexToBytes } from "./negentropy.ts";
 
 export const KIND_MEMBER_ADDED = 8000;
@@ -64,6 +65,13 @@ export class Identity {
   sign(kind: number, tags: string[][], content = "", created_at = Math.floor(Date.now() / 1000)): Event {
     if (!this.sk) throw new Error("relay has no identity yet");
     return finalizeEvent({ kind, tags, content, created_at }, this.sk);
+  }
+
+  // wrap seals and gift wraps a rumour for one recipient with the relay's
+  // key (NIP-59 with NIP-44), for the notifications the relay sends its owner.
+  wrap(rumor: { kind: number; content: string; tags: string[][]; created_at: number }, recipient: string): Event {
+    if (!this.sk) throw new Error("relay has no identity yet");
+    return wrapEvent(rumor, this.sk, recipient) as Event;
   }
 
   // roster timestamps are strictly increasing: two snapshots in one second

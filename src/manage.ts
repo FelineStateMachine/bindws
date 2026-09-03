@@ -10,6 +10,7 @@ import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected, publicFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { relaysFromList } from "./jobs.ts";
+import { notify, notifySettings } from "./notify.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
 import { PRESETS, applyPreset } from "./presets.ts";
 
@@ -57,7 +58,7 @@ const METHODS = [
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
-  "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner",
+  "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner", "notifytest",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -133,6 +134,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
       if (typeof patch.directoryPublic === "boolean") clean.directoryPublic = patch.directoryPublic;
+      const notifyPatch = notifySettings(patch.notify, p.notify);
+      if (notifyPatch) clean.notify = notifyPatch;
       for (const k of ["minPow", "maxFuture", "maxLimit", "maxSubs", "maxBlobMB", "eventsPerMinute", "reqsPerMinute"]) if (Number.isInteger(patch[k]) && (patch[k] as number) >= 0) clean[k] = patch[k];
       if (typeof clean.maxBlobMB === "number") clean.maxBlobMB = Math.min(Math.max(clean.maxBlobMB as number, 1), 95);
       if (typeof clean.eventsPerMinute === "number") clean.eventsPerMinute = Math.max(clean.eventsPerMinute as number, 1);
@@ -340,6 +343,10 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: s.listKinds("allow") });
     case "listblockedkinds":
       return reply({ result: s.listKinds("block") });
+    case "notifytest": {
+      const sent = await notify(relay, "test", `This is a test from ${relay.slug}. Notifications work: you will hear from the relay here about the things you switched on.`, "a test from " + relay.slug);
+      return reply({ result: { sent } });
+    }
     case "resetrules":
       s.resetRules();
       await relay.publishMembership();

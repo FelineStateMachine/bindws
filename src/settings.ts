@@ -1,4 +1,5 @@
 // Per-relay settings and policy, kept in the same SQLite database.
+import { notifySettings, type NotifySettings } from "./notify.ts";
 import type { Role } from "./roles.ts";
 
 // A lease makes an unclaimed relay usable for a while: open to everyone,
@@ -23,6 +24,7 @@ export interface Policy {
   tags: string[]; // short topic words
   languageTags: string[]; // BCP-47, such as en or pt-BR
   relayCountries: string[]; // ISO 3166-1 alpha-2, such as US
+  notify: NotifySettings; // relay-signed NIP-17 messages to the owner
   writes: "open" | "allowlist" | "owner"; // who may publish
   reads: "open" | "auth" | "members"; // whether REQ/COUNT need NIP-42, or membership
   joinTerms: string; // shown before an invite is accepted (markdown-ish plain text)
@@ -49,6 +51,7 @@ export const DEFAULT_POLICY: Policy = {
   tags: [],
   languageTags: [],
   relayCountries: [],
+  notify: { reports: false, fuel: false, jobs: false },
   writes: "open",
   reads: "open",
   joinTerms: "",
@@ -314,6 +317,8 @@ export class Settings {
     if (policy.writes === "open" || policy.writes === "allowlist" || policy.writes === "owner") clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
+    const notify = notifySettings(policy.notify, this.policy.notify);
+    if (notify) clean.notify = notify;
     for (const k of ["minPow", "maxFuture", "maxLimit", "maxSubs", "maxBlobMB", "eventsPerMinute", "reqsPerMinute"] as const) if (Number.isInteger(policy[k]) && (policy[k] as number) >= 0) clean[k] = policy[k] as number;
     this.update(clean);
     for (const m of this.members()) if (m.role !== "owner") this.removeMember(m.pubkey);
@@ -442,6 +447,9 @@ export class Settings {
     const own = this.retention.get(kind);
     if (own !== undefined) return own;
     if (isReplaceable(kind)) return 0;
+    // Gift wraps are mail. "Keep everything else N days" never meant the
+    // owner's inbox; an explicit rule for 1059 still applies.
+    if (kind === 1059) return 0;
     return this.retention.get(RETENTION_ANY) ?? 0;
   }
 }

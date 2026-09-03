@@ -19,6 +19,7 @@ import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
 import { localName } from "./pull.ts";
 import { KIND_REPORT, type Relay } from "./relay.ts";
+import { notify } from "./notify.ts";
 
 export type Blob = {
   sha256: string;
@@ -115,6 +116,7 @@ export function fileReport(relay: Relay, e: Event): number | string {
     filed++;
   }
   if (filed === 0) return "not found: this relay holds none of the reported blobs";
+  void notify(relay, "reports", `New report on ${relay.slug}: ${filed} file${filed === 1 ? "" : "s"} reported by ${e.pubkey.slice(0, 8)}.${e.content ? " " + e.content.slice(0, 300) : ""} Review it at https://${relay.slug}.${relay.domain}/#people`, "a report on " + relay.slug);
   return filed;
 }
 

@@ -50,5 +50,6 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   exportconfig: "config", importconfig: "config",
   pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",
   transferowner: "transfer",
+  notifytest: "identity",
   deleterelay: "deleteRelay",
 };
