@@ -15,6 +15,8 @@
 //   DELETE /<sha256>            t=delete, x=<sha256>; uploader or owner
 //   GET    /list/<pubkey>       public
 import { sha256 } from "@noble/hashes/sha2.js";
+import { verifyBlossom } from "./auth.ts";
+export { verifyBlossom } from "./auth.ts";
 import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
 import { localName } from "./pull.ts";
@@ -37,26 +39,6 @@ export const EXT: Record<string, string> = {
 const TYPE_BY_EXT: Record<string, string> = Object.fromEntries(Object.entries(EXT).map(([type, ext]) => [ext, type]));
 const SHA_RE = /^\/([0-9a-f]{64})(?:\.[a-z0-9]{1,8})?$/;
 const HEX64 = /^[0-9a-f]{64}$/;
-
-// verifyBlossom checks a kind 24242 event for the given action.
-export function verifyBlossom(header: string, action: "upload" | "delete", now: number): Event | string {
-  const m = /^Nostr\s+(\S+)$/i.exec(header.trim());
-  if (!m) return "auth-required: missing Blossom Authorization header";
-  let e: Event;
-  try {
-    e = JSON.parse(atob(m[1].replace(/-/g, "+").replace(/_/g, "/")));
-  } catch {
-    return "auth-required: malformed Blossom token";
-  }
-  const bad = validate(e);
-  if (bad) return "auth-required: " + bad;
-  if (e.kind !== 24242) return "auth-required: token must be kind 24242";
-  if (tagValues(e, "t")[0] !== action) return `auth-required: token is not for ${action}`;
-  const exp = Number(tagValues(e, "expiration")[0]);
-  if (!Number.isFinite(exp) || exp <= now) return "auth-required: token expired";
-  if (e.created_at > now + 300) return "auth-required: token is from the future";
-  return e;
-}
 
 export function isBlobPath(path: string): boolean {
   return SHA_RE.test(path);

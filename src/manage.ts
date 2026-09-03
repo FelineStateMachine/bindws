@@ -1,9 +1,7 @@
 // NIP-86 relay management over HTTP, authenticated with NIP-98. The owner is
 // whoever claimed the relay; "claim" is the one method anyone may call, and
 // only while the relay is unclaimed.
-import { sha256 } from "@noble/hashes/sha2.js";
 import { now, tagValues, validate, type Event } from "./event.ts";
-import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
@@ -19,36 +17,8 @@ import { can, METHOD_ACTIONS } from "./roles.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
 import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
 
-// verifyNIP98 checks an "Authorization: Nostr <base64 event>" header against
-// the request: kind 27235, fresh, u tag naming this URL, method tag, and a
-// payload tag equal to the SHA-256 of the exact body. Returns the event or
-// the reason it was rejected.
-export function verifyNIP98(header: string, url: string, method: string, body: string): Event | string {
-  const m = /^Nostr\s+(\S+)$/i.exec(header.trim());
-  if (!m) return "auth-required: missing NIP-98 Authorization header";
-  let e: Event;
-  try {
-    e = JSON.parse(atob(m[1]));
-  } catch {
-    return "auth-required: malformed NIP-98 token";
-  }
-  const bad = validate(e);
-  if (bad) return "auth-required: " + bad;
-  if (e.kind !== 27235) return "auth-required: token must be kind 27235";
-  if (Math.abs(now() - e.created_at) > 60) return "auth-required: token expired";
-  const want = new URL(url);
-  const got = (() => {
-    try {
-      return new URL(tagValues(e, "u")[0] ?? "");
-    } catch {
-      return null;
-    }
-  })();
-  if (!got || got.host.toLowerCase() !== want.host.toLowerCase() || got.pathname !== want.pathname) return "auth-required: token was signed for another URL";
-  if ((tagValues(e, "method")[0] ?? "").toUpperCase() !== method.toUpperCase()) return "auth-required: token was signed for another method";
-  if (body !== "" && tagValues(e, "payload")[0] !== bytesToHex(sha256(new TextEncoder().encode(body)))) return "auth-required: token payload hash does not match the body";
-  return e;
-}
+import { verifyNIP98 } from "./auth.ts";
+export { verifyNIP98 };
 
 const METHODS = [
   "supportedmethods", "claim", "stats", "getpolicy", "setpolicy",
