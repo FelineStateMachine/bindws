@@ -17,7 +17,7 @@ Pages and the feed exist only while **Rules > Reads** is *anyone*. On a members-
 
 ## The card and the group address
 
-Every relay has a card. `/card.svg` is a picture with the name, who may read and write, the fuel state and a QR code of the group address. `/card.json` has the same facts as data, and `/card.nostr` is the same facts signed by the relay's own key. A relay nobody has claimed, or a temporary one, gets a card that says so.
+Every relay has a card. `/card.svg` is a picture with the name, who may read and write, the fuel state and a QR code of the group address. `/card.json` has the same facts as data, plus the owner's profile address with this relay as the hint, and `/card.nostr` is the same facts signed by the relay's own key. A relay nobody has claimed, or a temporary one, gets a card that says so.
 
 On the Identity tab, **Share** shows the card, the group address with **Copy naddr**, its QR code and **Copy embed** for a snippet to put on a profile or a page. Group-aware clients open that address as your relay's community. Cards refresh every five minutes.
 

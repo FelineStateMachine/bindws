@@ -122,6 +122,10 @@ describe("relay card", () => {
     expect(c.fuel).toBe("allowance");
     expect(c.self).toMatch(/^[0-9a-f]{64}$/);
     expect(c.signed_url).toBe("https://cardy.bind.ws/card.nostr");
+    const prof = decode(c.nprofile);
+    expect(prof.type).toBe("nprofile");
+    expect((prof.data as any).pubkey).toBe(c.owner);
+    expect((prof.data as any).relays).toEqual(["wss://cardy.bind.ws"]);
     const addr = decode(c.naddr);
     expect(addr.type).toBe("naddr");
     expect((addr.data as any).kind).toBe(39000);

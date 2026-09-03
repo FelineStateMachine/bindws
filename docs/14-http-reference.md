@@ -79,7 +79,7 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 
 | Path | Method | Answers | Status |
 |---|---|---|---|
-| `/card.json` | GET | `name`, `state`, `url`, `console`; on a claimed relay also `description`, `icon`, `owner`, `self`, `members` when the directory is public, `reads`, `writes`, `fuel`, `naddr`, `signed_url`, `image`; a lease adds `expires_at` | 200 |
+| `/card.json` | GET | `name`, `state`, `url`, `console`; on a claimed relay also `description`, `icon`, `owner`, `self`, `members` when the directory is public, `reads`, `writes`, `fuel`, `naddr`, `nprofile` (the owner with this relay as the hint), `signed_url`, `image`; a lease adds `expires_at` | 200 |
 | `/card.nostr` | GET | the same facts as a kind 30078 signed by the relay's key | 200; 404 no owner |
 | `/card.svg` | GET | a 600 by 315 picture with the naddr as a QR | 200 |
 | `/qr.svg?text=` | GET | any text up to 512 bytes as a QR | 200; 400 empty; 413 too long |

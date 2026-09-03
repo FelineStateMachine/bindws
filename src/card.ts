@@ -1,13 +1,13 @@
 // The relay card: something a name can be linked to from a profile.
 //
-//   GET /card.json   the facts: name, owner, members, rules, fuel, naddr
+//   GET /card.json   the facts: name, owner, members, rules, fuel, naddr, nprofile
 //   GET /card.nostr  the same facts as a kind 30078 signed by the relay key
 //   GET /card.svg    an open graph sized picture with a QR of the naddr
 //   GET /qr.svg      any short text as a QR, for the console
 //
 // Cards are public and cached for five minutes. Unclaimed and leased relays
 // get a smaller card that says so.
-import { naddrEncode } from "nostr-tools/nip19";
+import { naddrEncode, nprofileEncode } from "nostr-tools/nip19";
 import { svg as qrSVG, encode as qrEncode } from "./qr.ts";
 import { KIND_GROUP_METADATA } from "./identity.ts";
 import { escapeHTML } from "./ui.ts";
@@ -35,6 +35,7 @@ export interface Card {
   writes?: "open" | "allowlist" | "wot" | "owner";
   fuel?: "allowance" | "burning" | "out";
   naddr?: string;
+  nprofile?: string; // the owner, with this relay as the hint: "find me here" for feed clients
   signed_url?: string;
   image?: string;
 }
@@ -63,6 +64,7 @@ export function cardData(relay: Relay, host: string, caller: string[] = []): Car
     image: web + "/card.svg",
   };
   if (p.icon) card.icon = p.icon;
+  card.nprofile = nprofileEncode({ pubkey: p.owner, relays: [url] });
   if (self) {
     card.self = self;
     card.naddr = naddrEncode({ kind: KIND_GROUP_METADATA, pubkey: self, identifier: relay.slug, relays: [url] });
