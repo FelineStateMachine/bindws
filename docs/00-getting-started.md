@@ -80,11 +80,11 @@ On the People tab, set a member's role to *moderator*. A moderator can add and r
 
 ## Hand it over
 
-On the Identity tab, **Transfer ownership** gives the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change.
+On the Owner tab, **Transfer ownership** gives the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change.
 
 ## If you lose your key
 
-Keys get lost. On the Identity tab, under **If I lose my key**, name a member as your heir and pick how long you can be away: three months, six, or a year. If you do not sign in for that long, the relay writes to you once a week for a month, in your own inbox and on your DM relays. If you still do not show up, it hands itself to the heir and keeps you on as a moderator. Any signed action on the relay, a console visit, a post, a signed request, resets the clock. Nothing else changes: the relay's key, events, files and fuel stay as they are.
+Keys get lost. On the Owner tab, under **If I lose my key**, name a member as your heir and pick how long you can be away: three months, six, or a year. If you do not sign in for that long, the relay writes to you once a week for a month, in your own inbox and on your DM relays. If you still do not show up, it hands itself to the heir and keeps you on as a moderator. Any signed action on the relay, a console visit, a post, a signed request, resets the clock. Nothing else changes: the relay's key, events, files and fuel stay as they are.
 
 ## Groups in clients
 
@@ -116,7 +116,7 @@ If you write scripts, the relay has an HTTP door. Sign a request with your key (
 
 ## Bring events in
 
-The Storage tab has a **Jobs** block: work your relay does on its own, in the background, in small rounds, so it keeps going while the relay sleeps between them.
+The Data tab has a **Jobs** block: work your relay does on its own, in the background, in small rounds, so it keeps going while the relay sleeps between them.
 
 - **Pull** copies what another relay has and yours lacks, by NIP-77 sync. Run it again later and only new events come over. Files come along when the other relay is on bind.ws. Pick an interval and it becomes a standing mirror that keeps your name in sync every hour, six hours or day.
 - **Fetch my history** pulls your own events from every relay in your relay list (kind 10002), if a client has published it here. Or give it relays to fetch from.
@@ -128,14 +128,14 @@ Your bans and kind rules apply to what arrives. Your write rule does not: you as
 
 ## Notifications
 
-The relay can write to you. On the Identity tab, switch on what you want to hear about: a report arriving, fuel running low, a pull finishing. Each is a NIP-17 private message signed by the relay's own key, stored on your relay as your inbox and pushed to your DM relays when your kind 10050 is here. It shows up in whatever client you already use for messages.
+The relay can write to you. On the Health tab, switch on what you want to hear about: a report arriving, fuel running low, a pull finishing. Each is a NIP-17 private message signed by the relay's own key, stored on your relay as your inbox and pushed to your DM relays when your kind 10050 is here. It shows up in whatever client you already use for messages.
 
 ## One name per job
 
 Names are cheap, so a relay does not have to do everything. Two ways to spread a life over several names:
 
 - **Presets that mirror.** On the Rules tab, the `search`, `articles`, `media` and `dm` presets turn a name into a single-purpose relay. `search` and `articles` take a source relay and keep a standing pull of their kinds from it, every six hours or daily, so `alice-search` stays a read-only copy of `alice` that clients can point search at. `media` is a file host whose only events are profiles and Blossom server lists. `dm` is an inbox for private messages that only members can read.
-- **Fork this relay.** On the Identity tab, a fork leases a new name, copies this relay into it (everything, only your events, or chosen kinds, with or without the people) and reserves the claim for a key: yours, to split a name by job, or someone else's, to hand a community its own relay with its history. The new name is temporary until it is claimed, and one fork an hour is allowed.
+- **Fork this relay.** On the Data tab, a fork leases a new name, copies this relay into it (everything, only your events, or chosen kinds, with or without the people) and reserves the claim for a key: yours, to split a name by job, or someone else's, to hand a community its own relay with its history. The new name is temporary until it is claimed, and one fork an hour is allowed.
 
 ## Leave
 
@@ -145,7 +145,7 @@ Your data is yours. Any relay that supports sync (NIP-77) can pull everything fr
 nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
 ```
 
-Or download a dump. On the Storage tab, turn on **Dumps** and the relay writes every event as one JSONL file daily or weekly, keeping the last few. **Dump now** writes one on the spot. Downloading takes your signature; the files are never a public link.
+Or download a dump. On the Data tab, turn on **Dumps** and the relay writes every event as one JSONL file daily or weekly, keeping the last few. **Dump now** writes one on the spot. Downloading takes your signature; the files are never a public link.
 
 ## What it costs
 

@@ -5,7 +5,7 @@ audience: user
 
 # Relay configuration
 
-Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Rules, Identity, Storage and Health.
+Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Moderation, Rules, Identity, Data, Health and Owner.
 
 Everything on these tabs is also available to scripts as signed JSON-RPC calls (NIP-86). The page is a client of that same API.
 
@@ -17,16 +17,24 @@ Three things read that table: the write rule, the signed roster your relay publi
 
 - **Add** a member by pubkey or npub. Give them a name and a note if you like.
 - **Invite** with a link. Choose how long the link lives and how many people can use it.
-- **Ban** a pubkey. Their events are refused and their open connections are closed.
-- **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
-- **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
 - **Limits**, two small inputs per member, for the owner only. *Keep for* is a keep-for rule in days for that person's events, on top of the kind rules: older events are refused on arrival and swept once a day, never profiles, contact lists or the relay's own records. *Cap* is the most that person may have stored, in KB; the event that would cross it is refused. Neither applies to the owner.
 - **Members invite members**, the small form under the invites. *Hops deep* is how far from you the tree may reach: 1 means only people you added or invited may invite, 2 lets their invitees invite too. *Each* is how many live invites one member may hold. Zero hops turns it off, which is the default. The member list is drawn as that tree, with who invited whom, and removing or banning someone with invitees asks whether to remove everyone under them as well. Moderators, and everyone under a moderator, stay.
 - **Role** is *member* or *moderator*, set from the selector next to the pubkey. A moderator can add and remove members, ban, delete events, mint invites and resolve reports, here or from a group-aware client. They cannot touch the owner, other moderators, rules, identity, storage or fuel.
 
 Removing a member ends their live subscriptions when reads are members-only.
 
-A moderator who signs in on the relay's page sees the People tab and the recent-events browser, nothing else.
+Join terms are shown to people who open an invite link, and published at `/terms` as the relay's terms of service. The public directory switch decides whether `/people` lists your members to visitors.
+
+A moderator who signs in on the relay's page sees People and Moderation, nothing else.
+
+## Moderation
+
+Keeping order. Reports never show in the feed.
+
+- **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
+- **Ban** a pubkey. Their events are refused and their open connections are closed.
+- **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
+- **Recent events** shows the feed with delete and ban actions.
 
 ## Rules
 
@@ -59,31 +67,22 @@ Name, description, icon and contact appear in your relay's public information do
 
 Banner is a wide image for the same document. Posting policy and privacy policy are links to pages you host elsewhere; both must be https. Tags, languages and countries are short lists that tell relay directories what the relay is about: topic words, language codes such as `en` or `pt-BR`, and two-letter country codes.
 
-Join terms are shown to people who open an invite link, and published at `/terms` as the relay's terms of service. The public directory switch decides whether `/people` lists your members to visitors.
 
 **Your own domain** puts the relay under a hostname you control. Add the hostname; the relay registers it with the host's Cloudflare zone and shows the CNAME to create at your DNS, plus an optional TXT record that activates the hostname before you switch the CNAME. **Check** asks where it stands: the hostname is live when both the hostname and its certificate read active. **Remove** deletes the hostname and its certificate. At most three per relay. Domains are not part of the exported configuration, because they belong to this relay instance rather than to its rules.
 
-**Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
 
-**Transfer ownership** hands the relay to a member you pick. You stay on as a moderator. The relay's key, events, files and fuel do not change. You type the relay's name to confirm.
 
-**Delete relay** removes everything and returns the name to unclaimed. You type the relay's name to confirm.
 
-### If I lose my key
-
-Name a member as your heir and pick the delay: 90, 180 or 365 days. The relay records when you last signed in (any owner-signed action counts, at most once an hour). Past the delay it starts a warning month: a message to you at once and then weekly, and a `succession_pending` date in its NIP-11 document. Any signed action calls the warning off. After the month, the relay transfers itself to the heir the same way **Transfer ownership** does, notifies both of you, and clears the plan. The heir can read the plan's status with the `successionstatus` method; moderators cannot. The plan stays out of exported configuration. If the heir leaves the relay, the plan is dropped and you are told.
 
 ### Tell your clients
 
 One row per list that names relays: relay list (kind 10002), DM inbox (10050), search relays (10007), Blossom servers (10063). **Check** looks for your newest copy here and on the indexers. **Add me** merges this relay into it and publishes the signed result here, to the relays the list names and to the indexers; the row shows which accepted it. **Remove me** does the reverse. Lists are never rebuilt from scratch, so what you had stays.
 
-**Notifications.** Four switches, all off until you turn them on: a report arrives, fuel runs low, a pull finishes, the handover clock is running (this one switches itself on when you name an heir). The relay writes you a NIP-17 private message with its own key, sealed and gift wrapped, stored here as your inbox and pushed to the relays in your kind 10050 when this relay holds one. **Send a test message** proves the path end to end. Only the owner can read these; the catch-all keep-for rule leaves gift wraps alone, though a rule set on kind 1059 itself still applies. Fuel is reported once when it turns low and then once a day while it stays low.
 
-- **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. Choose a name or take a memorable one, choose who claims it (you by default, or an npub), what to copy (everything, only your events, or a list of kinds) and whether the people come along. The result is the new console URL to hand over; the new name expires like any lease unless it is claimed. One fork an hour.
 
-## Storage
+## Data
 
-What is taking space and what to do about it.
+What is here, what moves, and what leaves.
 
 - A bar shows bytes by kind. Totals list events, files and index overhead.
 - The **By kind** table has one row per kind present, with a count, size and oldest event.
@@ -95,8 +94,25 @@ What is taking space and what to do about it.
 
 - **Dumps** writes every event as one JSONL file to storage, daily or weekly, and keeps the newest few (seven by default). **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading is a signed request; the files are never public. Dumps count as files for fuel.
 - **Pull from a relay** copies what another relay has and this one lacks, by NIP-77 sync. It runs in the background and the line under it follows along. Running it again fetches only what is new. Files come along from relays on this host. Bans and kind rules apply to what arrives; the write rule does not. The other relay has to let anyone read.
-- **Browse recent events** at the bottom shows the feed with delete and ban actions.
+
+- **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. Choose a name or take a memorable one, choose who claims it (you by default, or an npub), what to copy (everything, only your events, or a list of kinds) and whether the people come along. The result is the new console URL to hand over; the new name expires like any lease unless it is claimed. One fork an hour.
 
 ## Health
 
 Time since the last event, open connections, fuel status and a breakdown of kinds over the last 30 days. Below it, the usage meters and the list of zaps received.
+
+**Notifications.** Four switches, all off until you turn them on: a report arrives, fuel runs low, a pull finishes, the handover clock is running (this one switches itself on when you name an heir). The relay writes you a NIP-17 private message with its own key, sealed and gift wrapped, stored here as your inbox and pushed to the relays in your kind 10050 when this relay holds one. **Send a test message** proves the path end to end. Only the owner can read these; the catch-all keep-for rule leaves gift wraps alone, though a rule set on kind 1059 itself still applies. Fuel is reported once when it turns low and then once a day while it stays low.
+
+## Owner
+
+The relay as a thing you hold.
+
+**Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
+
+**Transfer ownership** hands the relay to a member you pick. You stay on as a moderator. The relay's key, events, files and fuel do not change. You type the relay's name to confirm.
+
+**Delete relay** removes everything and returns the name to unclaimed. You type the relay's name to confirm.
+
+### If I lose my key
+
+Name a member as your heir and pick the delay: 90, 180 or 365 days. The relay records when you last signed in (any owner-signed action counts, at most once an hour). Past the delay it starts a warning month: a message to you at once and then weekly, and a `succession_pending` date in its NIP-11 document. Any signed action calls the warning off. After the month, the relay transfers itself to the heir the same way **Transfer ownership** does, notifies both of you, and clears the plan. The heir can read the plan's status with the `successionstatus` method; moderators cannot. The plan stays out of exported configuration. If the heir leaves the relay, the plan is dropped and you are told.
