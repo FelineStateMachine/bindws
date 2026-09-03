@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../src/relay.ts";
+import { difficulty } from "../src/event.ts";
 
 const now = () => Math.floor(Date.now() / 1000);
 const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
@@ -172,7 +173,10 @@ describe("policy", () => {
 
     // proof of work
     await rpc(host, owner, "setpolicy", { minPow: 4 });
-    expect((await c.ok(ev(stranger, 1, "weak"))).msg).toMatch(/^pow:/);
+    // One random id in sixteen starts with a zero nibble and would pass; pick one that does not.
+    let weak = ev(stranger, 1, "weak");
+    while (difficulty(weak).difficulty >= 4) weak = ev(stranger, 1, "weak " + Math.random());
+    expect((await c.ok(weak)).msg).toMatch(/^pow:/);
     await rpc(host, owner, "setpolicy", { minPow: 0 });
 
     // reads need auth
