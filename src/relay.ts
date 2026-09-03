@@ -48,6 +48,8 @@ export interface Env {
 
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 50, 56, 59, 62, 67, 70, 77, 86, 98];
 export const KIND_REPORT = 1984;
+// NIP-46 remote signing traffic: ephemeral, encrypted end to end, never stored.
+export const KIND_NOSTR_CONNECT = 24133;
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";
 export const MAX_MESSAGE = 128 * 1024;
@@ -778,6 +780,12 @@ export class Relay extends DurableObject<Env> {
     if (exp > 0 && exp <= t) return "invalid: event has already expired";
     if (this.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
     if (this.settings.isEventBanned(e.id)) return "blocked: this event is banned from this relay";
+    // NIP-46 traffic passes the ownership, fuel and write gates: it is
+    // ephemeral, never stored, and readable only by its two parties, and
+    // letting it through means this relay can carry a remote signer's
+    // session, even for the person about to claim it from a phone. Bans
+    // and the per-connection rate limit still apply.
+    if (e.kind === KIND_NOSTR_CONNECT) return "";
     const h = tagValues(e, "h")[0];
     if (h !== undefined && h !== this.slug) return "blocked: this relay hosts one group: " + this.slug;
     if (conn) {
@@ -818,6 +826,7 @@ export class Relay extends DurableObject<Env> {
     const no = (msg: string) => ({ ok: false, msg, stored: false });
     const gate = this.gate(e, conn, t);
     if (gate) return no(gate);
+    if (e.kind === KIND_NOSTR_CONNECT) return { ok: true, msg: "", stored: true }; // see gate
     const exp = expiration(e);
     if (conn) {
       if (!this.settings.kindAllowed(e.kind)) return no("blocked: this relay does not accept kind " + e.kind);
@@ -925,6 +934,9 @@ export class Relay extends DurableObject<Env> {
   // allowFilters returns a CLOSED reason, or "" plus whether an EOSE "auth"
   // hint applies because private kinds were silently filtered out.
   allowFilters(s: ConnState, filters: Filter[]): { reason: string; authHint: boolean } {
+    // A subscription to NIP-46 traffic alone is served under any read
+    // policy: see accept for why the relay carries it.
+    if (filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
     const authed = s.authed.length > 0;
     const reads = this.settings.policy.reads;
     if (reads !== "open" && !authed) return { reason: "auth-required: this relay requires authentication", authHint: false };
