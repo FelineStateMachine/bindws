@@ -57,7 +57,7 @@ A view is a record the relay signs from what it holds, so a client reads one eve
 
 Profiles and relays follow the directory switch, calendar, articles and presence follow the read rule. A members-only view is never stored, since a stored event is readable by anyone the read rule lets in. It is folded and signed when a member asks for it with a signed request. Presence is an ephemeral event, kind 20078, sent to whoever subscribes to it and answered from memory at `/view/presence`; it is broadcast at most once every 30 seconds.
 
-Views cost rows written, which fuel counts. The Data tab shows what each one wrote on its last run, and the weekly digest adds them up. Any view can be switched off there.
+Views cost rows written, which fuel counts. The Views tab shows what each one wrote on its last run, and the weekly digest adds them up. Any view can be switched off there.
 
 ## Scripts
 

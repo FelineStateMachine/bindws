@@ -13,7 +13,7 @@ The Data tab shows bytes by kind, the files people uploaded and a keep-for rule 
 
 ## Jobs
 
-A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Data tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why.
+A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why.
 
 A job runs once, or every hour, six hours or day. Up to five standing jobs and 20 jobs in all per relay. Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
 
@@ -51,7 +51,7 @@ The search and articles presets take a source relay URL in the field next to the
 
 ## Fork this relay
 
-Under **Fork this relay** on the Data tab, a fork leases a new name, copies this relay into it and reserves the claim for a key.
+Under **Fork this relay** on the Sync tab, a fork leases a new name, copies this relay into it and reserves the claim for a key.
 
 - **Name**: choose one, or leave it blank for a memorable one.
 - **Who claims it**: you by default, or an npub or hex key to hand a community its own relay with its history.

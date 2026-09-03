@@ -5,7 +5,7 @@ audience: user
 
 # Relay configuration
 
-Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Moderation, Rules, Identity, Data, Health and Owner.
+Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Moderation, Rules, Identity, Data, Sync, Views, Health and Owner.
 
 Everything on these tabs is also available to scripts as signed JSON-RPC calls (NIP-86). The page is a client of that same API.
 
@@ -85,7 +85,7 @@ One row per list that names relays: relay list, DM inbox, search relays and Blos
 
 ## Data
 
-What is here, what moves, and what leaves.
+What is here and what leaves.
 
 - A bar shows bytes by kind. Totals list events, files and index overhead.
 - The **By kind** table has one row per kind present, with a count, size and oldest event.
@@ -93,12 +93,20 @@ What is here, what moves, and what leaves.
 - **Purge** deletes a kind older than a number of days, now. Zero means all of them.
 - Kinds marked **required** are never expired or purged: profiles, contact lists, relay lists, zap receipts and the roster. The relay depends on them.
 - **Files** lists uploads with sizes and a delete button.
-- **Jobs** is work the relay does on its own in small rounds: pulls, standing mirrors, fetch my history and rebroadcasts, with run-now and remove per job. See [Data and names](04-data-and-names.md#jobs).
 
 - **Import a file** takes a JSONL of events, one per line, such as a dump or a strfry export, or a JSON array, up to 64 MB, and stores what checks out as a job: signatures are verified, bans and kind rules apply, the write rule does not. The Jobs table shows stored, skipped and already-here counts. The file counts as a file for fuel until the job is done, then it is deleted.
 - **Dumps** writes every event as one JSONL file daily or weekly and keeps the newest few. **Dump now** writes one on the spot. Downloads are signed requests. See [Data and names](04-data-and-names.md#dumps).
 
+## Sync
+
+What moves in and out. Jobs spend awake time, which fuel counts.
+
+- **Jobs** is work the relay does on its own in small rounds: pulls, standing mirrors, fetch my history and rebroadcasts, with run-now and remove per job. See [Data and names](04-data-and-names.md#jobs).
 - **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. One fork an hour. See [Data and names](04-data-and-names.md#fork-this-relay).
+
+## Views
+
+Records the relay computes and signs from its own data.
 
 - **Views** lists the records the relay signs from its own data, profiles, relays, calendar, moderation, articles, zaps and presence, with how often each runs, who may read it, when it last ran and how many rows that wrote. Each has a switch; off takes the record down at once. **Open** shows the record itself. See [Your relay on the web](05-your-relay-on-the-web.md#views).
 
