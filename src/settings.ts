@@ -1,4 +1,5 @@
 // Per-relay settings and policy, kept in the same SQLite database.
+import type { Role } from "./roles.ts";
 
 // A lease makes an unclaimed relay usable for a while: open to everyone,
 // then wiped at `until` unless somebody claims it first. holder "" means
@@ -67,7 +68,7 @@ CREATE INDEX IF NOT EXISTS blobs_uploader ON blobs(uploader, uploaded DESC);
 // optional name is their NIP-05 handle at the relay's host.
 export type Member = {
   pubkey: string;
-  role: "owner" | "member";
+  role: Role;
   name: string | null;
   note: string;
   joined_at: number;
@@ -154,7 +155,7 @@ export class Settings {
   // ---- people ----
 
   members(): Member[] {
-    return this.sql.exec<Member>(`SELECT * FROM members ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, joined_at, pubkey`).toArray();
+    return this.sql.exec<Member>(`SELECT * FROM members ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'moderator' THEN 1 ELSE 2 END, joined_at, pubkey`).toArray();
   }
   member(pubkey: string): Member | null {
     return this.sql.exec<Member>(`SELECT * FROM members WHERE pubkey=?`, pubkey).toArray()[0] ?? null;
@@ -164,6 +165,26 @@ export class Settings {
   }
   isAllowed(pubkey: string) {
     return this.memberSet.has(pubkey) || this.isOwner(pubkey);
+  }
+  // roleOf is the pubkey's role, or null for a stranger.
+  roleOf(pubkey: string): Role | null {
+    if (this.isOwner(pubkey)) return "owner";
+    return this.member(pubkey)?.role ?? null;
+  }
+  // setRole promotes or demotes a member; the owner's role only changes by transfer.
+  setRole(pubkey: string, role: "moderator" | "member"): boolean {
+    return this.sql.exec(`UPDATE members SET role=? WHERE pubkey=? AND role!='owner'`, role, pubkey).rowsWritten > 0;
+  }
+  // transferOwner hands the relay to a member. The old owner stays on as a
+  // moderator so nobody is locked out. Returns "" or a reason.
+  transferOwner(pubkey: string): string {
+    const old = this.policy.owner;
+    if (old === "" || pubkey === old) return "invalid: that is already the owner";
+    if (!this.member(pubkey)) return "invalid: the new owner must be a member first";
+    this.update({ owner: pubkey });
+    this.sql.exec(`UPDATE members SET role='moderator' WHERE pubkey=?`, old);
+    this.sql.exec(`UPDATE members SET role='owner' WHERE pubkey=?`, pubkey);
+    return "";
   }
 
   // upsertMember adds or edits a member. name "" clears the name; a name held
@@ -210,7 +231,7 @@ export class Settings {
       exported_at: Math.floor(Date.now() / 1000),
       name,
       policy: { ...this.policy, owner: undefined, lease: undefined },
-      members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note })),
+      members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}) })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),
       kinds: { allow: this.listKinds("allow"), block: this.listKinds("block") },
@@ -235,7 +256,9 @@ export class Settings {
     for (const m of this.members()) if (m.role !== "owner") this.removeMember(m.pubkey);
     for (const m of Array.isArray(c.members) ? c.members : []) {
       const r = m as Record<string, unknown>;
-      if (hex64(r.pubkey)) this.upsertMember(r.pubkey, { name: typeof r.name === "string" ? r.name : null, note: typeof r.note === "string" ? r.note : "", via: "import" }, now, true);
+      if (!hex64(r.pubkey)) continue;
+      this.upsertMember(r.pubkey, { name: typeof r.name === "string" ? r.name : null, note: typeof r.note === "string" ? r.note : "", via: "import" }, now, true);
+      if (r.role === "moderator") this.setRole(r.pubkey, "moderator");
     }
     for (const b of this.listBans()) this.setBan(b.pubkey, false);
     for (const b of Array.isArray(c.bans) ? c.bans : []) {
@@ -347,8 +370,10 @@ const RETENTION_ANY = -1;
 
 // Kinds the relay itself depends on: who people are (profiles, contact and
 // relay lists), what was paid (zap receipts), and who belongs (the roster and
-// its deltas). Never expired, never purged, only deleted one at a time.
-export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001]);
+// its deltas, the NIP-29 put-user and remove-user records, and the group's
+// metadata, admins, members and roles). Never expired, never purged, only
+// deleted one at a time.
+export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 39000, 39001, 39002, 39003]);
 export function isProtected(kind: number): boolean {
   return PROTECTED_KINDS.has(kind);
 }

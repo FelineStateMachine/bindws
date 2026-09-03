@@ -16,8 +16,14 @@ export type Invite = {
 
 const DAY = 86400;
 
-export function mintInvite(sql: SqlStorage, by: string, ttlSecs: number, maxUses: number, note: string, now: number): Invite {
-  const code = bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
+export const CODE_RE = /^[a-zA-Z0-9_-]{4,64}$/;
+
+// mintInvite creates an invite. A code may be chosen by the caller (NIP-29
+// create-invite does); it must be unused. Returns the invite or a reason.
+export function mintInvite(sql: SqlStorage, by: string, ttlSecs: number, maxUses: number, note: string, now: number, chosen = ""): Invite | string {
+  if (chosen && !CODE_RE.test(chosen)) return "invalid: an invite code is 4 to 64 letters, digits, dash or underscore";
+  if (chosen && sql.exec(`SELECT 1 FROM invites WHERE code=?`, chosen).toArray().length) return "duplicate: that invite code exists";
+  const code = chosen || bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
   const ttl = Math.min(Math.max(ttlSecs || 3 * DAY, 60), 30 * DAY);
   const inv: Invite = { code, created_by: by, created_at: now, expires_at: now + ttl, max_uses: Math.max(0, Math.min(maxUses || 0, 10_000)), uses: 0, note: note.slice(0, 200) };
   sql.exec(`INSERT INTO invites(code,created_by,created_at,expires_at,max_uses,uses,note) VALUES(?,?,?,?,?,?,?)`, inv.code, inv.created_by, inv.created_at, inv.expires_at, inv.max_uses, 0, inv.note);
