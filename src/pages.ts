@@ -23,7 +23,9 @@ export function isPagePath(path: string): boolean {
 export function pages(relay: Relay, req: Request): Response {
   const url = new URL(req.url);
   const origin = relay.relayURL(url.host).replace(/^ws/, "http");
-  if (relay.settings.policy.reads !== "open" || relay.settings.policy.owner === "") return nothing(relay, "This relay's events are for its members.");
+  // Public relays, leased ones included, have pages; unclaimed ones have nothing to show.
+  if (relay.settings.isUnclaimed()) return nothing(relay, "Nobody has claimed this relay yet.");
+  if (relay.settings.policy.reads !== "open") return nothing(relay, "This relay's events are for its members.");
   if (url.pathname === "/feed.xml") return feed(relay, url, origin);
   const parts = url.pathname.split("/").filter(Boolean);
   let e: Event | null = null;
