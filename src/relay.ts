@@ -21,7 +21,8 @@ import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
-import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
+import type { PullJob, PullResult } from "./pull.ts";
+import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
@@ -105,8 +106,8 @@ export class Relay extends DurableObject<Env> {
   private lnurl: LnurlParams | null = null;
   // Outbound HTTP to the lightning provider; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
-  // A pull round in flight, so overlapping alarms do not run two.
-  private pulling = false;
+  // A job round in flight, so overlapping alarms do not run two.
+  private working = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -359,50 +360,113 @@ export class Relay extends DurableObject<Env> {
     return "";
   }
 
-  // ---- pulling from another relay ----
+  // ---- jobs: pulls, backfills, rebroadcasts, once or standing ----
 
-  // pullStart records the job and wakes the alarm, which runs it in rounds.
-  async pullStart(url: string): Promise<string> {
-    if (await this.ctx.storage.get<PullJob>("pull")) return "restricted: a pull is already running";
+  // jobs is the persisted list. A job left from before the list existed
+  // is folded in on first read.
+  async jobs(): Promise<Job[]> {
+    let list = (await this.ctx.storage.get<Job[]>("jobs")) ?? [];
+    const old = await this.ctx.storage.get<PullJob>("pull");
+    if (old) {
+      list = [...list, { id: newJobID(), kind: "pull", label: "pull", relays: [old.url], filter: {}, every: 0, createdAt: old.startedAt, nextRun: now(), running: false, startedAt: old.startedAt, rounds: old.rounds, failures: 0, relayIndex: 0, cursor: 0, stored: old.stored, skipped: old.skipped, blobs: old.blobs, sent: 0, refused: 0, last: null }];
+      await this.ctx.storage.delete("pull");
+      await this.ctx.storage.delete("lastPull");
+      await this.ctx.storage.put("jobs", list);
+    }
+    return list;
+  }
+
+  private async saveJobs(list: Job[]) {
+    await this.ctx.storage.put("jobs", list);
+  }
+
+  // addJob validates, records and wakes the alarm. Returns the job or a reason.
+  async addJob(raw: unknown): Promise<Job | string> {
+    const spec = checkJob(raw, this);
+    if (typeof spec === "string") return spec;
+    return this.addChecked(spec);
+  }
+
+  async addChecked(spec: JobSpec): Promise<Job | string> {
     if (this.fuelStatus().outOfFuel) return "restricted: this relay is out of fuel";
-    const job: PullJob = { url, startedAt: now(), rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0 };
-    await this.ctx.storage.put("pull", job);
-    await this.ctx.storage.delete("lastPull");
+    let list = pruneFinished(await this.jobs());
+    if (spec.every > 0 && list.filter((j) => j.every > 0).length >= MAX_STANDING) return `restricted: at most ${MAX_STANDING} standing jobs`;
+    if (list.length >= MAX_JOBS) return `restricted: at most ${MAX_JOBS} jobs; remove one first`;
+    if (spec.kind === "pull" && list.some((j) => j.kind === "pull" && j.every === 0 && (j.running || j.nextRun > 0) && j.relays.join() === spec.relays.join())) return "restricted: a pull from there is already running";
+    const job: Job = { ...spec, id: newJobID(), createdAt: now(), nextRun: now() };
+    list = [...list, job];
+    await this.saveJobs(list);
     await this.ctx.storage.setAlarm(Date.now() + 50);
-    return "";
+    return job;
+  }
+
+  async removeJob(id: string): Promise<boolean> {
+    const list = await this.jobs();
+    const rest = list.filter((j) => j.id !== id);
+    if (rest.length === list.length) return false;
+    await this.saveJobs(rest);
+    return true;
+  }
+
+  // runJob makes a job due now.
+  async runJob(id: string): Promise<boolean> {
+    const list = await this.jobs();
+    const job = list.find((j) => j.id === id);
+    if (!job) return false;
+    if (!job.running) job.nextRun = now();
+    await this.saveJobs(list);
+    await this.ctx.storage.setAlarm(Date.now() + 50);
+    return true;
+  }
+
+  // pullStart and pullStatus are the first console's view: one pull at a time.
+  async pullStart(url: string): Promise<string> {
+    const r = await this.addChecked({ kind: "pull", label: "pull", relays: [url], filter: {}, every: 0, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null });
+    return typeof r === "string" ? r : "";
   }
 
   async pullStatus(): Promise<{ running: PullJob | null; last: PullResult | null }> {
-    return { running: (await this.ctx.storage.get<PullJob>("pull")) ?? null, last: (await this.ctx.storage.get<PullResult>("lastPull")) ?? null };
+    return pullView(await this.jobs());
   }
 
-  // pullTick runs one round of the job. Returns whether another is due. A
-  // few failed rounds in a row end the job with the reason.
-  private async pullTick(): Promise<boolean> {
-    if (this.pulling) return true;
-    const job = await this.ctx.storage.get<PullJob>("pull");
+  // jobsTick runs one round of the job that is due. Returns whether another
+  // round is due soon. A few failed rounds in a row end a run with the
+  // reason; a standing job tries again at its next interval.
+  private async jobsTick(): Promise<boolean> {
+    if (this.working) return true;
+    const list = await this.jobs();
+    const t = now();
+    const job = list.find((j) => j.running) ?? list.find((j) => j.nextRun > 0 && j.nextRun <= t);
     if (!job) return false;
-    this.pulling = true;
+    if (!job.running) startRun(job, t);
+    this.working = true;
     let r: { more: boolean; error: string };
     try {
-      r = await runPullRound(this, job);
+      r = await runRound(this, job);
     } finally {
-      this.pulling = false;
+      this.working = false;
     }
-    const finish = async (error: string) => {
-      await this.ctx.storage.put("lastPull", { ...job, finishedAt: now(), error } satisfies PullResult);
-      await this.ctx.storage.delete("pull");
-      return false;
-    };
+    // The job may have been removed while the round ran.
+    const fresh = await this.jobs();
+    const slot = fresh.findIndex((j) => j.id === job.id);
+    if (slot < 0) return fresh.some((j) => j.running || (j.nextRun > 0 && j.nextRun <= now()));
     if (r.error) {
       job.failures++;
-      if (job.failures >= 3) return finish(r.error);
+      if (job.failures >= 3) finishRun(job, r.error, now());
     } else {
       job.failures = 0;
-      if (!r.more) return finish("");
+      if (!r.more) finishRun(job, "", now());
     }
-    await this.ctx.storage.put("pull", job);
-    return true;
+    fresh[slot] = job;
+    await this.saveJobs(fresh);
+    return fresh.some((j) => j.running || (j.nextRun > 0 && j.nextRun <= now()));
+  }
+
+  // nextJobRun is the earliest standing run, or 0.
+  private async nextJobRun(): Promise<number> {
+    let at = 0;
+    for (const j of await this.jobs()) if (j.nextRun > 0 && (at === 0 || j.nextRun < at)) at = j.nextRun;
+    return at;
   }
 
   // ---- fuel plumbing ----
@@ -938,7 +1002,7 @@ export class Relay extends DurableObject<Env> {
       await this.teardown();
       return;
     }
-    if (await this.pullTick()) {
+    if (await this.jobsTick()) {
       await this.ctx.storage.setAlarm(Date.now() + 250);
       return;
     }
@@ -951,6 +1015,8 @@ export class Relay extends DurableObject<Env> {
     if (next > 0 && next < at) at = next;
     const lease = this.settings.policy.lease;
     if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
+    const run = await this.nextJobRun();
+    if (run > 0 && run < at) at = Math.max(run, t + 1);
     await this.ctx.storage.setAlarm(at * 1000 + 500);
   }
 

@@ -15,7 +15,7 @@ export type Action =
   | "identity" // name, description, icon
   | "storage"
   | "config" // export and import
-  | "pull"
+  | "jobs" // pulls, backfills, rebroadcasts
   | "transfer"
   | "deleteRelay";
 
@@ -48,7 +48,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   changerelayname: "identity", changerelaydescription: "identity", changerelayicon: "identity",
   storagestats: "storage", deleteblob: "storage",
   exportconfig: "config", importconfig: "config",
-  pullfrom: "pull", pullstatus: "pull",
+  pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",
   transferowner: "transfer",
   deleterelay: "deleteRelay",
 };

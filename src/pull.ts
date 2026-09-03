@@ -1,15 +1,24 @@
 // Pull: this relay fetches what another relay has and it lacks. One round
 // is one connection: reconcile with NIP-77, take a bounded batch of the
 // missing events, and, for a relay on this host, a batch of its files.
-// The alarm calls rounds until nothing is missing, so a pull survives the
-// object sleeping, and running it again later only fetches what is new.
+// The alarm calls rounds until nothing is missing (see jobs.ts), so a pull
+// survives the object sleeping, and running it again only fetches what is
+// new. An optional filter narrows the reconciliation: authors for a
+// backfill of the owner's own history, kinds, since.
 import { sha256 } from "@noble/hashes/sha2.js";
 import { validate, now, type Event } from "./event.ts";
+import type { Filter } from "./filter.ts";
 import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
 import { ERR_DUPLICATE } from "./store.ts";
 import { validName } from "./names.ts";
 import type { Blob } from "./blossom.ts";
 import type { Relay } from "./relay.ts";
+
+export interface PullFilter {
+  authors?: string[];
+  kinds?: number[];
+  since?: number;
+}
 
 export interface PullJob {
   url: string;
@@ -19,6 +28,7 @@ export interface PullJob {
   skipped: number;
   blobs: number;
   failures: number;
+  filter?: PullFilter;
 }
 export interface PullResult extends PullJob {
   finishedAt: number;
@@ -56,7 +66,7 @@ export function checkPullURL(raw: string, self: string, domain: string): string 
 
 // dial opens a websocket to a relay. Our own relays are reached through
 // their object directly, which also works in wrangler dev and tests.
-async function dial(relay: Relay, raw: string): Promise<WebSocket> {
+export async function dial(relay: Relay, raw: string): Promise<WebSocket> {
   const u = new URL(raw);
   const local = localName(u, relay.domain);
   const headers: Record<string, string> = { upgrade: "websocket" };
@@ -70,7 +80,7 @@ async function dial(relay: Relay, raw: string): Promise<WebSocket> {
 }
 
 // Socket turns a websocket into a queue of parsed messages.
-class Socket {
+export class Socket {
   private queue: unknown[][] = [];
   private waiters: { res: (m: unknown[]) => void; rej: (e: Error) => void }[] = [];
   private closed: Error | null = null;
@@ -133,11 +143,12 @@ export async function runPullRound(relay: Relay, job: PullJob): Promise<{ more: 
   let sock: Socket | null = null;
   try {
     sock = new Socket(await dial(relay, job.url));
-    const need = await reconcile(relay, sock);
+    const need = await reconcile(relay, sock, job.filter ?? {});
     const want = need.slice(0, ROUND_EVENTS);
     for (let i = 0; i < want.length; i += IDS_PER_REQ) await fetchEvents(relay, sock, want.slice(i, i + IDS_PER_REQ), job);
     let more = need.length > want.length;
-    if (!more) {
+    if (!more && !job.filter) {
+      // Files come along on a whole-relay pull; a filtered pull is about events.
       const local = localName(new URL(job.url), relay.domain);
       if (local) more = await copyBlobs(relay, local, job);
     }
@@ -149,14 +160,19 @@ export async function runPullRound(relay: Relay, job: PullJob): Promise<{ more: 
   }
 }
 
-// reconcile runs NIP-77 as the initiator over everything and returns the
+// reconcile runs NIP-77 as the initiator over the filter and returns the
 // ids the other side has that we do not.
-async function reconcile(relay: Relay, sock: Socket): Promise<string[]> {
-  const items = relay.store.syncItems({ tags: {} }, { pubkeys: [], all: true }, MAX_ITEMS, now());
+async function reconcile(relay: Relay, sock: Socket, filter: PullFilter): Promise<string[]> {
+  const f: Filter = { tags: {} };
+  const wire: Record<string, unknown> = {};
+  if (filter.authors?.length) f.authors = wire.authors = filter.authors;
+  if (filter.kinds?.length) f.kinds = wire.kinds = filter.kinds;
+  if (filter.since) f.since = wire.since = filter.since;
+  const items = relay.store.syncItems(f, { pubkeys: [], all: true }, MAX_ITEMS, now());
   if (items === "too big") throw new Error("this relay holds too many events to sync");
   const neg = new Negentropy(items, sha256);
   const id = "pull";
-  sock.send("NEG-OPEN", id, {}, bytesToHex(neg.initiate()));
+  sock.send("NEG-OPEN", id, wire, bytesToHex(neg.initiate()));
   const need: string[] = [];
   for (;;) {
     const m = await sock.recv();
@@ -183,7 +199,9 @@ async function fetchEvents(relay: Relay, sock: Socket, ids: string[], job: PullJ
     if (m[0] === "CLOSED" && m[1] === sub) throw new Error("query refused: " + String(m[2]));
     if (m[0] !== "EVENT" || m[1] !== sub) continue;
     const e = m[2] as Event;
-    if (validate(e) || !ids.includes(e.id) || !relay.settings.kindAllowed(e.kind)) {
+    const f = job.filter;
+    const outside = !!f && ((f.authors?.length && !f.authors.includes(e.pubkey)) || (f.kinds?.length && !f.kinds.includes(e.kind)) || (f.since && e.created_at < f.since));
+    if (validate(e) || !ids.includes(e.id) || outside || !relay.settings.kindAllowed(e.kind)) {
       job.skipped++;
       continue;
     }

@@ -9,6 +9,7 @@ import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { isReplaceable, isProtected, publicFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
+import { relaysFromList } from "./jobs.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
 import { PRESETS, applyPreset } from "./presets.ts";
 
@@ -56,7 +57,7 @@ const METHODS = [
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
-  "pullfrom", "pullstatus", "transferowner",
+  "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -364,6 +365,28 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     }
     case "pullstatus":
       return reply({ result: await relay.pullStatus() });
+    case "listjobs":
+      return reply({ result: await relay.jobs() });
+    case "addjob": {
+      // ({kind, relays, filter?, every?, label?}): a pull or push, once or standing.
+      const r = await relay.addJob(params[0]);
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
+      return reply({ result: r });
+    }
+    case "removejob":
+      return reply({ result: await relay.removeJob(str(0)) });
+    case "runjob":
+      return reply({ result: await relay.runJob(str(0)) });
+    case "backfill": {
+      // (relays?): fetch the owner's own history from the relays in their
+      // kind 10002 stored here, or from the given list.
+      const given = Array.isArray(params[0]) ? (params[0] as unknown[]).filter((u): u is string => typeof u === "string" && u.trim() !== "") : [];
+      const relays = given.length ? given : relaysFromList(relay, p.owner);
+      if (relays.length === 0) return reply({ error: "invalid: no relay list (kind 10002) is stored here; give relays to fetch from" }, 400);
+      const r = await relay.addJob({ kind: "pull", label: "backfill", relays, filter: { authors: [p.owner] }, every: 0 });
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
+      return reply({ result: r });
+    }
     case "transferowner": {
       // (pubkey): hands the relay to a member; the old owner stays as a moderator.
       const pk = str(0);

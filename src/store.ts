@@ -272,6 +272,13 @@ export class Store {
   }
 
   // recent returns the newest events for the dashboard, regardless of visibility.
+  // after returns up to `limit` rows with a sequence number past `seq`, in
+  // insertion order, for jobs that walk the store with a cursor.
+  after(seq: number, f: Filter, limit: number, now: number): { seq: number; raw: string }[] {
+    const { conds, args } = this.where(f, { pubkeys: [], all: true }, now);
+    return this.x<{ seq: number; raw: string }>(`SELECT seq, raw FROM events WHERE seq>? AND ${conds.join(" AND ")} ORDER BY seq LIMIT ?`, seq, ...args, limit).toArray();
+  }
+
   recent(limit: number, now: number): string[] {
     return this.x<{ raw: string }>(`SELECT raw FROM events WHERE (expires = 0 OR expires > ?) ORDER BY created_at DESC, id ASC LIMIT ?`, now, limit).toArray().map((r) => r.raw);
   }
