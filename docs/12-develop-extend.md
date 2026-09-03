@@ -15,6 +15,8 @@ src/
   relay.ts      the Durable Object: sockets, policy, fuel plumbing, NIP-11
   store.ts      SQLite schema and queries
   settings.ts   policy, members, bans, kind rules, retention, export/import
+  roles.ts      who may do what: owner, moderator; one table for NIP-86 and NIP-29
+  groups.ts     NIP-29, one group per relay: joins, leaves, moderation events
   manage.ts     NIP-86 methods over NIP-98
   fuel.ts       meters, prices, receipts, LNURL
   identity.ts   relay keypair and NIP-43 roster
@@ -28,7 +30,7 @@ src/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
-  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts   Durable Object tests in workerd
+  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts groups.test.ts   Durable Object tests in workerd
   conformance/                               black-box suite for any relay URL
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs

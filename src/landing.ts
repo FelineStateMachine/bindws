@@ -78,6 +78,7 @@ const PROTOCOL: [string, string][] = [
   ["09", "Delete your own events."],
   ["11", "The relay describes itself: limits, retention, owner, payment."],
   ["13", "The owner can require proof of work on events."],
+  ["29", "The relay is one group: joins, leaves and moderation by owner and moderators, state signed by the relay."],
   ["40", "Events with an expiration tag are removed at that time."],
   ["42", "Clients prove their key. Needed for private kinds and members-only reads."],
   ["45", "Count events without downloading them."],
