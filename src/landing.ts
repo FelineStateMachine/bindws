@@ -2,6 +2,7 @@
 // datasheet under it. Every number comes from the same config the relay runs
 // on, so the page cannot drift from the service.
 import { MAX_MESSAGE, VERSION, type Env } from "./relay.ts";
+import { leaseDays } from "./names.ts";
 import { fuelConfig } from "./fuel.ts";
 import { DEFAULT_POLICY } from "./settings.ts";
 import { page, escapeHTML } from "./ui.ts";
@@ -13,6 +14,8 @@ main { max-width: 68rem; padding-top: 2rem; }
 .head { text-align: center; margin: 2rem 0 2.5rem; }
 .head h1 { font-size: clamp(3rem, 8vw, 4.4rem); }
 .head p { margin: 1rem auto 0; color: var(--ink-2); font-size: 1.1rem; }
+.head .try { display: flex; gap: .8rem; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 1.4rem; font-size: 15px; }
+.head .try .btn { box-shadow: 3px 3px 0 var(--ink); }
 .map { display: grid; grid-template-columns: 1.25fr 1fr; gap: 2.5rem; align-items: start; }
 .map > * { min-width: 0; }
 .map .box { background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; padding: 1rem; box-shadow: 4px 4px 0 var(--ink); }
@@ -65,6 +68,7 @@ const MAP = `<svg viewBox="0 0 640 470" role="img" aria-label="how a request rea
 
 const NOTES = `<div class="notes">
 <h3 id="o">durable object</h3><p>Each name has one object. The object holds the SQLite database and the relay's open sockets. The <b>owner</b> is the pubkey that signed the first <b>claim</b>. After the claim, all management is done via NIP-86 calls signed by that key. The relay page is a client of this API. The object leaves memory between frames. An idle relay has no cost.</p>
+<h3 id="l">lease</h3><p>A lease is a relay at a name picked for you, open to everyone, for a fixed number of days. <b>POST /lease</b> returns one; no key needed. A claim before it expires keeps it, events and files included. After that, the object is wiped and the name is free again.</p>
 <h3 id="f">fuel</h3><p>The relay measures four values: events stored, files stored, hours awake, rows written. Each value is a line on the hosting bill. Traffic is free. Below the allowance, you owe nothing. Above the allowance, a zap to the relay adds balance. The zap receipt is the record.</p>
 <h3 id="x">leave</h3><p>NIP-77 sync copies all events to a different relay. Nothing on bind.ws is proprietary. You do not move anything else.</p>
 </div>`;
@@ -102,10 +106,12 @@ export function landing(req: Request, env: Env): Response {
   const p = DEFAULT_POLICY;
   const n = (x: number) => x.toLocaleString("en-US");
   const bad = new URL(req.url).searchParams.get("bad");
+  const days = leaseDays(env);
   const interfaces = table(["Endpoint", "Protocol", "Auth", "Notes"], [
     [`wss://&lt;name&gt;.${domain}`, "NIP-01, 42, 45, 77", "optional NIP-42", "Sockets hibernate. Negentropy sessions end when the object hibernates."],
     ["GET / (accept nostr+json)", "NIP-11", "none", "limitation, retention, payments_url, self"],
     ["POST /", "NIP-86", "NIP-98, owner", "claim and the management methods"],
+    ["POST /lease", "lease", "optional NIP-98", `A temporary relay for ${leaseDays(env)} days. A signature reserves the claim for that key.`],
     ["POST /events /query /count", "HTTP bridge", "NIP-98", "The signer has the same access as an authenticated socket."],
     ["PUT /upload, GET /&lt;sha256&gt;", "Blossom", "kind 24242", "Stored in R2. Counted as files."],
     ["GET /.well-known/nostr.json", "NIP-05", "none", "Members that have a name."],
@@ -129,7 +135,8 @@ export function landing(req: Request, env: Env): Response {
   ], [2, 3]);
   const protocol = table(["NIP", "What it does here"], PROTOCOL.map(([a, b]) => [a, b.replace("name.bind.ws", `name.${domain}`)]));
   const body = `<main>
-  <div class="head"><h1>${domain.replace(".", "<em>.</em>")}</h1><p>Relay on demand. Sign once, and it's yours.</p>${bad ? `<p class="note">"${escapeHTML(bad)}" is not a valid name. Use 3 to 32 lowercase letters, digits or hyphens.</p>` : ""}</div>
+  <div class="head"><h1>${domain.replace(".", "<em>.</em>")}</h1><p>Relay on demand. Sign once, and it's yours.</p>${bad ? `<p class="note">"${escapeHTML(bad)}" is not a valid name. Use 3 to 32 lowercase letters, digits or hyphens.</p>` : ""}
+  <p class="try"><button id="try" class="btn pri">Try one now</button><span id="trynote">A relay at a name picked for you, open to anyone for ${days} days. Claim it to keep it.</span></p></div>
   <div class="map"><div class="box">${MAP}</div>${NOTES}</div>
   <div class="sheet">
     <h2>Interfaces</h2>${interfaces}
@@ -139,6 +146,18 @@ export function landing(req: Request, env: Env): Response {
     <h2>Protocol</h2>${protocol}
   </div>
   <footer class="foot"><a href="${REPO}">-&gt; github.com/FelineStateMachine/bindws</a><span class="muted">v${VERSION}</span></footer>
-</main>`;
+</main>
+<script>
+document.getElementById("try").onclick = async (ev) => {
+  const b = ev.target, note = document.getElementById("trynote");
+  b.disabled = true; note.textContent = "Finding a name…";
+  try {
+    const r = await fetch("/lease", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "no relay today");
+    location.href = j.console;
+  } catch (e) { note.textContent = e.message; b.disabled = false; }
+};
+</script>`;
   return new Response(page(env.DOMAIN, body, CSS), { headers: { "content-type": "text/html; charset=utf-8" } });
 }
