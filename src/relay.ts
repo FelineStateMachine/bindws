@@ -29,6 +29,7 @@ import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
+import { card } from "./card.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -678,6 +679,7 @@ export class Relay extends DurableObject<Env> {
       return Response.json({ ...this.fuelStatus(), credits: this.fuel.recentCredits() }, { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/fuel/invoice" && req.method === "POST") return this.fuelInvoice(req);
+    if (url.pathname === "/card.json" || url.pathname === "/card.nostr" || url.pathname === "/card.svg" || url.pathname === "/qr.svg") return card(this, req);
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } });
     }
