@@ -12,10 +12,10 @@
   // host sends it to the Worker (docs/11-hosting-bindws.md, Custom domains).
   "routes": [
     { "pattern": "bind.ws", "custom_domain": true },
-    { "pattern": "*.bind.ws/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
-    // Once Cloudflare for SaaS is enabled on the zone, add the catch-all that
-    // brings custom hostnames to the Worker; before that the API refuses it:
-    // { "pattern": "*/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
+    { "pattern": "*.bind.ws/*", "zone_id": "491aaf5e1c12976e9828199686a81733" },
+    // The catch-all brings custom hostnames to the Worker. It needs Cloudflare
+    // for SaaS enabled on the zone first (docs/11-hosting-bindws.md).
+    { "pattern": "*/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
   ],
   "vars": {
     // Relays live at wss://<name>.<DOMAIN>; in `wrangler dev` use <name>.localhost.
