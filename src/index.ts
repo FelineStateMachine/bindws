@@ -78,6 +78,9 @@ export default {
     const stub = env.RELAY.getByName(name);
     const headers = new Headers(req.headers);
     headers.set("x-relay-name", name);
+    // The client's address, as Cloudflare saw it. Set here, never read from
+    // the client's own headers, so nothing a caller sends can spoof it.
+    headers.set("x-relay-ip", req.headers.get("cf-connecting-ip") ?? "unknown");
     return stub.fetch(new Request(req, { headers }));
   },
 } satisfies ExportedHandler<Env>;

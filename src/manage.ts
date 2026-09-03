@@ -51,11 +51,18 @@ const METHODS = [
   "changerelayname", "changerelaydescription", "changerelayicon",
   "createinvite", "listinvites", "revokeinvite", "listmembers",
   "listreports", "resolvereport", "listeventsneedingmoderation",
+  "blockip", "unblockip", "listblockedips",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules",
   "pullfrom", "pullstatus", "transferowner",
 ];
+
+// validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
+export function validIP(ip: string): boolean {
+  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip)) return true;
+  return /^[0-9a-f:]{2,39}$/.test(ip) && ip.includes(":") && !ip.includes(":::") && ip.split("::").length <= 2;
+}
 
 export async function manage(relay: Relay, req: Request): Promise<Response> {
   const cors = { "access-control-allow-origin": "*", "content-type": "application/json" };
@@ -207,6 +214,20 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       }
       return reply({ result: out });
     }
+    case "blockip": {
+      const ip = str(0).trim().toLowerCase();
+      if (!validIP(ip)) return reply({ error: "invalid: not an IP address" }, 400);
+      relay.blockIP(ip, str(1).slice(0, 200));
+      return reply({ result: true });
+    }
+    case "unblockip": {
+      const ip = str(0).trim().toLowerCase();
+      if (!validIP(ip)) return reply({ error: "invalid: not an IP address" }, 400);
+      s.setIPBlock(ip, false);
+      return reply({ result: true });
+    }
+    case "listblockedips":
+      return reply({ result: s.listIPBlocks() });
     case "listreports": {
       const status = str(0) || "open";
       return reply({ result: relay.sql.exec(`SELECT * FROM reports WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });

@@ -64,11 +64,20 @@ const LEASE_RETENTION_DAYS = 14;
 interface ConnState {
   challenge: string;
   host: string; // Host header, for NIP-42 relay-tag checks
+  ip: string; // the client's address as the worker saw it; "unknown" outside Cloudflare
   authed: string[];
   subs: Record<string, Filter[]>;
 }
 
 const FLUSH_BYTES = 256 * 1024;
+// An address gets this many times a connection's per-minute allowance, so a
+// few tabs from one place are fine and a swarm of sockets is not.
+export const IP_LIMIT_MULTIPLE = 4;
+
+// clientIP is the address the worker stamped on the request (index.ts).
+function clientIP(req: Request): string {
+  return req.headers.get("x-relay-ip") || "unknown";
+}
 const LNURL_TTL = 24 * 3600;
 // How long Cloudflare keeps an idle object awake before hibernating it.
 const IDLE_GRACE_MS = 10_000;
@@ -82,6 +91,8 @@ export class Relay extends DurableObject<Env> {
   private states = new Map<WebSocket, ConnState>();
   private syncs = new Map<WebSocket, Map<string, Negentropy>>();
   private buckets = new Map<WebSocket, { events: Bucket; reqs: Bucket }>();
+  // Per-address buckets, in memory only: they reset when the object sleeps.
+  private ipBuckets = new Map<string, { events: Bucket; reqs: Bucket }>();
   // Usage counters, flushed to the usage table in batches.
   private meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0 };
   // When the object last did work, for the active-time meter (ms). Zero after a wake.
@@ -236,8 +247,36 @@ export class Relay extends DurableObject<Env> {
   }
 
   // virtualConn represents an HTTP caller as if it had authenticated over the socket.
-  virtualConn(host: string, pubkey: string): ConnState {
-    return { challenge: "", host, authed: [pubkey], subs: {} };
+  virtualConn(host: string, pubkey: string, ip = "unknown"): ConnState {
+    return { challenge: "", host, authed: [pubkey], subs: {}, ip };
+  }
+
+  // ---- addresses ----
+
+  // blockIP refuses an address from now on and drops its open sockets.
+  blockIP(ip: string, reason: string) {
+    this.settings.setIPBlock(ip, true, reason, now());
+    for (const ws of this.ctx.getWebSockets()) {
+      if (this.state(ws).ip !== ip) continue;
+      try {
+        ws.close(4403, "blocked: this address is blocked from this relay");
+      } catch {
+        /* already closed */
+      }
+    }
+  }
+
+  // ipLimit spends one token from the address's bucket. "" allows.
+  ipLimit(ip: string, which: "events" | "reqs"): string {
+    if (ip === "unknown") return "";
+    let b = this.ipBuckets.get(ip);
+    if (!b) {
+      if (this.ipBuckets.size >= 10_000) this.ipBuckets.clear();
+      b = { events: new Bucket(this.settings.policy.eventsPerMinute * IP_LIMIT_MULTIPLE), reqs: new Bucket(this.settings.policy.reqsPerMinute * IP_LIMIT_MULTIPLE) };
+      this.ipBuckets.set(ip, b);
+    }
+    const p = this.settings.policy;
+    return b[which].take((which === "events" ? p.eventsPerMinute : p.reqsPerMinute) * IP_LIMIT_MULTIPLE);
   }
 
   isMember(pubkey: string): boolean {
@@ -277,6 +316,7 @@ export class Relay extends DurableObject<Env> {
     this.states.clear();
     this.syncs.clear();
     this.buckets.clear();
+    this.ipBuckets.clear();
     this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0 };
     this.lnurl = null;
     this.store = new Store(this.sql);
@@ -508,7 +548,16 @@ export class Relay extends DurableObject<Env> {
     const url = new URL(req.url);
     // Relays claimed before identities existed get theirs on first contact.
     if (this.settings.policy.owner && !this.identity.pubkey) await this.publishRoster();
-    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") return this.acceptWebSocket(req);
+    // A blocked address gets no socket and no door that writes or reads
+    // events or files. The page, NIP-11 and management stay reachable, so
+    // an owner who blocked their own address can undo it.
+    const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
+    const door = upgrade || (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count" || url.pathname === "/api/invites/claim" || url.pathname === "/fuel/invoice")) || url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname);
+    if (door && this.settings.isIPBlocked(clientIP(req))) {
+      const msg = "blocked: this address is blocked from this relay";
+      return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
+    }
+    if (upgrade) return this.acceptWebSocket(req);
     if (req.headers.get("accept")?.includes("application/nostr+json")) {
       return Response.json(this.info(url.host), {
         headers: { "content-type": "application/nostr+json", "access-control-allow-origin": "*" },
@@ -602,7 +651,7 @@ export class Relay extends DurableObject<Env> {
   private acceptWebSocket(req: Request): Response {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
-    const state: ConnState = { challenge: bytesToHex(crypto.getRandomValues(new Uint8Array(16))), host: new URL(req.url).host, authed: [], subs: {} };
+    const state: ConnState = { challenge: bytesToHex(crypto.getRandomValues(new Uint8Array(16))), host: new URL(req.url).host, authed: [], subs: {}, ip: clientIP(req) };
     server.serializeAttachment(state);
     this.ctx.acceptWebSocket(server);
     this.states.set(server, state);
@@ -614,7 +663,8 @@ export class Relay extends DurableObject<Env> {
   private state(ws: WebSocket): ConnState {
     let s = this.states.get(ws);
     if (!s) {
-      s = (ws.deserializeAttachment() as ConnState) ?? { challenge: "", host: "", authed: [], subs: {} };
+      s = (ws.deserializeAttachment() as ConnState) ?? { challenge: "", host: "", authed: [], subs: {}, ip: "unknown" };
+      if (!s.ip) s.ip = "unknown"; // sockets from before addresses were kept
       this.states.set(ws, s);
     }
     return s;
@@ -686,7 +736,7 @@ export class Relay extends DurableObject<Env> {
     switch (typ) {
       case "EVENT": {
         if (arr.length < 2) return this.send(ws, "NOTICE", "error: EVENT needs an event");
-        const limited = this.bucket(ws).events.take(p.eventsPerMinute);
+        const limited = this.bucket(ws).events.take(p.eventsPerMinute) || this.ipLimit(s.ip, "events");
         if (limited) {
           const id = (arr[1] as { id?: unknown })?.id;
           return this.send(ws, "OK", typeof id === "string" ? id : "", false, limited);
@@ -696,7 +746,7 @@ export class Relay extends DurableObject<Env> {
       case "REQ":
       case "COUNT": {
         if (arr.length < 3) return this.send(ws, "NOTICE", `error: ${typ} needs an id and at least one filter`);
-        const limited = this.bucket(ws).reqs.take(p.reqsPerMinute);
+        const limited = this.bucket(ws).reqs.take(p.reqsPerMinute) || this.ipLimit(s.ip, "reqs");
         if (limited) return this.send(ws, "CLOSED", typeof arr[1] === "string" ? arr[1] : "", limited);
         return this.handleReq(ws, s, typ, arr[1], arr.slice(2));
       }

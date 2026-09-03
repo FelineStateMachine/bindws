@@ -53,6 +53,7 @@ export const SETTINGS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pubkey_rules (pubkey TEXT PRIMARY KEY, rule TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS event_rules (id TEXT PRIMARY KEY, rule TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS ip_rules (ip TEXT PRIMARY KEY, reason TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS kind_rules (kind INTEGER PRIMARY KEY, rule TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS retention (kind INTEGER PRIMARY KEY, days INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, max_uses INTEGER NOT NULL DEFAULT 0, uses INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '');
@@ -82,6 +83,7 @@ export class Settings {
   private banned = new Set<string>();
   private memberSet = new Set<string>();
   private bannedEvents = new Set<string>();
+  private blockedIPs = new Set<string>();
   private allowedKinds = new Set<number>();
   private blockedKinds = new Set<number>();
   // Days to keep events of a kind; RETENTION_ANY is the rule for kinds without one.
@@ -97,6 +99,7 @@ export class Settings {
     for (const r of this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM pubkey_rules WHERE rule='ban'`)) this.banned.add(r.pubkey);
     for (const r of this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM members`)) this.memberSet.add(r.pubkey);
     for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM event_rules WHERE rule='ban'`)) this.bannedEvents.add(r.id);
+    for (const r of this.sql.exec<{ ip: string }>(`SELECT ip FROM ip_rules`)) this.blockedIPs.add(r.ip);
     for (const r of this.sql.exec<{ kind: number; rule: string }>(`SELECT kind, rule FROM kind_rules`)) {
       (r.rule === "allow" ? this.allowedKinds : this.blockedKinds).add(r.kind);
     }
@@ -315,6 +318,23 @@ export class Settings {
   }
   isEventBanned(id: string) {
     return this.bannedEvents.has(id);
+  }
+
+  // Address blocks (NIP-86 blockip). Addresses churn, so these are not part
+  // of the portable configuration: they describe a moment, not the relay.
+  setIPBlock(ip: string, blocked: boolean, reason = "", now = 0) {
+    this.blockedIPs.delete(ip);
+    this.sql.exec(`DELETE FROM ip_rules WHERE ip=?`, ip);
+    if (blocked) {
+      this.blockedIPs.add(ip);
+      this.sql.exec(`INSERT INTO ip_rules(ip,reason,at) VALUES(?,?,?)`, ip, reason, now);
+    }
+  }
+  listIPBlocks() {
+    return this.sql.exec<{ ip: string; reason: string }>(`SELECT ip, reason FROM ip_rules ORDER BY at DESC`).toArray();
+  }
+  isIPBlocked(ip: string) {
+    return this.blockedIPs.has(ip);
   }
 
   // Kind rules: an allow list, if non-empty, is exclusive; blocks always apply.

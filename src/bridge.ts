@@ -19,8 +19,11 @@ export async function bridge(relay: Relay, req: Request): Promise<Response> {
   const body = await req.text();
   const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, body);
   if (typeof auth === "string") return json({ error: auth }, 401);
-  const conn = relay.virtualConn(url.host, auth.pubkey);
+  const conn = relay.virtualConn(url.host, auth.pubkey, req.headers.get("x-relay-ip") || "unknown");
   const t = Math.floor(Date.now() / 1000);
+  // The bridge has no socket to meter, so the address bucket is its rate limit.
+  const limited = relay.ipLimit(conn.ip, url.pathname === "/events" ? "events" : "reqs");
+  if (limited) return json({ error: limited }, 429);
 
   if (url.pathname === "/events") {
     let raw: unknown;
