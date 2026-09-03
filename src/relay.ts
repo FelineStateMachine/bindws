@@ -22,7 +22,8 @@ import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { FAVICON_SVG } from "./ui.ts";
-import type { PullJob, PullResult } from "./pull.ts";
+import type { PullFilter, PullJob, PullResult } from "./pull.ts";
+import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
@@ -69,6 +70,8 @@ const MAX_SYNC = 100_000;
 // How long a leased relay keeps everything, so a claim inherits a bounded
 // window until the owner resets the rules.
 const LEASE_RETENTION_DAYS = 14;
+// Forks are owner actions, not rate limited at the apex, so one an hour.
+const FORK_INTERVAL = 3600;
 
 // ConnState is everything about a websocket that must survive hibernation.
 interface ConnState {
@@ -376,6 +379,50 @@ export class Relay extends DurableObject<Env> {
     this.settings.setRetention(null, LEASE_RETENTION_DAYS);
     await this.ensureAlarm(until);
     return "";
+  }
+
+  // ---- forking: a new name, this relay's events pulled into it ----
+
+  // forkRelay leases a new name, reserved for `holder`, and has it pull
+  // this relay. `people` copies the plain members along. Nothing new in
+  // the protocol: a lease, a pull job, a claim. One fork an hour.
+  async forkRelay(host: string, opts: { name?: string; holder: string; filter?: PullFilter; people?: boolean }): Promise<{ name: string; url: string; console: string; holder: string; expires_at: number } | string> {
+    const t = now();
+    const last = (await this.ctx.storage.get<number>("lastFork")) ?? 0;
+    if (t - last < FORK_INTERVAL) return `restricted: one fork an hour; the last was ${Math.ceil((t - last) / 60)} minutes ago`;
+    const suffix = host.startsWith(this.slug + ".") ? host.slice(this.slug.length) : "." + this.env.DOMAIN;
+    const secure = this.relayURL(host).startsWith("wss");
+    const until = t + leaseDays(this.env) * 86400;
+    if (opts.name && (!validName(opts.name) || opts.name === this.slug)) return "invalid: that is not a usable name";
+    const candidates = opts.name ? [opts.name] : [...leaseNames()];
+    for (const name of candidates) {
+      const newHost = name + suffix;
+      const stub = this.relays.getByName(name);
+      const err = await stub.lease(name, newHost, until, opts.holder);
+      if (err) {
+        if (opts.name) return "restricted: that name is taken";
+        continue;
+      }
+      const people = opts.people ? this.settings.members().filter((m) => m.role === "member").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note })) : [];
+      const adopted = await stub.adoptFrom(this.relayURL(host), opts.filter ?? {}, people, host);
+      if (adopted) return adopted;
+      await this.ctx.storage.put("lastFork", t);
+      return { name, url: (secure ? "wss://" : "ws://") + newHost, console: (secure ? "https://" : "http://") + newHost + "/", holder: opts.holder, expires_at: until };
+    }
+    return "error: no free name found, try again";
+  }
+
+  // adoptFrom is the forked side, reached over RPC only: a fresh lease
+  // takes the people and starts pulling from the source.
+  async adoptFrom(sourceURL: string, filter: PullFilter, people: { pubkey: string; name: string | null; note: string }[], sourceHost: string): Promise<string> {
+    if (!this.settings.isLeased()) return "restricted: only a fresh lease can adopt";
+    if (this.store.stats().events > 0) return "restricted: this lease already holds events";
+    const day = new Date((this.settings.policy.lease?.until ?? 0) * 1000).toISOString().slice(0, 10);
+    this.settings.update({ description: `Forked from ${sourceHost}. Temporary until ${day} unless claimed; then everything on it is deleted. Claim it to keep it.` });
+    const t = now();
+    for (const m of people) this.settings.upsertMember(m.pubkey, { name: m.name, note: m.note, via: "forked" }, t, true);
+    const r = await this.addChecked({ kind: "pull", label: "pull", relays: [sourceURL], filter, every: 0, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null });
+    return typeof r === "string" ? r : "";
   }
 
   // ---- jobs: pulls, backfills, rebroadcasts, once or standing ----

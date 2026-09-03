@@ -62,6 +62,7 @@ const METHODS = [
   "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner", "notifytest",
   "listdumps", "deletedump", "dumpnow",
   "removesubtree",
+  "forkrelay",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -409,6 +410,61 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       }
       await relay.publishMembership();
       return reply({ result: { ...s.policy, job } });
+    }
+    case "forkrelay": {
+      // ({name?, holder?, filter?, people?}): lease a new name reserved for
+      // holder (the caller by default), copy this relay into it, hand over.
+      const o = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
+      const name = typeof o.name === "string" ? o.name.trim().toLowerCase() : "";
+      const holder = typeof o.holder === "string" && o.holder !== "" ? o.holder : caller;
+      if (!hex64(holder)) return reply({ error: "invalid: holder must be a 64 hex pubkey" }, 400);
+      const f = o.filter && typeof o.filter === "object" ? (o.filter as Record<string, unknown>) : {};
+      const filter: { authors?: string[]; kinds?: number[] } = {};
+      if (Array.isArray(f.authors) && f.authors.length) {
+        if (!f.authors.every((a) => hex64(String(a))) || f.authors.length > 50) return reply({ error: "invalid: authors must be up to fifty hex pubkeys" }, 400);
+        filter.authors = [...new Set(f.authors as string[])];
+      }
+      if (Array.isArray(f.kinds) && f.kinds.length) {
+        if (!f.kinds.every((k) => Number.isInteger(k) && (k as number) >= 0 && (k as number) <= 65535) || f.kinds.length > 50) return reply({ error: "invalid: kinds must be up to fifty integers" }, 400);
+        filter.kinds = [...new Set(f.kinds as number[])];
+      }
+      const r = await relay.forkRelay(new URL(req.url).host, { name: name || undefined, holder, filter, people: o.people === true });
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : r.startsWith("error") ? 503 : 409);
+      return reply({ result: { ...r, handover: `Your relay is ready at ${r.console}. Open it and claim it with your key before it expires; the events are copying over now.` } });
+    }
+    case "pullfrom": {
+      // (url): copy what another relay has that this one lacks. Runs in
+      // the background; pullstatus reports on it.
+      const url = str(0).trim();
+      const bad = checkPullURL(url, relay.slug, relay.domain);
+      if (bad) return reply({ error: bad }, 400);
+      const err = await relay.pullStart(url);
+      if (err) return reply({ error: err }, 409);
+      return reply({ result: { started: true, url } });
+    }
+    case "pullstatus":
+      return reply({ result: await relay.pullStatus() });
+    case "listjobs":
+      return reply({ result: await relay.jobs() });
+    case "addjob": {
+      // ({kind, relays, filter?, every?, label?}): a pull or push, once or standing.
+      const r = await relay.addJob(params[0]);
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
+      return reply({ result: r });
+    }
+    case "removejob":
+      return reply({ result: await relay.removeJob(str(0)) });
+    case "runjob":
+      return reply({ result: await relay.runJob(str(0)) });
+    case "backfill": {
+      // (relays?): fetch the owner's own history from the relays in their
+      // kind 10002 stored here, or from the given list.
+      const given = Array.isArray(params[0]) ? (params[0] as unknown[]).filter((u): u is string => typeof u === "string" && u.trim() !== "") : [];
+      const relays = given.length ? given : relaysFromList(relay, p.owner);
+      if (relays.length === 0) return reply({ error: "invalid: no relay list (kind 10002) is stored here; give relays to fetch from" }, 400);
+      const r = await relay.addJob({ kind: "pull", label: "backfill", relays, filter: { authors: [p.owner] }, every: 0 });
+      if (typeof r === "string") return reply({ error: r }, r.startsWith("invalid") ? 400 : 409);
+      return reply({ result: r });
     }
     case "transferowner": {
       // (pubkey): hands the relay to a member; the old owner stays as a moderator.

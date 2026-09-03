@@ -16,6 +16,7 @@ export type Action =
   | "storage"
   | "config" // export and import
   | "jobs" // pulls, backfills, rebroadcasts
+  | "fork" // lease a new name and copy this relay into it
   | "transfer"
   | "deleteRelay";
 
@@ -52,5 +53,6 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",
   transferowner: "transfer",
   notifytest: "identity",
+  forkrelay: "fork",
   deleterelay: "deleteRelay",
 };
