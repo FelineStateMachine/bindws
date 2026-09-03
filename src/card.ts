@@ -116,14 +116,15 @@ export function cardSVG(c: Card): string {
   const e = escapeHTML;
   const title = wrap(c.name, 22, 1)[0] ?? c.name;
   let lines: string[];
-  let facts: string;
+  // The facts sit left of the QR plate, so two short lines rather than one long one.
+  let facts: string[];
   if (c.state === "unclaimed") {
     lines = ["Nobody owns this relay yet.", "Claim it with one signature."];
-    facts = "unclaimed";
+    facts = ["unclaimed"];
   } else if (c.state === "leased") {
     const day = c.expires_at ? new Date(c.expires_at * 1000).toISOString().slice(0, 10) : "";
     lines = ["A temporary relay, open to everyone", `until ${day}. Claim it to keep it.`];
-    facts = "temporary";
+    facts = ["temporary"];
   } else {
     lines = wrap(c.description || "A nostr relay on bind.ws.", 46, 2);
     const parts = [
@@ -132,7 +133,7 @@ export function cardSVG(c: Card): string {
       c.reads === "open" ? "anyone reads" : c.reads === "auth" ? "sign in to read" : "members read",
       c.fuel === "out" ? "out of fuel" : c.fuel === "burning" ? "burning sats" : "on free allowance",
     ].filter(Boolean);
-    facts = parts.join("  |  ");
+    facts = [parts.slice(0, 2).join("  |  "), parts.slice(2).join("  |  ")].filter(Boolean);
   }
   const qr = c.naddr ? qrEncode(c.naddr) : null;
   let qrSVGInner = "";
@@ -150,7 +151,8 @@ export function cardSVG(c: Card): string {
 <text x="58" y="50" font-family="${sans}" font-weight="700" font-size="30" fill="${ink}">${e(title)}</text>
 <text x="40" y="96" font-family="${sans}" font-size="17" fill="${ink2}">${e(lines[0] ?? "")}</text>
 <text x="40" y="120" font-family="${sans}" font-size="17" fill="${ink2}">${e(lines[1] ?? "")}</text>
-<text x="40" y="176" font-family="${mono}" font-size="13" fill="${forest}">${e(facts)}</text>
+<text x="40" y="170" font-family="${mono}" font-size="13" fill="${forest}">${e(facts[0] ?? "")}</text>
+<text x="40" y="192" font-family="${mono}" font-size="13" fill="${forest}">${e(facts[1] ?? "")}</text>
 <text x="40" y="262" font-family="${mono}" font-size="15" fill="${ink}">${e(c.url)}</text>
 <text x="40" y="286" font-family="${sans}" font-size="12" fill="${ink2}">a bind.ws relay</text>
 ${qrSVGInner}
