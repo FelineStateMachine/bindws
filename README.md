@@ -1,6 +1,4 @@
-<p align="center"><img src="docs/img/apex.png" alt="bind.ws front page: the system drawn as a map, with notes and a datasheet" width="720"></p>
-
-<h1 align="center">bind.ws</h1>
+<p align="center"><img src="docs/img/wordmark.svg" alt="bind.ws" width="320"></p>
 <p align="center">Relay on demand. Sign once, and it's yours.</p>
 
 Every name under bind.ws is a nostr relay. Claim one with your nostr key, point any client at `wss://<name>.bind.ws` and it's yours: members, invites, names, media, search, sync and an HTTP door for scripts, all from the relay's own page. An idle relay costs nothing. A busy one pays its way with zaps.
