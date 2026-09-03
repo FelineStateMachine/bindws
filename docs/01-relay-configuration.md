@@ -1,0 +1,66 @@
+---
+title: Relay configuration
+audience: user
+---
+
+# Relay configuration
+
+Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Rules, Identity, Storage and Health.
+
+Everything on these tabs is also available to scripts as signed JSON-RPC calls (NIP-86). The page is a client of that same API.
+
+## People
+
+The member list is one table. Each row is a pubkey, a role, an optional name, a note and how the person joined.
+
+Three things read that table: the write rule, the signed roster your relay publishes and the NIP-05 names at `you@<name>.bind.ws`.
+
+- **Add** a member by pubkey or npub. Give them a name and a note if you like.
+- **Invite** with a link. Choose how long the link lives and how many people can use it.
+- **Ban** a pubkey. Their events are refused and their open connections are closed.
+- **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
+
+Removing a member ends their live subscriptions when reads are members-only.
+
+## Rules
+
+Who can do what, and how much.
+
+| Rule | Choices |
+|---|---|
+| Writes | anyone, members, only me |
+| Reads | anyone, signed in, members |
+| Proof of work | minimum bits an event must carry, 0 to disable |
+| Timestamp window | how far in the future an event may be dated |
+| Query limits | max events per query, max subscriptions per connection |
+| Rate limits | events and queries per minute, per connection |
+| Upload size | largest file in megabytes, up to 95 |
+| Kinds | allow list and block list by kind number |
+
+An empty allow list means every kind. Blocks always win.
+
+## Identity
+
+Name, description, icon and contact appear in your relay's public information document, which clients read.
+
+Join terms are shown to people who open an invite link. The public directory switch decides whether `/people` lists your members to visitors.
+
+**Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
+
+**Delete relay** removes everything and returns the name to unclaimed. You type the relay's name to confirm.
+
+## Storage
+
+What is taking space and what to do about it.
+
+- A bar shows bytes by kind. Totals list events, files and index overhead.
+- The **By kind** table has one row per kind present, with a count, size and oldest event.
+- **Keep for** sets a retention rule in days. Events older than the rule are refused on arrival and swept once a day. Leave it blank to keep forever. The **everything else** row sets a default for kinds without their own rule.
+- **Purge** deletes a kind older than a number of days, now. Zero means all of them.
+- Kinds marked **required** are never expired or purged: profiles, contact lists, relay lists, zap receipts and the roster. The relay depends on them.
+- **Files** lists uploads with sizes and a delete button.
+- **Browse recent events** at the bottom shows the feed with delete and ban actions.
+
+## Health
+
+Time since the last event, open connections, fuel status and a breakdown of kinds over the last 30 days. Below it, the usage meters and the list of zaps received.
