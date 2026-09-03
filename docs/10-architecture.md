@@ -84,6 +84,10 @@ Moderators cannot act on the owner or on each other; only the owner appoints or 
 
 `listeventsneedingmoderation` is a view over the reports queue: one entry per open reported thing, an event id or a blob hash, with the report's type and words as the reason. `blockip`, `unblockip` and `listblockedips` work on the client's address, which the worker stamps on every forwarded request as `x-relay-ip` from Cloudflare's `cf-connecting-ip`, never read from a client header. The address is kept in the socket's state and in the HTTP doors' virtual connection. Per-address token buckets sit beside the per-connection ones at four times the allowance, and are the bridge's only rate limit.
 
+## Presets and lists
+
+`src/presets.ts` holds the rule bundles (`applypreset`, `listpresets` over NIP-86), applied through the same Settings methods the console uses one at a time. The owner's own replaceable kinds pass the kind rules, so a relay can always hold its owner's lists. Wiring the relay into those lists happens in the console: it fetches the newest copy from this relay over the NIP-98 bridge and from a few indexers over websockets, merges, signs once, and publishes to every relay the list names.
+
 ## Protocol surface
 
 NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57, NIP-96 with NIP-94, and Blossom BUD-01/02/04/06/08/09. `test/conformance` is a black-box suite that runs against any relay URL.

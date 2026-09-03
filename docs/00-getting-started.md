@@ -49,6 +49,10 @@ wss://<name>.bind.ws
 
 That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrudel, Coracle and the rest need no special setup. Your notes, reactions and profile land on your relay the moment you publish.
 
+## Tell your clients
+
+A relay only helps once your clients know about it. On the Identity tab, **Tell your clients** has one row per list: your relay list (NIP-65), your DM inbox (NIP-17), your search relays and your Blossom servers. Each row fetches the newest copy of that list from this relay and a few well-known indexers, puts this relay first, and asks you to sign the result once. The merged list is sent here, to the relays it names, and to the indexers, so nothing you had listed is lost. **Remove me** publishes the list without this relay.
+
 ## Invite people
 
 A new relay accepts writes from its members only. To add someone:
