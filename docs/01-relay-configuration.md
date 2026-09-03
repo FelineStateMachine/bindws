@@ -100,6 +100,8 @@ What is here, what moves, and what leaves.
 
 - **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. One fork an hour. See [Data and names](04-data-and-names.md#fork-this-relay).
 
+- **Views** lists the records the relay signs from its own data, profiles, relays, calendar, moderation, articles, zaps and presence, with how often each runs, who may read it, when it last ran and how many rows that wrote. Each has a switch; off takes the record down at once. **Open** shows the record itself. See [Your relay on the web](05-your-relay-on-the-web.md#views).
+
 ## Health
 
 Time since the last event, open connections, fuel status and a breakdown of kinds over the last 30 days. Below it, the usage meters and the list of zaps received.

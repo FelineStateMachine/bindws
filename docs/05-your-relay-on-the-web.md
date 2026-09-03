@@ -41,6 +41,24 @@ Clients that speak NIP-96 instead find the same store through `/.well-known/nost
 
 Send a signed report (NIP-56) that names the file's hash to `PUT /report`. It lands in the reports queue on the Moderation tab next to reported events. Deleting a reported file also blocks its hash, so it cannot be uploaded again through either door.
 
+## Views
+
+A view is a record the relay signs from what it holds, so a client reads one event instead of hundreds. Each is a kind 30078 event by the relay's own key with `d` set to `bind.ws/view/<name>`, listed in the relay's information document under `views`, and served as JSON at `/view/<name>`.
+
+| View | What it holds | How often |
+|---|---|---|
+| profiles | every member's newest name, picture and address, the owner first | daily, and when the member list changes |
+| relays | where the members are: the relays in their relay lists, most shared first | daily |
+| calendar | events in the next 30 days from the calendar kinds (NIP-52), with accepted RSVPs counted | hourly, when something changed |
+| moderation | this month's counts: bans, reports filed and resolved, events hidden and deleted, addresses blocked | daily |
+| articles | the newest 100 long-form posts by address, title and date | when one arrives, and daily |
+| zaps | sats received by the top 50 notes and authors here, from stored receipts | hourly, when something changed |
+| presence | who has a connection open and who wrote in the last 15 minutes | live, never stored |
+
+Profiles and relays follow the directory switch, calendar, articles and presence follow the read rule. A members-only view is never stored, since a stored event is readable by anyone the read rule lets in. It is folded and signed when a member asks for it with a signed request. Presence is an ephemeral event, kind 20078, sent to whoever subscribes to it and answered from memory at `/view/presence`; it is broadcast at most once every 30 seconds.
+
+Views cost rows written, which fuel counts. The Data tab shows what each one wrote on its last run, and the weekly digest adds them up. Any view can be switched off there.
+
 ## Scripts
 
 The relay has an HTTP door for scripts. Sign a request with your key (NIP-98) and post to `/events`, `/query` or `/count`. No websocket needed. The full path for scripts and agents, from leasing a relay to pulling history, is in [Scripts and agents](13-scripts-and-agents.md).

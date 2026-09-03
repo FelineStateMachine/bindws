@@ -106,6 +106,14 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 | `/fuel` | GET | none | meters, allowances, prices, balance and recent zaps | 200 |
 | `/fuel/invoice` | POST `{ "zapRequest": <kind 9734> }` | none | `{ invoice, providerPubkey, msats }` from the lightning provider | 200; 400 bad request or amount; 502 provider |
 
+## Views
+
+| Path | Method | Auth | Answers | Codes |
+|---|---|---|---|---|
+| `/view/<name>` | GET | none for a public view; NIP-98 by a member for a members-only one | the view's latest signed kind 30078 record as JSON, or presence as a kind 20078 from memory | 200; 401 `auth-required:` when a members-only view is asked for without a signature; 403 when the signer is not a member; 404 when the view is off, unknown, or has not run yet |
+
+Names: `profiles`, `relays`, `calendar`, `moderation`, `articles`, `zaps`, `presence`. The information document lists the ones a relay keeps under `views`, with each one's kind, `d`, trigger and audience.
+
 ## Websocket
 
 The relay itself: `wss://<name>.bind.ws`. NIP-01 with 09, 13, 40, 42, 45, 50, 62, 70 and 77, an `AUTH` challenge on connect, and `EOSE` hints per NIP-67. Kind 24133 passes the write and read rules so a NIP-46 signer can use the relay as transport.

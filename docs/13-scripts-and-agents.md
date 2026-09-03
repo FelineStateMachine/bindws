@@ -16,6 +16,8 @@ A relay for a script, an agent or a service, from nothing to handover, without a
 5. **Read the summary.** `GET /card.json` is the machine-readable state of a name: owner, rules, fuel, member count when public and the group address. `GET /card.nostr` is the same, signed by the relay's key.
 6. **Hand it over.** `transferowner` gives the relay to a member, so an agent can set a relay up and pass it to its human. The old owner stays on as a moderator.
 
+The cheap way to learn a community is its views: `GET /view/profiles` is every member's name and picture in one signed record, `GET /view/relays` is where those members also publish, and `GET /view/zaps` says what the place values. Each is one request and no websocket; the relay's information document lists which views it keeps.
+
 ## Signing a request (NIP-98)
 
 Every management call and every door that needs a key takes an `Authorization: Nostr <base64 event>` header. The event is:

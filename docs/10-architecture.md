@@ -135,6 +135,14 @@ Wiring the relay into the owner's lists (kinds 10002, 10050, 10007, 10063) happe
 
 The console (`dashboard.ts`) is one page, no build step: markup, styles and script as three string literals. Its signer is NIP-07 when present or a NIP-46 session over the relay itself, using a bundle of nostr-tools served at `/signer.js` and loaded only when someone picks remote signing.
 
+## Views
+
+`src/views.ts` is a registry of folds. Each view names a trigger, an audience and a fold that returns tags and content; hourly views add a fingerprint so nothing is republished when the inputs did not move. The record is a kind 30078 signed by the identity key on the same strictly increasing clock as the group state, `d` = `bind.ws/view/<name>`, stored and broadcast through `emit` like the roster, taken down when the view is switched off, empty, or no longer public. The rows a run wrote are measured around the fold from the store's write counter and kept as the last 60 runs, which the console and the digest read.
+
+Audience decides storage. A public view is stored. A members-only view is never stored, because a stored event is readable by anyone the read rule admits; `GET /view/<name>` folds and signs it on request for a member who proves it with NIP-98. Presence is neither: an ephemeral kind 20078 built from the socket list and a map of recent writers, broadcast when the set changes at most once every 30 seconds, rebuilt from the sockets after a wake since the map does not survive hibernation.
+
+The daily alarm runs daily views once a day and hourly views once an hour. Write-triggered views mark themselves dirty and republish ten seconds later, so a burst republishes once, and the daily run catches whatever a sleep dropped. Retention and purge skip every event the identity key signed, on top of the protected kinds, so views and the other records never expire.
+
 ## Protocol surface
 
 NIP-01, 05, 09, 11, 13, 17 and 59 private kinds, 29, 40, 42, 43, 45 with HLL counts, 46 as transport, 50, 56, 57, 62, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 03 by way of the lists, 04, 06, 08 and 09. `test/conformance` is a black-box suite that runs against any relay URL.
