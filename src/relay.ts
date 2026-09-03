@@ -23,6 +23,7 @@ import { FAVICON_SVG } from "./ui.ts";
 import { runPullRound, type PullJob, type PullResult } from "./pull.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
+import { SIGNER_JS } from "./gen/signer.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -541,6 +542,7 @@ export class Relay extends DurableObject<Env> {
       return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } });
     }
     if (url.pathname === "/") return new Response(dashboard(), { headers: { "content-type": "text/html; charset=utf-8" } });
+    if (url.pathname === "/signer.js") return new Response(SIGNER_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=604800, immutable" } });
     if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
     return new Response("not found", { status: 404 });
   }

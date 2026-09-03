@@ -115,4 +115,14 @@ describe("NIP-46 transport", () => {
     expect(await c.open("e", {})).toMatch(/^auth-required/);
   });
 
+  it("serves the signer library with a long cache", async () => {
+    const resp = await SELF.fetch("http://any.bind.ws/signer.js?v=abc");
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toMatch(/javascript/);
+    expect(resp.headers.get("cache-control")).toMatch(/max-age=604800/);
+    const js = await resp.text();
+    expect(js).toContain("NostrSigner");
+    const page = await (await SELF.fetch("http://any.bind.ws/")).text();
+    expect(page).toMatch(/window\.SIGNER_URL = "\/signer\.js\?v=[0-9a-f]{12}"/);
+  });
 });
