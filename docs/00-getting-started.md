@@ -21,7 +21,7 @@ You get a relay at a memorable name, such as `wss://brave-otter.bind.ws`. Anyone
 
 To keep it, open its page and click **Claim this relay** before then. The events and files stay, and you are the owner. The page then offers to switch to the default rules, since a temporary relay keeps events for 14 days only.
 
-If you sign the request with your key (a signed request, NIP-98), only that key can claim the relay.
+If you sign the request with your key (NIP-98, a signed request), only that key can claim the relay.
 
 ## Claim a name
 
