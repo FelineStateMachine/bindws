@@ -80,7 +80,7 @@ One-time setup, in this order:
    | `CNAME` | `customers` | `fallback.<domain>` | on |
 
    `CNAME_TARGET` in `wrangler.jsonc` must match: `customers.<domain>`.
-4. **Routes.** `wrangler.jsonc` declares a `*/*` route on the zone next to the wildcard, which is what makes custom hostname traffic reach the Worker. Deploy once after the change and confirm in Workers Routes that the zone lists `*/*` for `bindws-relay`. If wrangler refuses the pattern, add it by hand on that page: route `*/*`, Worker `bindws-relay`.
+4. **Routes.** Only now can the zone take a catch-all route, which is what makes custom hostname traffic reach the Worker; before Cloudflare for SaaS is enabled the API refuses it with code 10022. Uncomment the `*/*` route in `wrangler.jsonc` and deploy, then confirm in Workers Routes that the zone lists `*/*` for `bindws-relay`. If wrangler still refuses the pattern, add it by hand on that page.
 5. **KV namespace.** `npx wrangler kv namespace create HOSTS` and put the id in both `kv_namespaces` entries of `wrangler.jsonc` (the repo carries the bind.ws one).
 6. **API token.** My Profile, API Tokens, Create Token, Custom token: permission **Zone, SSL and Certificates, Edit**, zone resources limited to your zone. Store it as a secret: `npx wrangler secret put CF_API_TOKEN`. `ZONE_ID` in `wrangler.jsonc` is the zone the hostnames are created in (the same id the routes use). Without the secret the console reports custom domains as not enabled and the methods answer `unsupported:`.
 
