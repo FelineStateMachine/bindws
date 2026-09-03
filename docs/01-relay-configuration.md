@@ -51,6 +51,8 @@ The per-address limit is what stops a client from opening many sockets to multip
 
 Above the rules form, one button per preset sets writes, reads, the directory, the kind rules and the keep-for rules together. Limits, identity, people and bans stay. **Default** is what a fresh claim has. **Outbox** is only you writing, anyone reading, private kinds refused. **Inbox** takes notes, replies, reactions, comments, reports and zaps from anyone and keeps them 90 days. **Private** is only you writing and only members reading, every kind, forever. **Chat** is the members-only group: private messages, chat and threads, directory hidden. Your own profile and lists always land, whatever the kind rules say. Names are cheap, so one name per role is the way to run all four.
 
+Four more presets make single-purpose names: **Media** (members upload files; the only events accepted are profiles and Blossom server lists), **Search replica** (a read-only copy of another relay's searchable kinds, refreshed every six hours), **Articles** (long-form and profiles only, mirrored daily from a source if one is given) and **DM inbox** (anyone drops gift wraps, only members read). The replica presets take a source relay URL in the field next to the buttons; applying a preset again replaces the standing pull rather than adding one, and applying a preset with no source removes it. The pull appears in the Jobs table on the Storage tab.
+
 ## Identity
 
 Name, description, icon and contact appear in your relay's public information document, which clients read. The relay also keeps a profile of its own, signed with its own key, made from the name, description and icon, so it shows up like a person in clients that look one up.
@@ -70,6 +72,8 @@ Join terms are shown to people who open an invite link, and published at `/terms
 One row per list that names relays: relay list (kind 10002), DM inbox (10050), search relays (10007), Blossom servers (10063). **Check** looks for your newest copy here and on the indexers. **Add me** merges this relay into it and publishes the signed result here, to the relays the list names and to the indexers; the row shows which accepted it. **Remove me** does the reverse. Lists are never rebuilt from scratch, so what you had stays.
 
 **Notifications.** Three switches, all off until you turn them on: a report arrives, fuel runs low, a pull finishes. The relay writes you a NIP-17 private message with its own key, sealed and gift wrapped, stored here as your inbox and pushed to the relays in your kind 10050 when this relay holds one. **Send a test message** proves the path end to end. Only the owner can read these; the catch-all keep-for rule leaves gift wraps alone, though a rule set on kind 1059 itself still applies. Fuel is reported once when it turns low and then once a day while it stays low.
+
+- **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. Choose a name or take a memorable one, choose who claims it (you by default, or an npub), what to copy (everything, only your events, or a list of kinds) and whether the people come along. The result is the new console URL to hand over; the new name expires like any lease unless it is claimed. One fork an hour.
 
 ## Storage
 

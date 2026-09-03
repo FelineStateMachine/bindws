@@ -120,6 +120,13 @@ Your bans and kind rules apply to what arrives. Your write rule does not: you as
 
 The relay can write to you. On the Identity tab, switch on what you want to hear about: a report arriving, fuel running low, a pull finishing. Each is a NIP-17 private message signed by the relay's own key, stored on your relay as your inbox and pushed to your DM relays when your kind 10050 is here. It shows up in whatever client you already use for messages.
 
+## One name per job
+
+Names are cheap, so a relay does not have to do everything. Two ways to spread a life over several names:
+
+- **Presets that mirror.** On the Rules tab, the `search`, `articles`, `media` and `dm` presets turn a name into a single-purpose relay. `search` and `articles` take a source relay and keep a standing pull of their kinds from it, every six hours or daily, so `alice-search` stays a read-only copy of `alice` that clients can point search at. `media` is a file host whose only events are profiles and Blossom server lists. `dm` is an inbox for private messages that only members can read.
+- **Fork this relay.** On the Identity tab, a fork leases a new name, copies this relay into it (everything, only your events, or chosen kinds, with or without the people) and reserves the claim for a key: yours, to split a name by job, or someone else's, to hand a community its own relay with its history. The new name is temporary until it is claimed, and one fork an hour is allowed.
+
 ## Leave
 
 Your data is yours. Any relay that supports sync (NIP-77) can pull everything from your relay:

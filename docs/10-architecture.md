@@ -105,3 +105,9 @@ Members inviting members is `invited_by` on the member row, set from the invite'
 ## Protocol surface
 
 NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57, NIP-96 with NIP-94, and Blossom BUD-01/02/04/06/08/09. `test/conformance` is a black-box suite that runs against any relay URL.
+
+## Forks and replicas
+
+`forkrelay` builds a new relay from three things that already exist: it leases a name through the same `lease` method the apex uses, reserved for the holder; calls `adoptFrom` on the new object, an RPC method HTTP cannot reach, which copies the plain members and adds a once pull job from this relay's public URL with the optional filter; and returns the console URL to hand over. The new object pulls on its own alarm. One fork an hour per relay, recorded in storage.
+
+Replica presets (`search`, `articles`) are rule bundles plus a standing pull labelled `replica` of the preset's kinds from a source relay. Applying any preset removes the earlier replica job first, so a name holds at most one.
