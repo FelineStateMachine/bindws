@@ -93,7 +93,7 @@ describe("BUD-04 mirror", () => {
 
     let r = await mirror(b, bob, up.body.url, up.sha);
     expect(r.status, r.reason).toBe(201);
-    expect(r.body).toEqual({ url: `https://${b}/${up.sha}.txt`, sha256: up.sha, size: up.body.size, type: "text/plain", uploaded: expect.any(Number) });
+    expect(r.body).toEqual({ url: `https://${b}/${up.sha}.txt`, sha256: up.sha, size: up.body.size, type: "text/plain", uploaded: expect.any(Number), nip94: expect.any(Array) });
     const got = await SELF.fetch(`http://${b}/${up.sha}`);
     expect(got.status).toBe(200);
     expect(await got.text()).toBe("the same bytes, elsewhere");

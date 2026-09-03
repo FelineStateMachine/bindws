@@ -231,7 +231,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: s.listIPBlocks() });
     case "listreports": {
       const status = str(0) || "open";
-      return reply({ result: relay.sql.exec(`SELECT * FROM reports WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });
+      // blob says whether target_event is a file this relay still holds (BUD-09).
+      return reply({ result: relay.sql.exec(`SELECT r.*, EXISTS(SELECT 1 FROM blobs b WHERE b.sha256=r.target_event) AS blob FROM reports r WHERE status=? ORDER BY at DESC LIMIT 200`, status).toArray() });
     }
     case "resolvereport": {
       const id = str(0);
@@ -239,18 +240,20 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const row = relay.sql.exec<{ id: string; target_pubkey: string; target_event: string; status: string }>(`SELECT id, target_pubkey, target_event, status FROM reports WHERE id=?`, id).toArray()[0];
       if (!row) return reply({ error: "invalid: no such report" }, 400);
       if (!["ban", "delete", "dismiss"].includes(action)) return reply({ error: "invalid: action must be ban, delete or dismiss" }, 400);
+      // target_event is an event id or, for a blob report (BUD-09), a sha256.
+      // Either way the id goes on the banned list, so the thing cannot return.
+      const remove = async () => {
+        if (!row.target_event) return;
+        s.setEvent(row.target_event, "ban", "report " + id.slice(0, 8), t);
+        relay.store.deleteEvent(row.target_event);
+        if (relay.sql.exec(`SELECT 1 FROM blobs WHERE sha256=?`, row.target_event).toArray().length) await relay.deleteBlob(row.target_event);
+      };
       if (action === "ban") {
         if (s.isOwner(row.target_pubkey)) return reply({ error: "invalid: cannot ban the owner" }, 400);
         if (outranks(row.target_pubkey)) return reply({ error: "restricted: moderators cannot ban other moderators" }, 403);
         await relay.ban(row.target_pubkey, "report " + id.slice(0, 8));
-        if (row.target_event) {
-          s.setEvent(row.target_event, "ban", "report " + id.slice(0, 8), t);
-          relay.store.deleteEvent(row.target_event);
-        }
-      } else if (action === "delete" && row.target_event) {
-        s.setEvent(row.target_event, "ban", "report " + id.slice(0, 8), t);
-        relay.store.deleteEvent(row.target_event);
-      }
+        await remove();
+      } else if (action === "delete") await remove();
       relay.sql.exec(`UPDATE reports SET status='resolved', resolved_by=?, resolved_at=?, action=? WHERE id=?`, caller, t, action, id);
       return reply({ result: true });
     }

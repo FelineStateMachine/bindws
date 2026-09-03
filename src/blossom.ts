@@ -2,10 +2,14 @@
 // server. Blobs live in R2 under <relay>/<sha256>; descriptors live in the
 // relay's database so storage counts toward fuel and the owner can see and
 // remove them. Authorization is a kind 24242 event in the Authorization header.
+// Descriptors carry NIP-94 tags (BUD-08). Reports land in the same queue as
+// NIP-56 reports (BUD-09). NIP-96 (nip96.ts) is a second door to the same
+// bucket and table.
 //
 //   PUT    /upload              t=upload, x=<sha256 of body>   -> descriptor
 //   HEAD   /upload              t=upload; X-SHA-256, X-Content-Type, X-Content-Length (BUD-06)
 //   PUT    /mirror              t=upload, x=<sha256>; body {url}  -> descriptor (BUD-04)
+//   PUT    /report              body: kind 1984 with x tags        (BUD-09)
 //   GET    /<sha256>[.ext]      public
 //   HEAD   /<sha256>[.ext]      public
 //   DELETE /<sha256>            t=delete, x=<sha256>; uploader or owner
@@ -14,7 +18,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
 import { localName } from "./pull.ts";
-import type { Relay } from "./relay.ts";
+import { KIND_REPORT, type Relay } from "./relay.ts";
 
 export type Blob = {
   sha256: string;
@@ -24,7 +28,7 @@ export type Blob = {
   uploaded: number;
 };
 
-const EXT: Record<string, string> = {
+export const EXT: Record<string, string> = {
   "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/avif": "avif", "image/svg+xml": "svg",
   "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
   "application/pdf": "pdf", "text/plain": "txt", "application/json": "json", "text/markdown": "md",
@@ -57,9 +61,61 @@ export function isBlobPath(path: string): boolean {
   return SHA_RE.test(path);
 }
 
-export function descriptor(host: string, b: Blob) {
+export function blobURL(host: string, b: Blob): string {
   const ext = EXT[b.type];
-  return { url: `https://${host}/${b.sha256}${ext ? "." + ext : ""}`, sha256: b.sha256, size: b.size, type: b.type, uploaded: b.uploaded };
+  return `https://${host}/${b.sha256}${ext ? "." + ext : ""}`;
+}
+
+// nip94Tags is what the relay can vouch for about a blob without decoding
+// it. Nothing is transformed here, so ox equals x. Shared with NIP-96.
+export function nip94Tags(host: string, b: Blob): string[][] {
+  return [["url", blobURL(host, b)], ["m", b.type], ["x", b.sha256], ["ox", b.sha256], ["size", String(b.size)]];
+}
+
+export function descriptor(host: string, b: Blob) {
+  return { url: blobURL(host, b), sha256: b.sha256, size: b.size, type: b.type, uploaded: b.uploaded, nip94: nip94Tags(host, b) };
+}
+
+// blobBlocked says whether a hash was removed by a moderator: a resolved
+// report puts the sha256 on the banned id list, so it cannot come back
+// through any door.
+export function blobBlocked(relay: Relay, sha: string): boolean {
+  return relay.settings.isEventBanned(sha);
+}
+
+// storeBlob puts bytes in R2 and a row in the table unless the hash is
+// already there. Returns the descriptor row and whether it is new.
+export async function storeBlob(relay: Relay, body: Uint8Array, type: string, uploader: string, now: number): Promise<{ blob: Blob; created: boolean }> {
+  const sha = bytesToHex(sha256(body));
+  const existing = relay.sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
+  if (existing) return { blob: existing, created: false };
+  await relay.media.put(`${relay.slug}/${sha}`, body, { httpMetadata: { contentType: type } });
+  relay.sql.exec(`INSERT INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, sha, body.length, type, uploader, now);
+  return { blob: { sha256: sha, size: body.length, type, uploader, uploaded: now }, created: true };
+}
+
+// fileReport files a kind 1984 that names blobs in x tags (BUD-09) into the
+// reports queue, one row per blob this relay holds, with the uploader as
+// the reported pubkey. Returns how many were filed, or a reason.
+export function fileReport(relay: Relay, e: Event): number | string {
+  if (relay.settings.policy.owner === "") return relay.settings.isLeased() ? "restricted: this temporary relay has no owner to report to" : "restricted: this relay is unclaimed";
+  if (relay.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
+  const xs = e.tags.filter((t) => t[0] === "x" && HEX64.test(t[1] ?? ""));
+  if (xs.length === 0) return "invalid: report needs an x tag with a blob sha256";
+  const fallbackType = e.tags.find((t) => (t[0] === "e" || t[0] === "p") && t[2])?.[2] ?? "";
+  let filed = 0;
+  for (const [i, x] of xs.entries()) {
+    const blob = relay.sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, x[1]).toArray()[0];
+    if (!blob) continue;
+    const id = i === 0 ? e.id : `${e.id}.${i}`;
+    relay.sql.exec(
+      `INSERT OR IGNORE INTO reports(id,reporter,target_pubkey,target_event,type,content,at) VALUES(?,?,?,?,?,?,?)`,
+      id, e.pubkey, blob.uploader, blob.sha256, (x[2] || fallbackType).slice(0, 32), e.content.slice(0, 2000), e.created_at,
+    );
+    filed++;
+  }
+  if (filed === 0) return "not found: this relay holds none of the reported blobs";
+  return filed;
 }
 
 export function blobBytes(sql: SqlStorage): number {
@@ -167,16 +223,13 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
     const sha = bytesToHex(sha256(body));
     const claimed = tagValues(auth, "x");
     if (claimed.length && !claimed.includes(sha)) return reason("invalid: the mirrored blob does not match the token x tag", 409);
+    if (blobBlocked(relay, sha)) return reason("blocked: this blob was removed by a moderator", 403);
     const originType = (origin.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
     const ext = new URL(from).pathname.split(".").pop()?.toLowerCase() ?? "";
     const type = originType && originType !== "application/octet-stream" ? originType : (TYPE_BY_EXT[ext] ?? originType) || "application/octet-stream";
-    const existing = sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
-    if (!existing) {
-      await relay.media.put(key(sha), body, { httpMetadata: { contentType: type } });
-      sql.exec(`INSERT INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, sha, body.length, type, auth.pubkey, now);
-    }
+    const { blob, created } = await storeBlob(relay, body, type, auth.pubkey, now);
     relay.meterBytes(body.length, 0);
-    return json(descriptor(host, existing ?? { sha256: sha, size: body.length, type, uploader: auth.pubkey, uploaded: now }), existing ? 200 : 201);
+    return json(descriptor(host, blob), created ? 201 : 200);
   }
 
   if (req.method === "PUT" && url.pathname === "/upload") {
@@ -193,14 +246,28 @@ export async function blossom(relay: Relay, req: Request): Promise<Response> {
     const sha = bytesToHex(sha256(body));
     const claimed = tagValues(auth, "x");
     if (claimed.length && !claimed.includes(sha)) return reason("invalid: token x tag does not match the blob", 400);
+    if (blobBlocked(relay, sha)) return reason("blocked: this blob was removed by a moderator", 403);
     const type = (req.headers.get("content-type") ?? "application/octet-stream").split(";")[0].trim().toLowerCase() || "application/octet-stream";
-    const existing = sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
-    if (!existing) {
-      await relay.media.put(key(sha), body, { httpMetadata: { contentType: type } });
-      sql.exec(`INSERT INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, sha, body.length, type, auth.pubkey, now);
-    }
+    const { blob } = await storeBlob(relay, body, type, auth.pubkey, now);
     relay.meterBytes(body.length, 0);
-    return json(descriptor(host, existing ?? { sha256: sha, size: body.length, type, uploader: auth.pubkey, uploaded: now }));
+    return json(descriptor(host, blob));
+  }
+
+  // BUD-09: a signed NIP-56 report naming blobs, into the moderation queue.
+  if (req.method === "PUT" && url.pathname === "/report") {
+    let e: Event;
+    try {
+      e = JSON.parse(await req.text());
+    } catch {
+      return reason("invalid: body is not JSON", 400);
+    }
+    const bad = validate(e);
+    if (bad) return reason(bad, 400);
+    if (e.kind !== KIND_REPORT) return reason("invalid: report must be kind 1984", 400);
+    if (Math.abs(now - e.created_at) > 3600) return reason("invalid: report is too old or from the future", 400);
+    const r = fileReport(relay, e);
+    if (typeof r === "string") return reason(r, r.startsWith("not found") ? 404 : r.startsWith("invalid") ? 400 : 403);
+    return json({ ok: true, filed: r });
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/list/")) {
