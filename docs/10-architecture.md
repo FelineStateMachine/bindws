@@ -67,6 +67,8 @@ On claim, the object generates a keypair, advertised as `self` in NIP-11. Everyt
 
 NIP-43's own join and leave requests (28934 with a `claim` tag, 28936) are handled next to their NIP-29 counterparts; they are ephemeral, so the answer is the OK message and nothing is stored.
 
+The card (`card.ts`) is the public face of a name: `/card.json` with name, owner, member count when the directory is public, rules, fuel state and the group naddr, `/card.nostr` as the same facts in a kind 30078 signed by the relay key, `/card.svg` as an open graph sized picture, and `/qr.svg` for the console. The naddr comes from nostr-tools' nip19; the QR encoder is `qr.ts`, byte mode at level M up to version 20, with a test that reads symbols back and checks the Reed-Solomon syndromes.
+
 ## Groups and roles
 
 Every relay is one NIP-29 group (`src/groups.ts`). The group id is the relay's name. An event with an `h` tag for any other id is refused; events without one are ordinary relay events. The group's flags are derived from the rules: `private` is reads set to members, `restricted` and `closed` are writes not open. The identity signs the group's state as addressable events, kind 39000 metadata, 39001 admins, 39002 members (only while the directory is public), 39003 roles, on the same strictly increasing clock as the roster, and republishes them on every membership, role or rule change. Membership changes also produce relay-signed 9000 put-user and 9001 remove-user records next to the NIP-43 deltas. All of these are protected kinds.

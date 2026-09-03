@@ -53,6 +53,10 @@ That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrud
 
 A relay only helps once your clients know about it. On the Identity tab, **Tell your clients** has one row per list: your relay list (NIP-65), your DM inbox (NIP-17), your search relays and your Blossom servers. Each row fetches the newest copy of that list from this relay and a few well-known indexers, puts this relay first, and asks you to sign the result once. The merged list is sent here, to the relays it names, and to the indexers, so nothing you had listed is lost. **Remove me** publishes the list without this relay.
 
+## Share your relay
+
+Every relay has a card: `https://<name>.bind.ws/card.svg` is a picture with the name, who may read and write, the fuel state and a QR of the group address, and `/card.json` has the same facts as data. The **Share** block on the Identity tab shows the card, the group naddr with a copy button, and an embed snippet for a profile or a page.
+
 ## Invite people
 
 A new relay accepts writes from its members only. To add someone:

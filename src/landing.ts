@@ -119,6 +119,7 @@ export function landing(req: Request, env: Env): Response {
     ["POST /nip96, GET /.well-known/nostr/nip96.json", "NIP-96", "NIP-98", "Same bucket and file list as Blossom. NIP-94 tags in every answer."],
     ["GET /.well-known/nostr.json", "NIP-05", "none", "Members that have a name."],
     ["GET /e/&lt;id&gt;, /a/&lt;d&gt;, /feed.xml", "pages, Atom", "none", "Notes and articles as pages with Open Graph tags, and a feed. Only when anyone may read."],
+    ["GET /card.json, /card.svg, /card.nostr", "card", "none", "A status card for links and profiles: members, rules, fuel, the group naddr as a QR. The .nostr form is signed by the relay key."],
     ["GET /fuel, POST /fuel/invoice", "NIP-57", "none", "Gauges are public. The invoice comes from a signed zap request."],
   ]);
   const limits = table(["Parameter", "Default", "Range"], [
