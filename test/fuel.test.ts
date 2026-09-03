@@ -98,7 +98,8 @@ describe("fuel", () => {
 
     // Blow past the row-write allowance: writes stop, reads continue.
     const stub = env.RELAY.getByName("fuel-a");
-    await runInDurableObject(stub, async (r: Relay) => r.fuel.record(now(), { rowsWritten: 400_000 }) // 150k over the 250k allowance: 300 sats, which the zap below covers);
+    // 150k over the 250k allowance is 300 sats, which the zap below covers.
+    await runInDurableObject(stub, async (r: Relay) => r.fuel.record(now(), { rowsWritten: 400_000 }));
     status = await (await SELF.fetch(`http://${host}/fuel`)).json();
     expect(status.outOfFuel).toBe(true);
     expect(status.chargedMsats).toBeGreaterThan(0);
@@ -144,7 +145,7 @@ describe("fuel", () => {
     status = await (await SELF.fetch(`http://${host}/fuel`)).json();
     expect(status.balanceMsats).toBeLessThan(afterTraffic);
     // The relay's own rows from this test add a few msats on top.
-    const expected = 0.2 * status.rates.satsPerMillionRows * 1000 + 50 * status.rates.satsPerActiveHour * 1000;
+    const expected = 0.15 * status.rates.satsPerMillionRows * 1000 + 50 * status.rates.satsPerActiveHour * 1000; // 150k rows over, 50 hours over
     expect(status.chargedMsats).toBeGreaterThanOrEqual(expected);
     expect(status.chargedMsats).toBeLessThan(expected + 5000);
   });
