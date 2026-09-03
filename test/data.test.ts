@@ -1,4 +1,4 @@
-// Dumps to R2.
+// Dumps to R2, and per-member keep-for and caps.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
@@ -151,6 +151,62 @@ describe("dumps", () => {
     expect((await rpc(host, owner, "listdumps")).result.length).toBe(1);
     await runInDurableObject(stub, async (r: Relay) => r.alarm());
     expect((await rpc(host, owner, "listdumps")).result.length).toBe(1);
+  });
+});
+
+describe("per-member keep-for and caps", () => {
+  it("a member's keep-for refuses old events and sweeps theirs, while others follow the relay's rules", async () => {
+    const host = "keepy.bind.ws";
+    const owner = generateSecretKey();
+    const a = generateSecretKey();
+    const b = generateSecretKey();
+    await rpc(host, owner, "claim");
+    expect((await rpc(host, owner, "setmember", pk(a), { keepDays: 10 })).status).toBe(200);
+    await rpc(host, owner, "setmember", pk(b), {});
+    const members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.find((m: any) => m.pubkey === pk(a)).keep_days).toBe(10);
+
+    const c = await WS.connect(host);
+    expect((await c.ok(ev(a, 1, "too old", [], now() - 20 * 86400))).msg).toMatch(/keeps your events for 10 days/);
+    expect((await c.ok(ev(b, 1, "old but fine", [], now() - 20 * 86400))).ok).toBe(true);
+    expect((await c.ok(ev(a, 1, "recent enough", [], now() - 5 * 86400))).ok).toBe(true);
+    // Profiles are never swept by a keep-for.
+    expect((await c.ok(ev(a, 0, JSON.stringify({ name: "a" }), [], now() - 30 * 86400))).ok).toBe(true);
+
+    await rpc(host, owner, "setmember", pk(a), { keepDays: 3 });
+    const gone = await runInDurableObject(env.RELAY.getByName("keepy"), async (r: Relay) => r.sweepRetention(now()));
+    expect(gone).toBe(1);
+    expect((await c.req({ kinds: [1], authors: [pk(a)] })).length).toBe(0);
+    expect((await c.req({ kinds: [0], authors: [pk(a)] })).length).toBe(1);
+    expect((await c.req({ kinds: [1], authors: [pk(b)] })).length).toBe(1);
+
+    // Only the owner sets limits, and never on themselves.
+    const mod = generateSecretKey();
+    await rpc(host, owner, "setmember", pk(mod), { role: "moderator" });
+    expect((await rpc(host, mod, "setmember", pk(b), { keepDays: 1 })).status).toBe(403);
+    await rpc(host, owner, "setmember", pk(owner), { keepDays: 1 });
+    expect((await c.ok(ev(owner, 1, "owner, old", [], now() - 20 * 86400))).ok).toBe(true);
+  });
+
+  it("a cap refuses the event that would cross it, and the owner is never capped", async () => {
+    const host = "cappy.bind.ws";
+    const owner = generateSecretKey();
+    const m = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setmember", pk(m), { maxBytes: 1200 });
+    const c = await WS.connect(host);
+    const big = "x".repeat(400);
+    expect((await c.ok(ev(m, 1, big))).ok).toBe(true);
+    const r = await c.ok(ev(m, 1, big + "2"));
+    expect(r.ok).toBe(false);
+    expect(r.msg).toMatch(/^restricted: you have reached your storage cap/);
+    expect((await c.ok(ev(m, 7, "+"))).ok).toBe(true); // small ones still fit
+    for (let i = 0; i < 3; i++) expect((await c.ok(ev(owner, 1, big + i))).ok).toBe(true);
+    // Raising the cap lets it through; the cache follows the store.
+    await rpc(host, owner, "setmember", pk(m), { maxBytes: 5000 });
+    expect((await c.ok(ev(m, 1, big + "3"))).ok).toBe(true);
+    const cfg = (await rpc(host, owner, "exportconfig")).result;
+    expect(cfg.members.find((x: any) => x.pubkey === pk(m)).maxBytes).toBe(5000);
   });
 });
 

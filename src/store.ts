@@ -150,6 +150,7 @@ export class Store {
 
   // vanish implements NIP-62.
   vanish(pubkey: string, until: number) {
+    this.bytesByAuthor.clear();
     this.x(`INSERT INTO vanished(pubkey,until) VALUES(?,?) ON CONFLICT(pubkey) DO UPDATE SET until=max(until,excluded.until)`, pubkey, until);
     this.x(`DELETE FROM events WHERE pubkey=? AND created_at<=?`, pubkey, until);
     this.x(`DELETE FROM events WHERE kind=1059 AND id IN (SELECT event_id FROM tags WHERE name='p' AND value=?)`, pubkey);
@@ -157,6 +158,7 @@ export class Store {
 
   // sweepExpired deletes NIP-40 expired rows and returns the next expiry, or 0.
   sweepExpired(now: number): number {
+    this.bytesByAuthor.clear();
     this.x(`DELETE FROM events WHERE expires > 0 AND expires <= ?`, now);
     const row = this.x<{ next: number | null }>(`SELECT MIN(expires) AS next FROM events WHERE expires > 0`).one();
     return row.next ?? 0;
@@ -284,7 +286,42 @@ export class Store {
   }
 
   deleteEvent(id: string): boolean {
+    this.bytesByAuthor.clear();
     return this.x(`DELETE FROM events WHERE id=?`, id).rowsWritten > 0;
+  }
+
+  // authorBytes is how much raw event text one pubkey has stored, for the
+  // per-member cap. Cached per author; save adds to it, and anything that
+  // deletes clears the cache rather than guessing.
+  private bytesByAuthor = new Map<string, number>();
+  authorBytes(pubkey: string): number {
+    const cached = this.bytesByAuthor.get(pubkey);
+    if (cached !== undefined) return cached;
+    const n = this.x<{ n: number | null }>(`SELECT sum(length(raw)) AS n FROM events WHERE pubkey=?`, pubkey).one().n ?? 0;
+    this.bytesByAuthor.set(pubkey, n);
+    return n;
+  }
+  // noteSaved keeps the cache right after a save. A replaceable kind may
+  // have displaced an older row, so its author is simply recounted next time.
+  noteSaved(pubkey: string, bytes: number, replaceable: boolean) {
+    if (replaceable) {
+      this.bytesByAuthor.delete(pubkey);
+      return;
+    }
+    const cached = this.bytesByAuthor.get(pubkey);
+    if (cached !== undefined) this.bytesByAuthor.set(pubkey, cached + bytes);
+  }
+
+  // purgeAuthor deletes one pubkey's events created before `before`, except
+  // the listed kinds. Returns how many went.
+  purgeAuthor(pubkey: string, before: number, except: number[]): number {
+    const list = JSON.stringify(except);
+    const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE pubkey=? AND created_at<? AND kind NOT IN (SELECT value FROM json_each(?))`, pubkey, before, list).one().n;
+    if (n > 0) {
+      this.x(`DELETE FROM events WHERE pubkey=? AND created_at<? AND kind NOT IN (SELECT value FROM json_each(?))`, pubkey, before, list);
+      this.bytesByAuthor.delete(pubkey);
+    }
+    return n;
   }
 
   // dumpPage reads a page of raw events by sequence for the JSONL dump.
@@ -303,6 +340,7 @@ export class Store {
   // purge deletes events of one kind, or of every kind not in `except` when
   // kind is null, created before `before`. Returns how many went.
   purge(kind: number | null, before: number, except: number[] = []): number {
+    this.bytesByAuthor.clear();
     if (kind !== null) {
       const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE kind=? AND created_at<?`, kind, before).one().n;
       if (n > 0) this.x(`DELETE FROM events WHERE kind=? AND created_at<?`, kind, before);

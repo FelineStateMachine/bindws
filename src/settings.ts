@@ -88,6 +88,22 @@ CREATE INDEX IF NOT EXISTS blobs_uploader ON blobs(uploader, uploaded DESC);
 CREATE TABLE IF NOT EXISTS dumps (name TEXT PRIMARY KEY, bytes INTEGER NOT NULL, events INTEGER NOT NULL, at INTEGER NOT NULL);
 `;
 
+// Columns added after the first release. There are no PRAGMAs in this
+// SQLite, so a probing SELECT stands in for "does the column exist".
+const MEMBER_COLUMNS: [string, string][] = [
+  ["keep_days", "INTEGER NOT NULL DEFAULT 0"], // per-member keep-for; 0 = the relay's rules
+  ["max_bytes", "INTEGER NOT NULL DEFAULT 0"], // per-member storage cap; 0 = unlimited
+];
+function ensureColumns(sql: SqlStorage, table: string, cols: [string, string][]) {
+  for (const [col, decl] of cols) {
+    try {
+      sql.exec(`SELECT ${col} FROM ${table} LIMIT 1`).toArray();
+    } catch {
+      sql.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+    }
+  }
+}
+
 // A member is one person of this relay: the owner or someone let in. Their
 // optional name is their NIP-05 handle at the relay's host.
 export type Member = {
@@ -97,7 +113,12 @@ export type Member = {
   note: string;
   joined_at: number;
   via: string; // claimed | invite <code> | added | profile
+  keep_days: number; // 0 = the relay's rules
+  max_bytes: number; // 0 = unlimited
 };
+
+// Limits the write path checks per author, cached so a write costs no query.
+export type MemberLimits = { keep: number; cap: number };
 
 // dumpFields validates the dump settings of a policy patch.
 export function dumpFields(patch: Record<string, unknown>): Partial<Policy> {
@@ -161,6 +182,7 @@ export class Settings {
   private memberSet = new Set<string>();
   private bannedEvents = new Set<string>();
   private blockedIPs = new Set<string>();
+  private limits = new Map<string, MemberLimits>();
   private allowedKinds = new Set<number>();
   private blockedKinds = new Set<number>();
   // Days to keep events of a kind; RETENTION_ANY is the rule for kinds without one.
@@ -172,9 +194,13 @@ export class Settings {
     this.sql.exec(SETTINGS_SCHEMA);
     const row = this.sql.exec<{ value: string }>(`SELECT value FROM settings WHERE key='policy'`).toArray()[0];
     if (row) this.policy = { ...DEFAULT_POLICY, ...JSON.parse(row.value) };
+    ensureColumns(this.sql, "members", MEMBER_COLUMNS);
     this.migrateMembers();
     for (const r of this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM pubkey_rules WHERE rule='ban'`)) this.banned.add(r.pubkey);
-    for (const r of this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM members`)) this.memberSet.add(r.pubkey);
+    for (const r of this.sql.exec<{ pubkey: string; keep_days: number; max_bytes: number }>(`SELECT pubkey, keep_days, max_bytes FROM members`)) {
+      this.memberSet.add(r.pubkey);
+      if (r.keep_days > 0 || r.max_bytes > 0) this.limits.set(r.pubkey, { keep: r.keep_days, cap: r.max_bytes });
+    }
     for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM event_rules WHERE rule='ban'`)) this.bannedEvents.add(r.id);
     for (const r of this.sql.exec<{ ip: string }>(`SELECT ip FROM ip_rules`)) this.blockedIPs.add(r.ip);
     for (const r of this.sql.exec<{ kind: number; rule: string }>(`SELECT kind, rule FROM kind_rules`)) {
@@ -267,9 +293,20 @@ export class Settings {
     return "";
   }
 
+  // limitsOf is a member's keep-for and cap, or null when neither is set.
+  // The owner is never limited.
+  limitsOf(pubkey: string): MemberLimits | null {
+    if (this.isOwner(pubkey)) return null;
+    return this.limits.get(pubkey) ?? null;
+  }
+  // limited lists members with a keep-for rule, for the daily sweep.
+  limited(): { pubkey: string; keep: number }[] {
+    return [...this.limits].filter(([pk, l]) => l.keep > 0 && !this.isOwner(pk)).map(([pubkey, l]) => ({ pubkey, keep: l.keep }));
+  }
+
   // upsertMember adds or edits a member. name "" clears the name; a name held
   // by someone else is refused unless force (owner action). Returns "" or a reason.
-  upsertMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string }, now: number, force = false): string {
+  upsertMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; keepDays?: number; maxBytes?: number }, now: number, force = false): string {
     const cur = this.member(pubkey);
     let name = cur?.name ?? null;
     if (patch.name !== undefined) {
@@ -286,18 +323,23 @@ export class Settings {
       }
     }
     const note = patch.note !== undefined ? patch.note.slice(0, 200) : (cur?.note ?? "");
-    if (cur) this.sql.exec(`UPDATE members SET name=?, note=? WHERE pubkey=?`, name, note, pubkey);
+    const keep = patch.keepDays !== undefined ? Math.max(0, Math.min(Math.floor(patch.keepDays), 36500)) : (cur?.keep_days ?? 0);
+    const cap = patch.maxBytes !== undefined ? Math.max(0, Math.floor(patch.maxBytes)) : (cur?.max_bytes ?? 0);
+    if (cur) this.sql.exec(`UPDATE members SET name=?, note=?, keep_days=?, max_bytes=? WHERE pubkey=?`, name, note, keep, cap, pubkey);
     else {
       const role = this.isOwner(pubkey) ? "owner" : "member";
-      this.sql.exec(`INSERT INTO members(pubkey,role,name,note,joined_at,via) VALUES(?,?,?,?,?,?)`, pubkey, role, name, note, now, (patch.via ?? "added").slice(0, 40));
+      this.sql.exec(`INSERT INTO members(pubkey,role,name,note,joined_at,via,keep_days,max_bytes) VALUES(?,?,?,?,?,?,?,?)`, pubkey, role, name, note, now, (patch.via ?? "added").slice(0, 40), keep, cap);
       this.memberSet.add(pubkey);
     }
+    if (keep > 0 || cap > 0) this.limits.set(pubkey, { keep, cap });
+    else this.limits.delete(pubkey);
     return "";
   }
 
   removeMember(pubkey: string): boolean {
     if (this.isOwner(pubkey)) return false;
     this.memberSet.delete(pubkey);
+    this.limits.delete(pubkey);
     return this.sql.exec(`DELETE FROM members WHERE pubkey=?`, pubkey).rowsWritten > 0;
   }
 
@@ -311,7 +353,7 @@ export class Settings {
       exported_at: Math.floor(Date.now() / 1000),
       name,
       policy: { ...this.policy, owner: undefined, lease: undefined },
-      members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}) })),
+      members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}), ...(m.keep_days ? { keepDays: m.keep_days } : {}), ...(m.max_bytes ? { maxBytes: m.max_bytes } : {}) })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),
       kinds: { allow: this.listKinds("allow"), block: this.listKinds("block") },
@@ -340,7 +382,7 @@ export class Settings {
     for (const m of Array.isArray(c.members) ? c.members : []) {
       const r = m as Record<string, unknown>;
       if (!hex64(r.pubkey)) continue;
-      this.upsertMember(r.pubkey, { name: typeof r.name === "string" ? r.name : null, note: typeof r.note === "string" ? r.note : "", via: "import" }, now, true);
+      this.upsertMember(r.pubkey, { name: typeof r.name === "string" ? r.name : null, note: typeof r.note === "string" ? r.note : "", via: "import", keepDays: Number.isInteger(r.keepDays) ? (r.keepDays as number) : 0, maxBytes: Number.isInteger(r.maxBytes) ? (r.maxBytes as number) : 0 }, now, true);
       if (r.role === "moderator") this.setRole(r.pubkey, "moderator");
     }
     for (const b of this.listBans()) this.setBan(b.pubkey, false);

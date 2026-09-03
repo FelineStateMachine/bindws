@@ -161,13 +161,17 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       // NIP-86 allowpubkey(pubkey, reason) and the richer setmember(pubkey, {name, note}).
       const pk = str(0);
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
-      const patch = method === "allowpubkey" ? { note: str(1) } : (params[1] && typeof params[1] === "object" ? (params[1] as { name?: string | null; note?: string; role?: string }) : {});
+      const patch = method === "allowpubkey" ? { note: str(1) } : (params[1] && typeof params[1] === "object" ? (params[1] as { name?: string | null; note?: string; role?: string; keepDays?: unknown; maxBytes?: unknown }) : {});
       if (outranks(pk)) return reply({ error: "restricted: moderators cannot edit the owner or other moderators" }, 403);
+      // Per-member keep-for and cap: the owner's call, and never on the owner.
+      const keepDays = Number.isInteger(patch.keepDays) && (patch.keepDays as number) >= 0 ? (patch.keepDays as number) : undefined;
+      const maxBytes = Number.isInteger(patch.maxBytes) && (patch.maxBytes as number) >= 0 ? (patch.maxBytes as number) : undefined;
+      if ((keepDays !== undefined || maxBytes !== undefined) && role !== "owner") return reply({ error: "restricted: only the owner sets limits" }, 403);
       const wantsRole = patch.role === "moderator" || patch.role === "member" ? patch.role : undefined;
       if (wantsRole && role !== "owner") return reply({ error: "restricted: only the owner sets roles" }, 403);
       if (wantsRole && s.isOwner(pk)) return reply({ error: "invalid: the owner's role changes by transferowner" }, 400);
       if (s.isBanned(pk)) s.setBan(pk, false);
-      const err = await relay.setMember(pk, { name: patch.name, note: typeof patch.note === "string" ? patch.note : undefined }, true);
+      const err = await relay.setMember(pk, { name: patch.name, note: typeof patch.note === "string" ? patch.note : undefined, ...(s.isOwner(pk) ? {} : { keepDays, maxBytes }) }, true);
       if (err) return reply({ error: err }, 400);
       if (wantsRole && s.roleOf(pk) !== wantsRole) {
         s.setRole(pk, wantsRole);

@@ -204,7 +204,7 @@ export class Relay extends DurableObject<Env> {
   }
 
   // setMember edits or adds a person and publishes the roster if membership changed.
-  async setMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string }, force = false): Promise<string> {
+  async setMember(pubkey: string, patch: { name?: string | null; note?: string; via?: string; keepDays?: number; maxBytes?: number }, force = false): Promise<string> {
     const was = this.settings.isAllowed(pubkey);
     const err = this.settings.upsertMember(pubkey, patch, now(), force);
     if (err) return err;
@@ -979,6 +979,13 @@ export class Relay extends DurableObject<Env> {
       if (!this.settings.kindAllowed(e.kind) && !(isReplaceable(e.kind) && this.settings.isOwner(e.pubkey))) return no("blocked: this relay does not accept kind " + e.kind);
       const keep = this.settings.retentionDays(e.kind);
       if (keep > 0 && e.created_at < t - keep * 86400) return no(`blocked: this relay keeps kind ${e.kind} for ${keep} days and this event is older`);
+      // The owner's per-member rules: a keep-for window on top of the kind
+      // rules, and a cap on stored bytes. Neither touches the owner.
+      const lim = this.settings.limitsOf(e.pubkey);
+      if (lim) {
+        if (lim.keep > 0 && !isProtected(e.kind) && !isReplaceable(e.kind) && e.created_at < t - lim.keep * 86400) return no(`blocked: this relay keeps your events for ${lim.keep} days and this event is older`);
+        if (lim.cap > 0 && this.store.authorBytes(e.pubkey) + canonical(e).length > lim.cap) return no(`restricted: you have reached your storage cap of ${Math.max(1, Math.round(lim.cap / 1024))} KB on this relay`);
+      }
       if (p.writes === "owner" && !this.settings.isOwner(e.pubkey)) return no("restricted: only the relay owner may publish here");
       if (p.writes === "allowlist" && !this.settings.isAllowed(e.pubkey)) return no("restricted: this relay only accepts events from its members");
       if (p.minPow > 0) {
@@ -997,6 +1004,7 @@ export class Relay extends DurableObject<Env> {
     const err = this.store.save(e, t);
     if (err === ERR_DUPLICATE) return { ok: true, msg: err, stored: false };
     if (err) return no(err);
+    this.store.noteSaved(e.pubkey, canonical(e).length, isReplaceable(e.kind));
     if (exp > 0) this.scheduleSweep(exp);
     else this.ensureAlarm();
     if (e.kind === 0 && conn) claimFromProfile(this.settings, e.content, e.pubkey, conn.host, t);
@@ -1062,6 +1070,12 @@ export class Relay extends DurableObject<Env> {
     for (const r of rules) {
       if (r.kind !== null) gone += this.store.purge(r.kind, t - r.days * 86400);
       else gone += this.store.purge(null, t - r.days * 86400, [...own, ...this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k) || k === 1059)]);
+    }
+    // Per-member keep-for rules, same pass, same exceptions as the catch-all.
+    const limited = this.settings.limited();
+    if (limited.length) {
+      const keepKinds = this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k));
+      for (const m of limited) gone += this.store.purgeAuthor(m.pubkey, t - m.keep * 86400, keepKinds);
     }
     return gone;
   }
