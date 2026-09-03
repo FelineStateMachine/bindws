@@ -73,7 +73,18 @@ CI runs typecheck and the object tests on every push and pull request. `main` on
 
 ## Add a NIP
 
-Relay-side NIPs usually touch three places: `relay.ts` for the message handling, `store.ts` if the query surface changes and `SUPPORTED_NIPS` for the information document. Add a conformance test in `test/conformance` so the behavior is checked from outside.
+Most NIPs land as their own module, wired in from `relay.ts` with one import and one route or one call. That is the pattern to follow:
+
+| NIP | Module | Wired from |
+|---|---|---|
+| 29 groups | `groups.ts` | the write gate in `relay.ts`, before the client policy |
+| 43 roster | `identity.ts` | `publishMembership` in `relay.ts` |
+| 46 transport | one kind in the write gate and the read gate | `relay.ts` |
+| 86 methods | `manage.ts` with `roles.ts` | the RPC route |
+| 96 files | `nip96.ts` over `blossom.ts` | one path line in `fetch` |
+| 11 extras | `settings.ts` fields, `info()` | `relay.ts` |
+
+A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a conformance test in `test/conformance` so the behavior is checked from outside, and a Durable Object test next to the feature's file in `test/`.
 
 ## The signer bundle
 
@@ -81,9 +92,11 @@ The console has no build step, but remote signing needs NIP-44 and secp256k1, wh
 
 ## The console
 
-`src/dashboard.ts` holds CSS, markup and script as JSON string literals on single lines. Edit with a script that decodes, changes and re-encodes them; a raw newline inside a literal breaks the file. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
+`src/dashboard.ts` holds CSS, markup and script as JSON string literals on single lines. Edit with a script that decodes, changes and re-encodes them; a raw newline inside a literal breaks the file, and the source keeps non-ASCII as `\uXXXX` escapes, so the encoder must too. Keep the script re-runnable with asserts on its anchors: when several changes land in parallel, the second one re-applies its script on top of the first. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
 
-Rules that hold across pages: no middle dots, no purposeless subtext, tables scroll inside their card on narrow screens, decorative elements are not selectable.
+To look at what you changed: `npm run dev`, then `node scripts/dev-signer.mjs`, open `http://<name>.localhost:8787/`, paste the `window.nostr` snippet from that script into the devtools console, and sign in or claim. Playwright's CLI can drive the same loop: open the page, inject the snippet with `eval`, click, screenshot at a phone width and at a desktop width. `scripts/shot.mjs` renders a page over the Chrome debugging protocol when Playwright is not around.
+
+Rules that hold across pages: no middle dots, no purposeless subtext, tables scroll inside their card on narrow screens, decorative elements are not selectable, a multi-field form uses the labelled grid rather than one row of inputs, and the copy above a block is one sentence.
 
 ## Screenshots
 
