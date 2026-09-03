@@ -18,7 +18,14 @@ src/
   settings.ts   policy, members, bans, kind rules, retention, export/import
   roles.ts      who may do what: owner, moderator; one table for NIP-86 and NIP-29
   groups.ts     NIP-29, one group per relay: joins, leaves, moderation events
+  presets.ts    rule bundles, one click each, some with a standing pull
   manage.ts     NIP-86 methods over NIP-98
+  domains.ts    custom hostnames: the Cloudflare client and the KV mapping
+  dumps.ts      scheduled JSONL dumps to R2
+  notify.ts     NIP-17 messages from the relay to its owner
+  pages.ts      notes and articles as pages, the Atom feed
+  card.ts       the status card, signed and as SVG
+  qr.ts         a QR encoder for the card and the console
   fuel.ts       meters, prices, receipts, LNURL
   identity.ts   relay keypair and NIP-43 roster
   blossom.ts    BUD-01/02/04/06/08/09 on R2
@@ -33,7 +40,7 @@ src/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
-  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts groups.test.ts nip11.test.ts nip43.test.ts   Durable Object tests in workerd
+  *.test.ts     Durable Object tests in workerd, one file per feature
   conformance/                               black-box suite for any relay URL
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
@@ -58,7 +65,7 @@ CI runs typecheck and the object tests on every push and pull request. `main` on
 
 ## Add a management method
 
-1. Add the name to `METHODS` in `src/manage.ts`.
+1. Add the name to `METHODS` in `src/manage.ts` and the action it needs to `METHOD_ACTIONS` in `src/roles.ts`; a method without an action is refused for everyone.
 2. Add a `case` in the switch. Use `num(i)` and `str(i)` for parameters. Return `reply({ result })` or `reply({ error }, 400)`.
 3. If it changes state that other code caches, update `Settings` and its in-memory sets.
 4. If the console should call it, add the control to `dashboard.ts` and a handler in its script.

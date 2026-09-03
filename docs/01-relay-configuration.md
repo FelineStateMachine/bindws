@@ -67,18 +67,11 @@ Name, description, icon and contact appear in your relay's public information do
 
 Banner is a wide image for the same document. Posting policy and privacy policy are links to pages you host elsewhere; both must be https. Tags, languages and countries are short lists that tell relay directories what the relay is about: topic words, language codes such as `en` or `pt-BR`, and two-letter country codes.
 
-
 **Your own domain** puts the relay under a hostname you control. Add the hostname; the relay registers it with the host's Cloudflare zone and shows the CNAME to create at your DNS, plus an optional TXT record that activates the hostname before you switch the CNAME. **Check** asks where it stands: the hostname is live when both the hostname and its certificate read active. **Remove** deletes the hostname and its certificate. At most three per relay. Domains are not part of the exported configuration, because they belong to this relay instance rather than to its rules.
-
-
-
-
 
 ### Tell your clients
 
 One row per list that names relays: relay list (kind 10002), DM inbox (10050), search relays (10007), Blossom servers (10063). **Check** looks for your newest copy here and on the indexers. **Add me** merges this relay into it and publishes the signed result here, to the relays the list names and to the indexers; the row shows which accepted it. **Remove me** does the reverse. Lists are never rebuilt from scratch, so what you had stays.
-
-
 
 ## Data
 
@@ -93,7 +86,6 @@ What is here, what moves, and what leaves.
 - **Jobs** is work the relay does on its own, one round at a time, so it survives the relay sleeping. The table lists each job with its relays, filter, schedule and last result, with run-now and remove. Three forms add jobs. **Pull** copies what another relay has and this one lacks, by NIP-77 sync; running it again fetches only what is new, files come along from relays on this host, and with an interval it is a standing mirror. **Fetch my history** pulls the owner's own events from the relays in their kind 10002 stored here, or from a given list. **Rebroadcast** forwards events matching kinds and a day window to a list of relays, walking the store with a cursor so a standing rebroadcast forwards only what arrived since. Bans and kind rules apply to what arrives; the write rule does not. The other relay has to let anyone read, or write. Events that only their author may publish are never rebroadcast, and a members-only relay never rebroadcasts private kinds. Standing jobs run every hour, six hours or day, five at most. Jobs spend awake time, which fuel counts.
 
 - **Dumps** writes every event as one JSONL file to storage, daily or weekly, and keeps the newest few (seven by default). **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading is a signed request; the files are never public. Dumps count as files for fuel.
-- **Pull from a relay** copies what another relay has and this one lacks, by NIP-77 sync. It runs in the background and the line under it follows along. Running it again fetches only what is new. Files come along from relays on this host. Bans and kind rules apply to what arrives; the write rule does not. The other relay has to let anyone read.
 
 - **Fork this relay** leases a new name, copies this relay into it and reserves the claim for a key. Choose a name or take a memorable one, choose who claims it (you by default, or an npub), what to copy (everything, only your events, or a list of kinds) and whether the people come along. The result is the new console URL to hand over; the new name expires like any lease unless it is claimed. One fork an hour.
 
