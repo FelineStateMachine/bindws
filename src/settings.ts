@@ -1,5 +1,6 @@
 // Per-relay settings and policy, kept in the same SQLite database.
 import { notifySettings, type NotifySettings } from "./notify.ts";
+import type { CustomHost } from "./domains.ts";
 import type { Role } from "./roles.ts";
 
 // A lease makes an unclaimed relay usable for a while: open to everyone,
@@ -25,6 +26,7 @@ export interface Policy {
   owner: string; // pubkey; "" while unclaimed
   succession: Succession | null; // off until the owner names an heir
   lease: Lease | null; // set while the relay is a temporary lease
+  customHosts: CustomHost[]; // this relay's own domains (see domains.ts)
   name: string;
   description: string;
   icon: string;
@@ -61,6 +63,7 @@ export interface Policy {
 export const DEFAULT_POLICY: Policy = {
   owner: "",
   lease: null,
+  customHosts: [],
   name: "",
   description: "",
   icon: "",
@@ -422,7 +425,7 @@ export class Settings {
       format: "bind.ws/relay-config/1",
       exported_at: Math.floor(Date.now() / 1000),
       name,
-      policy: { ...this.policy, owner: undefined, lease: undefined, succession: undefined },
+      policy: { ...this.policy, owner: undefined, lease: undefined, succession: undefined, customHosts: undefined },
       members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}), ...(m.keep_days ? { keepDays: m.keep_days } : {}), ...(m.max_bytes ? { maxBytes: m.max_bytes } : {}) })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),

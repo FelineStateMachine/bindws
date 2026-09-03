@@ -25,6 +25,7 @@ import { FAVICON_SVG } from "./ui.ts";
 import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
+import { Hostnames, forgetDomains } from "./domains.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
 import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
@@ -41,6 +42,12 @@ export interface Env {
   LEASE_DAYS?: string; // how long a temporary relay lives; 14 by default
   LEASE_LIMIT_IP: RateLimit; // leases per address per minute
   LEASE_LIMIT_ALL: RateLimit; // leases per minute, everyone together
+  // Custom domains (see domains.ts): hostname to relay name, and the
+  // Cloudflare for SaaS credentials. Without the token the feature is off.
+  HOSTS: KVNamespace;
+  CF_API_TOKEN?: string;
+  ZONE_ID?: string;
+  CNAME_TARGET?: string; // what owners point their CNAME at; customers.<DOMAIN> if unset
   // Fuel (see fuel.ts); all optional.
   LIGHTNING_ADDRESS?: string;
   SERVICE_PUBKEY?: string;
@@ -122,7 +129,7 @@ export class Relay extends DurableObject<Env> {
   // When the object last did work, for the active-time meter (ms). Zero after a wake.
   private lastActive = 0;
   private lnurl: LnurlParams | null = null;
-  // Outbound HTTP to the lightning provider; tests substitute a fake.
+  // Outbound HTTP to the lightning provider and to Cloudflare; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
   // Succession: a warning month in flight, mirrored from storage so NIP-11
   // can say so without a read.
@@ -130,6 +137,8 @@ export class Relay extends DurableObject<Env> {
   private ownerSeenWrite = 0; // ms; the presence write happens at most hourly
   // A job round in flight, so overlapping alarms do not run two.
   private working = false;
+  // The custom hostnames client, null when the host has not enabled them.
+  hostnames: Hostnames | null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -137,6 +146,7 @@ export class Relay extends DurableObject<Env> {
     this.settings = new Settings(ctx.storage.sql);
     this.fuel = new Fuel(ctx.storage.sql, fuelConfig(env as unknown as Record<string, unknown>));
     this.identity = new Identity(ctx.storage);
+    this.hostnames = env.CF_API_TOKEN && env.ZONE_ID ? new Hostnames(env.CF_API_TOKEN, env.ZONE_ID, (u, i) => this.fetcher(u, i)) : null;
     ctx.blockConcurrencyWhile(async () => {
       this.store.init();
       this.settings.load();
@@ -158,6 +168,15 @@ export class Relay extends DurableObject<Env> {
 
   get domain(): string {
     return this.env.DOMAIN;
+  }
+
+  // hosts is the custom domain map the worker routes by.
+  get hosts(): KVNamespace {
+    return this.env.HOSTS;
+  }
+
+  get cnameTarget(): string {
+    return this.env.CNAME_TARGET || "customers." + this.env.DOMAIN;
   }
 
   // relays reaches the other objects on this host, for pulls between them.
@@ -332,6 +351,7 @@ export class Relay extends DurableObject<Env> {
   // teardown deletes everything this relay holds and returns the name to
   // unclaimed. Every socket is closed. Nothing is recoverable afterwards.
   async teardown() {
+    await forgetDomains(this);
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.close(4410, "relay deleted");
@@ -852,8 +872,10 @@ export class Relay extends DurableObject<Env> {
 
   // relayURL is how this relay is addressed for a given Host header.
   relayURL(host: string): string {
-    const secure = host.endsWith("." + this.env.DOMAIN) || host === this.env.DOMAIN;
-    return (secure ? "wss://" : "ws://") + host;
+    // Everything but local development is behind TLS, custom domains included.
+    const h = host.replace(/:\d+$/, "");
+    const local = h === "localhost" || h.endsWith(".localhost") || h === "127.0.0.1" || h === "[::1]";
+    return (local ? "ws://" : "wss://") + host;
   }
 
   // webURL is the same address for a browser.

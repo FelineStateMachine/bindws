@@ -7,15 +7,24 @@
   "observability": { "enabled": true },
   // Production: the apex as a custom domain, every subdomain routed by the
   // wildcard. The wildcard needs proxied placeholder DNS records for *.bind.ws.
+  // The third route catches custom domains: with Cloudflare for SaaS a
+  // customer's hostname enters this zone, and only a route matching any
+  // host sends it to the Worker (docs/11-hosting-bindws.md, Custom domains).
   "routes": [
     { "pattern": "bind.ws", "custom_domain": true },
-    { "pattern": "*.bind.ws/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
+    { "pattern": "*.bind.ws/*", "zone_id": "491aaf5e1c12976e9828199686a81733" },
+    { "pattern": "*/*", "zone_id": "491aaf5e1c12976e9828199686a81733" }
   ],
   "vars": {
     // Relays live at wss://<name>.<DOMAIN>; in `wrangler dev` use <name>.localhost.
     // Requests for any other host fall back to the relay named DEV_RELAY.
     "DOMAIN": "bind.ws",
     "DEV_RELAY": "dev",
+    // Custom domains: the zone custom hostnames are created in, and the name
+    // owners point their CNAME at. CF_API_TOKEN is a secret, set with
+    // `wrangler secret put CF_API_TOKEN`; without it the feature is off.
+    "ZONE_ID": "491aaf5e1c12976e9828199686a81733",
+    "CNAME_TARGET": "customers.bind.ws",
     // Fuel: free allowances per relay per month, and the sats charged beyond
     // them, paid by zaps to LIGHTNING_ADDRESS naming SERVICE_PUBKEY. Leave
     // the address empty to run without top-ups (allowances still apply).
@@ -42,6 +51,9 @@
   },
   // Blossom media for every relay, keyed <name>/<sha256> in one bucket.
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "bindws-media" }],
+  // Custom domains: hostname -> relay name, read by the Worker for any
+  // request whose host is outside DOMAIN.
+  "kv_namespaces": [{ "binding": "HOSTS", "id": "77f19f73b8e44ee28085991137feb162" }],
   // POST /lease creates objects for anyone, so it is capped per address and overall.
   "ratelimits": [
     { "name": "LEASE_LIMIT_IP", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
@@ -57,6 +69,8 @@
       "vars": {
         "DOMAIN": "bind.ws",
         "DEV_RELAY": "dev",
+        "ZONE_ID": "",
+        "CNAME_TARGET": "customers.bind.ws",
         "LIGHTNING_ADDRESS": "",
         "SERVICE_PUBKEY": "",
         "FREE_EVENTS_MB": "100",
@@ -72,6 +86,7 @@
         "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
       },
       "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "bindws-media" }],
+      "kv_namespaces": [{ "binding": "HOSTS", "id": "77f19f73b8e44ee28085991137feb162" }],
       "ratelimits": [
         { "name": "LEASE_LIMIT_IP", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
         { "name": "LEASE_LIMIT_ALL", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }

@@ -11,6 +11,25 @@ import { now } from "./event.ts";
 export { Relay };
 export { NAME_RE, RESERVED, validName } from "./names.ts";
 
+// Custom domains map to relay names through KV. Looked up once a minute per
+// hostname per isolate; a miss is cached too, so an unknown host does not
+// cost a read on every request.
+const HOST_TTL_MS = 60_000;
+const hostCache = new Map<string, { name: string | null; at: number }>();
+async function customHost(env: Env, host: string): Promise<string | null> {
+  const hit = hostCache.get(host);
+  if (hit && Date.now() - hit.at < HOST_TTL_MS) return hit.name;
+  let name: string | null = null;
+  try {
+    name = env.HOSTS ? await env.HOSTS.get(host) : null;
+  } catch {
+    name = null;
+  }
+  if (hostCache.size > 10_000) hostCache.clear();
+  hostCache.set(host, { name, at: Date.now() });
+  return name;
+}
+
 // lease hands out a temporary relay at a memorable name: open to everyone
 // for a while, wiped after unless claimed. Anyone may ask, no key needed;
 // a NIP-98 signature reserves the claim for that key. For scripts, agents
@@ -62,7 +81,7 @@ export default {
     if (host === domain || host === "www." + domain || host === domain + ".localhost") name = null; // apex (<domain>.localhost in wrangler dev)
     else if (host.endsWith("." + domain)) name = host.slice(0, -(domain.length + 1));
     else if (host.endsWith(".localhost")) name = host.slice(0, -".localhost".length); // wrangler dev: <name>.localhost
-    else name = env.DEV_RELAY; // wrangler dev without a subdomain, previews, custom hostnames
+    else name = (await customHost(env, host)) ?? env.DEV_RELAY; // a custom domain, or wrangler dev without a subdomain
 
     if (name === null) {
       if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON_SVG, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
