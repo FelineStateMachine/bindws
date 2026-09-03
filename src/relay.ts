@@ -17,6 +17,7 @@ import { Bucket } from "./ratelimit.ts";
 import { bridge } from "./bridge.ts";
 import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
 import { nip96 } from "./nip96.ts";
+import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
@@ -500,8 +501,9 @@ export class Relay extends DurableObject<Env> {
     return this.store.databaseSize;
   }
 
+  // Files and dumps both live in R2 and both cost media storage.
   mediaBytes(): number {
-    return blobBytes(this.sql);
+    return blobBytes(this.sql) + dumpBytes(this.sql);
   }
 
   fuelStatus() {
@@ -655,6 +657,7 @@ export class Relay extends DurableObject<Env> {
       return Response.json({ terms: this.settings.policy.joinTerms }, { headers: { "access-control-allow-origin": "*" } });
     }
     if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
+    if (url.pathname.startsWith("/dumps/") && req.method === "GET") return dumpDownload(this, req);
     if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
     if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
     if (url.pathname === "/fuel" && req.method === "GET") {
@@ -1032,6 +1035,15 @@ export class Relay extends DurableObject<Env> {
       } else if (!low && last) await this.ctx.storage.delete("fuel-low-at");
     }
     const next = this.store.sweepExpired(t);
+    // ---- dumps: a scheduled JSONL of everything, into R2 (dumps.ts) ----
+    if (dumpDue(this, t)) {
+      try {
+        await writeDump(this, t);
+      } catch (err) {
+        console.log("dump failed: " + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+    // ---- end dumps ----
     let at = t + 86400;
     if (next > 0 && next < at) at = next;
     const lease = this.settings.policy.lease;

@@ -287,6 +287,11 @@ export class Store {
     return this.x(`DELETE FROM events WHERE id=?`, id).rowsWritten > 0;
   }
 
+  // dumpPage reads a page of raw events by sequence for the JSONL dump.
+  dumpPage(afterSeq: number, limit: number): { seq: number; raw: string }[] {
+    return this.x<{ seq: number; raw: string }>(`SELECT seq, raw FROM events WHERE seq>? ORDER BY seq LIMIT ?`, afterSeq, limit).toArray();
+  }
+
   // kindStats sizes each kind present: how many, how many bytes of raw event,
   // and the span of timestamps. Heaviest first.
   kindStats(): { kind: number; n: number; bytes: number; oldest: number; newest: number }[] {

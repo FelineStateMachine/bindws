@@ -46,7 +46,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   resolvereport: "reports", listeventsneedingmoderation: "reports",
   setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules", applypreset: "rules",
   changerelayname: "identity", changerelaydescription: "identity", changerelayicon: "identity",
-  storagestats: "storage", deleteblob: "storage",
+  storagestats: "storage", deleteblob: "storage", listdumps: "storage", deletedump: "storage", dumpnow: "storage",
   exportconfig: "config", importconfig: "config",
   pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",
   transferowner: "transfer",

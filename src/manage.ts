@@ -7,10 +7,11 @@ import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
 import { listInvites, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { isReplaceable, isProtected, publicFields } from "./settings.ts";
+import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
+import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
 import { PRESETS, applyPreset } from "./presets.ts";
 
@@ -59,6 +60,7 @@ const METHODS = [
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
   "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner", "notifytest",
+  "listdumps", "deletedump", "dumpnow",
 ];
 
 // validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
@@ -129,7 +131,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean: Record<string, unknown> = {};
       for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
-      Object.assign(clean, publicFields(patch));
+      Object.assign(clean, publicFields(patch), dumpFields(patch));
       if (patch.writes === "open" || patch.writes === "allowlist" || patch.writes === "owner") clean.writes = patch.writes;
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
@@ -314,7 +316,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     case "storagestats": {
       const kinds = relay.store.kindStats().map((k) => ({ ...k, days: s.retentionDays(k.kind), replaceable: isReplaceable(k.kind), protected: isProtected(k.kind) }));
       const blobs = relay.sql.exec<{ n: number | null; bytes: number | null }>(`SELECT count(*) AS n, sum(size) AS bytes FROM blobs`).one();
-      return reply({ result: { kinds, events: kinds.reduce((a, k) => a + k.n, 0), eventBytes: kinds.reduce((a, k) => a + k.bytes, 0), databaseBytes: relay.eventBytes(), blobs: blobs.n ?? 0, mediaBytes: blobs.bytes ?? 0, retention: s.listRetention() } });
+      return reply({ result: { kinds, events: kinds.reduce((a, k) => a + k.n, 0), eventBytes: kinds.reduce((a, k) => a + k.bytes, 0), databaseBytes: relay.eventBytes(), blobs: blobs.n ?? 0, mediaBytes: blobs.bytes ?? 0, dumps: listDumps(relay.sql).length, dumpBytes: dumpBytes(relay.sql), retention: s.listRetention() } });
     }
     case "setretention": {
       // (kind | null, days): days 0 removes the rule.
@@ -403,6 +405,15 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       await relay.publishMembership({ pubkey: pk }, { pubkey: caller });
       return reply({ result: { owner: pk, previous: caller } });
     }
+    case "listdumps":
+      return reply({ result: listDumps(relay.sql).map((d) => ({ ...d, url: "/dumps/" + d.name })) });
+    case "deletedump": {
+      const name = str(0);
+      if (!DUMP_NAME_RE.test(name)) return reply({ error: "invalid: not a dump name" }, 400);
+      return reply({ result: await deleteDump(relay, name) });
+    }
+    case "dumpnow":
+      return reply({ result: await writeDump(relay, t) });
     case "changerelayname":
       s.update({ name: str(0).slice(0, 200) });
       await relay.publishMembership();

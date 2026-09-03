@@ -36,6 +36,10 @@ export interface Policy {
   maxFuture: number; // seconds; 0 disables
   maxLimit: number;
   maxSubs: number;
+  // Nightly dumps: a JSONL of every event, written to R2 by the alarm and
+  // kept for `dumpsKeep` runs. Counted as media for fuel.
+  dumps: "off" | "daily" | "weekly";
+  dumpsKeep: number;
 }
 
 export const DEFAULT_POLICY: Policy = {
@@ -63,6 +67,8 @@ export const DEFAULT_POLICY: Policy = {
   maxFuture: 900,
   maxLimit: 500,
   maxSubs: 20,
+  dumps: "off",
+  dumpsKeep: 7,
 };
 
 export const SETTINGS_SCHEMA = `
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS nip05 (name TEXT PRIMARY KEY, pubkey TEXT NOT NULL, a
 CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, reporter TEXT NOT NULL, target_pubkey TEXT NOT NULL, target_event TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', resolved_by TEXT NOT NULL DEFAULT '', resolved_at INTEGER NOT NULL DEFAULT 0, action TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS blobs (sha256 TEXT PRIMARY KEY, size INTEGER NOT NULL, type TEXT NOT NULL, uploader TEXT NOT NULL, uploaded INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS blobs_uploader ON blobs(uploader, uploaded DESC);
+CREATE TABLE IF NOT EXISTS dumps (name TEXT PRIMARY KEY, bytes INTEGER NOT NULL, events INTEGER NOT NULL, at INTEGER NOT NULL);
 `;
 
 // A member is one person of this relay: the owner or someone let in. Their
@@ -91,6 +98,14 @@ export type Member = {
   joined_at: number;
   via: string; // claimed | invite <code> | added | profile
 };
+
+// dumpFields validates the dump settings of a policy patch.
+export function dumpFields(patch: Record<string, unknown>): Partial<Policy> {
+  const out: Partial<Policy> = {};
+  if (patch.dumps === "off" || patch.dumps === "daily" || patch.dumps === "weekly") out.dumps = patch.dumps;
+  if (Number.isInteger(patch.dumpsKeep) && (patch.dumpsKeep as number) >= 1 && (patch.dumpsKeep as number) <= 60) out.dumpsKeep = patch.dumpsKeep as number;
+  return out;
+}
 
 export const NAME_RE = /^[a-z0-9._-]{1,64}$/;
 
@@ -313,7 +328,7 @@ export class Settings {
     const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
     const clean: Partial<Policy> = {};
     for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
-    Object.assign(clean, publicFields(policy));
+    Object.assign(clean, publicFields(policy), dumpFields(policy));
     if (policy.writes === "open" || policy.writes === "allowlist" || policy.writes === "owner") clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
