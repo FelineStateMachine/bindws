@@ -7,9 +7,10 @@ import { bytesToHex } from "./negentropy.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { blockedWords, gateFields, isWriteRule } from "./settings.ts";
+import { blockedWords, gateFields, isWriteRule, viewFields } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
+import { viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
 import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
@@ -63,7 +64,7 @@ const METHODS = [
   "storagestats", "setretention", "listretention", "purgekind",
   "deleterelay", "exportconfig", "importconfig", "resetrules", "listpresets", "applypreset",
   "pullfrom", "pullstatus", "listjobs", "addjob", "removejob", "runjob", "backfill", "transferowner", "notifytest",
-  "listdumps", "deletedump", "dumpnow",
+  "listdumps", "deletedump", "dumpnow", "listviews",
   "removesubtree",
   "forkrelay",
   "setsuccession", "clearsuccession", "successionstatus",
@@ -145,7 +146,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean: Record<string, unknown> = {};
       for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
-      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch));
+      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, p.views));
       if (isWriteRule(patch.writes)) clean.writes = patch.writes;
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
@@ -160,8 +161,12 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (typeof clean.maxSubs === "number") clean.maxSubs = Math.min(Math.max(clean.maxSubs as number, 1), 200);
       s.update(clean);
       await relay.publishMembership();
+      // A view switched off is taken down now; one switched on is published now.
+      if (patch.views && typeof patch.views === "object") for (const name of Object.keys(patch.views as object)) await relay.publishView(name);
       return reply({ result: s.policy });
     }
+    case "listviews":
+      return reply({ result: await viewsSummary(relay) });
     case "banpubkey": {
       const pk = str(0);
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
@@ -409,7 +414,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (!Number.isInteger(days) || days < 0) return reply({ error: "invalid: days out of range" }, 400);
       if (kind !== null && isProtected(kind)) return reply({ error: `invalid: kind ${kind} is part of how the relay works and cannot be purged` }, 400);
       const before = days > 0 ? t - days * 86400 : Number.MAX_SAFE_INTEGER;
-      const gone = kind === null ? relay.store.purge(null, before, relay.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k))) : relay.store.purge(kind, before);
+      const gone = kind === null ? relay.store.purge(null, before, relay.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k)), relay.identity.pubkey) : relay.store.purge(kind, before, [], relay.identity.pubkey);
       return reply({ result: { deleted: gone } });
     }
     case "listallowedkinds":

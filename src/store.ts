@@ -356,16 +356,17 @@ export class Store {
 
   // purge deletes events of one kind, or of every kind not in `except` when
   // kind is null, created before `before`. Returns how many went.
-  purge(kind: number | null, before: number, except: number[] = []): number {
+  // exceptPubkey is the relay's own key: what it signed is never swept.
+  purge(kind: number | null, before: number, except: number[] = [], exceptPubkey = ""): number {
     this.bytesByAuthor.clear();
     if (kind !== null) {
-      const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE kind=? AND created_at<?`, kind, before).one().n;
-      if (n > 0) this.x(`DELETE FROM events WHERE kind=? AND created_at<?`, kind, before);
+      const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE kind=? AND created_at<? AND pubkey<>?`, kind, before, exceptPubkey).one().n;
+      if (n > 0) this.x(`DELETE FROM events WHERE kind=? AND created_at<? AND pubkey<>?`, kind, before, exceptPubkey);
       return n;
     }
     const list = JSON.stringify(except);
-    const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE created_at<? AND kind NOT IN (SELECT value FROM json_each(?))`, before, list).one().n;
-    if (n > 0) this.x(`DELETE FROM events WHERE created_at<? AND kind NOT IN (SELECT value FROM json_each(?))`, before, list);
+    const n = this.x<{ n: number }>(`SELECT count(*) AS n FROM events WHERE created_at<? AND pubkey<>? AND kind NOT IN (SELECT value FROM json_each(?))`, before, exceptPubkey, list).one().n;
+    if (n > 0) this.x(`DELETE FROM events WHERE created_at<? AND pubkey<>? AND kind NOT IN (SELECT value FROM json_each(?))`, before, exceptPubkey, list);
     return n;
   }
 }

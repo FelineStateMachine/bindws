@@ -20,6 +20,7 @@ export const KIND_GROUP_MEMBERS = 39002;
 export const KIND_GROUP_ROLES = 39003;
 export const KIND_GROUP_PINS = 39005;
 export const KIND_ROLE_DEF = 33534;
+export const KIND_VIEW = 30078;
 export const KIND_PROFILE = 0;
 
 export interface GroupFacts {
@@ -98,6 +99,15 @@ export class Identity {
   }
   removeUser(group: string, pubkey: string): Event {
     return this.sign(KIND_REMOVE_USER, [["-"], ["h", group], ["p", pubkey]]);
+  }
+
+  // view signs a fold as a kind 30078 record on the group clock, so a newer
+  // record always replaces the older one. NIP-70 protected like the rest.
+  view(tags: string[][], content: string, now = Math.floor(Date.now() / 1000)): Event {
+    const at = Math.max(now, this.lastGroup + 1);
+    this.lastGroup = at;
+    this.storage.put("relay-group-at", at);
+    return this.sign(KIND_VIEW, [["-"], ...tags], content, at);
   }
 
   // pins signs the group's pinned list (NIP-29 kind 39005): e and a tags in

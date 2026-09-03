@@ -48,7 +48,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules", applypreset: "rules",
   changerelayname: "identity", changerelaydescription: "identity", changerelayicon: "identity",
   adddomain: "identity", removedomain: "identity", checkdomain: "identity", listdomains: "identity",
-  storagestats: "storage", deleteblob: "storage", listdumps: "storage", deletedump: "storage", dumpnow: "storage",
+  listviews: "read", storagestats: "storage", deleteblob: "storage", listdumps: "storage", deletedump: "storage", dumpnow: "storage",
   removesubtree: "members",
   exportconfig: "config", importconfig: "config",
   pullfrom: "jobs", pullstatus: "jobs", listjobs: "jobs", addjob: "jobs", removejob: "jobs", runjob: "jobs", backfill: "jobs",

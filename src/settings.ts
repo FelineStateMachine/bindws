@@ -68,6 +68,22 @@ export interface Policy {
   // invited_by is below `depth` may hold up to `quota` live invites. depth 0
   // turns it off, which leaves inviting to the owner and moderators.
   memberInvites: { depth: number; quota: number };
+  // Views (views.ts): a name maps to false when the owner switched it off.
+  views: Record<string, boolean>;
+}
+
+export const VIEW_NAMES = ["profiles", "relays", "calendar", "moderation", "articles", "zaps", "presence"];
+
+// viewFields applies a `views` patch of name to boolean; unknown names are dropped.
+export function viewFields(patch: Record<string, unknown>, cur: Record<string, boolean>): Partial<Policy> {
+  if (!patch.views || typeof patch.views !== "object") return {};
+  const out: Record<string, boolean> = { ...cur };
+  for (const [k, v] of Object.entries(patch.views as Record<string, unknown>)) {
+    if (!VIEW_NAMES.includes(k) || typeof v !== "boolean") continue;
+    if (v) delete out[k];
+    else out[k] = false;
+  }
+  return { views: out };
 }
 
 export const DEFAULT_POLICY: Policy = {
@@ -104,6 +120,7 @@ export const DEFAULT_POLICY: Policy = {
   dumps: "off",
   dumpsKeep: 7,
   memberInvites: { depth: 0, quota: 0 },
+  views: {},
 };
 
 export const SETTINGS_SCHEMA = `
@@ -578,7 +595,7 @@ export class Settings {
     const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
     const clean: Partial<Policy> = {};
     for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
-    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy));
+    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy), viewFields(policy, this.policy.views));
     if (isWriteRule(policy.writes)) clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;

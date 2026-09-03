@@ -6,6 +6,7 @@
 import { now, tagValues, type Event } from "./event.ts";
 import { dial } from "./pull.ts";
 import type { Relay } from "./relay.ts";
+import { viewRowsSince } from "./views.ts";
 import type { FuelStatus } from "./fuel.ts";
 
 export type NotifyKind = "reports" | "fuel" | "jobs" | "succession" | "digest" | "test";
@@ -137,6 +138,7 @@ export async function digestText(relay: Relay, since: number, t: number): Promis
   const spent = Math.floor(f.chargedMsats / 1000);
   const balance = Math.floor(f.balanceMsats / 1000);
   const sc = await relay.successionStatus();
+  const viewRows = await viewRowsSince(relay, since);
   const lines: string[] = [];
   if (joined || left) lines.push(`People: ${joined} joined${left ? `, ${left} left` : ""}.`);
   if (events || files) lines.push(`Stored: ${events} events${files ? ` and ${files} files` : ""}.`);
@@ -148,5 +150,7 @@ export async function digestText(relay: Relay, since: number, t: number): Promis
   }
   if (sc.succession && sc.handoverAt) lines.push(`Handover to ${sc.succession.heir.slice(0, 8)} in ${Math.max(0, Math.ceil((sc.handoverAt - t) / 86400))} days unless you sign in.`);
   const days = Math.max(1, Math.round((t - since) / 86400));
+  // The views' housekeeping rides along with a week that had news; a quiet week stays quiet.
+  if (lines.length && viewRows) lines.push(`Views: ${viewRows} rows written.`);
   return lines.length ? [`The last ${days} days on ${relay.slug}:`, ...lines].join("\n") : `Nothing changed on ${relay.slug} in the last ${days} days.`;
 }

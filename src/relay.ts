@@ -35,6 +35,7 @@ import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
 import { card } from "./card.ts";
+import { KIND_PRESENCE, PRESENCE_THROTTLE_S, VIEWS, latestStored, nip11Views, presenceTags, serveView, viewByName, viewD, viewEvent, viewOn, viewStored, type ViewRun } from "./views.ts";
 import type { Blob } from "./blossom.ts";
 
 export interface Env {
@@ -140,6 +141,14 @@ export class Relay extends DurableObject<Env> {
   private ownerSeenWrite = 0; // ms; the presence write happens at most hourly
   // A job round in flight, so overlapping alarms do not run two.
   private working = false;
+  // Presence (views.ts): who wrote lately, in memory; the sockets are asked
+  // directly. A broadcast is at most one per PRESENCE_THROTTLE_S.
+  presenceActive = new Map<string, number>();
+  private presenceAt = 0;
+  private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Write-triggered views wait a moment so a burst republishes once.
+  private viewDirty = new Set<string>();
+  private viewTimer: ReturnType<typeof setTimeout> | null = null;
   // The custom hostnames client, null when the host has not enabled them.
   hostnames: Hostnames | null;
 
@@ -232,6 +241,106 @@ export class Relay extends DurableObject<Env> {
     events.push(this.identity.roster(this.settings.members(), t));
     events.push(...this.identity.group(f, t));
     this.emit(events, t);
+    this.markView("profiles");
+  }
+
+  // ---- views (views.ts) ----
+
+  // authedNow lists every pubkey with an authenticated socket open.
+  authedNow(): string[] {
+    const out = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) for (const pk of this.state(ws).authed) out.add(pk);
+    return [...out];
+  }
+
+  async viewRuns(name: string): Promise<ViewRun[]> {
+    return (await this.ctx.storage.get<ViewRun[]>("view-runs:" + name)) ?? [];
+  }
+
+  // publishView folds one stored view and writes its record, or takes the
+  // record down when the view is off, members-only or empty. The rows the
+  // fold wrote are recorded so the console and the digest can say what a
+  // view costs.
+  async publishView(name: string): Promise<void> {
+    const v = viewByName(name);
+    if (!v || v.trigger === "live" || this.settings.policy.owner === "") return;
+    await this.identity.ensure();
+    const self = this.identity.pubkey;
+    this.tally();
+    const before = this.meter.rowsWritten;
+    const takeDown = () => {
+      for (const r of this.sql.exec<{ id: string }>(`SELECT e.id FROM events e JOIN tags t ON t.event_id=e.id WHERE e.kind=30078 AND e.pubkey=? AND t.name='d' AND t.value=?`, self, viewD(name)).toArray()) this.store.deleteEvent(r.id);
+    };
+    if (!viewOn(this, name) || !viewStored(this, v)) takeDown();
+    else {
+      const fold = v.fold(this);
+      if (!fold) takeDown();
+      else this.emit([viewEvent(this, v, fold, true)], now());
+    }
+    this.tally();
+    const runs = (await this.viewRuns(name)).slice(-59);
+    runs.push({ at: now(), rows: Math.max(0, this.meter.rowsWritten - before) });
+    await this.ctx.storage.put("view-runs:" + name, runs);
+    if (v.fingerprint) await this.ctx.storage.put("view-fp:" + name, v.fingerprint(this));
+  }
+
+  // markView republishes a write-triggered view shortly, once for a burst.
+  markView(name: string) {
+    if (!viewOn(this, name) || this.settings.policy.owner === "") return;
+    this.viewDirty.add(name);
+    if (this.viewTimer) return;
+    this.viewTimer = setTimeout(() => {
+      this.viewTimer = null;
+      const names = [...this.viewDirty];
+      this.viewDirty.clear();
+      void (async () => {
+        for (const n of names) {
+          try {
+            await this.publishView(n);
+          } catch (err) {
+            console.log("view " + n + " failed: " + (err instanceof Error ? err.message : String(err)));
+          }
+        }
+      })();
+    }, 10_000);
+  }
+
+  // viewsTick runs the scheduled views: daily ones once a day, hourly ones
+  // once an hour and only when their fingerprint moved or nothing is stored.
+  private async viewsTick(t: number) {
+    if (this.settings.policy.owner === "") return;
+    for (const v of VIEWS) {
+      if (v.trigger === "live" || !viewOn(this, v.name)) continue;
+      const last = (await this.ctx.storage.get<number>("view-at:" + v.name)) ?? 0;
+      const period = v.trigger === "hourly" ? 3600 : 86400;
+      if (t - last < period - 300) continue;
+      await this.ctx.storage.put("view-at:" + v.name, t);
+      if (v.fingerprint && viewStored(this, v) && latestStored(this, v.name) !== null) {
+        const fp = v.fingerprint(this);
+        if (fp === (await this.ctx.storage.get<string>("view-fp:" + v.name))) continue;
+      }
+      await this.publishView(v.name);
+    }
+  }
+
+  // notePresence records a writer and broadcasts the presence view when the
+  // throttle allows, otherwise once it does.
+  notePresence(pubkey?: string) {
+    if (pubkey) this.presenceActive.set(pubkey, now());
+    if (!this.identity.pubkey || !viewOn(this, "presence") || this.settings.policy.owner === "") return;
+    const wait = this.presenceAt + PRESENCE_THROTTLE_S - Date.now() / 1000;
+    if (wait <= 0) this.broadcastPresence();
+    else if (!this.presenceTimer) {
+      this.presenceTimer = setTimeout(() => {
+        this.presenceTimer = null;
+        this.broadcastPresence();
+      }, wait * 1000);
+    }
+  }
+
+  private broadcastPresence() {
+    this.presenceAt = Date.now() / 1000;
+    this.broadcast(this.identity.sign(KIND_PRESENCE, [["d", viewD("presence")], ...presenceTags(this)], ""));
   }
 
   // publishPins signs the group's pin list (39005); an empty list takes the
@@ -873,6 +982,7 @@ export class Relay extends DurableObject<Env> {
     }
     if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
     if (url.pathname.startsWith("/dumps/") && req.method === "GET") return dumpDownload(this, req);
+    if (url.pathname.startsWith("/view/") && req.method === "GET") return serveView(this, req, verifyNIP98);
     if (url.pathname === "/import" && req.method === "PUT") return importUpload(this, req);
     if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
     if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
@@ -952,6 +1062,7 @@ export class Relay extends DurableObject<Env> {
     if (this.identity.pubkey) {
       doc.self = this.identity.pubkey;
       doc.supported_nips = [...SUPPORTED_NIPS, 43];
+      doc.views = nip11Views(this);
     }
     return doc;
   }
@@ -1084,6 +1195,7 @@ export class Relay extends DurableObject<Env> {
     this.syncs.delete(ws);
     this.buckets.delete(ws);
     this.flushUsage();
+    this.notePresence();
   }
 
   async webSocketError(ws: WebSocket) {
@@ -1257,6 +1369,8 @@ export class Relay extends DurableObject<Env> {
     else this.ensureAlarm();
     if (e.kind === 0 && conn) claimFromProfile(this.settings, e.content, e.pubkey, conn.host, t);
     if (conn) void this.ownerSeen(e.pubkey);
+    if (conn) this.notePresence(e.pubkey);
+    if (e.kind === 30023) this.markView("articles");
     return { ok: true, msg: "", stored: true };
   }
 
@@ -1282,6 +1396,7 @@ export class Relay extends DurableObject<Env> {
     this.fuel.chargeStorage(t, this.eventBytes(), this.mediaBytes());
     this.store.drain();
     this.sweepRetention(t);
+    await this.viewsTick(t);
     // Fuel notice: once when it turns low, then once a day while it stays low.
     if (this.settings.policy.notify.fuel) {
       const low = fuelLow(this.fuelStatus());
@@ -1329,8 +1444,8 @@ export class Relay extends DurableObject<Env> {
     let gone = 0;
     const own = rules.filter((r) => r.kind !== null).map((r) => r.kind as number);
     for (const r of rules) {
-      if (r.kind !== null) gone += this.store.purge(r.kind, t - r.days * 86400);
-      else gone += this.store.purge(null, t - r.days * 86400, [...own, ...this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k) || k === 1059)]);
+      if (r.kind !== null) gone += this.store.purge(r.kind, t - r.days * 86400, [], this.identity.pubkey);
+      else gone += this.store.purge(null, t - r.days * 86400, [...own, ...this.store.kindStats().map((k) => k.kind).filter((k) => isReplaceable(k) || isProtected(k) || k === 1059)], this.identity.pubkey);
     }
     // Per-member keep-for rules, same pass, same exceptions as the catch-all.
     const limited = this.settings.limited();
@@ -1456,6 +1571,7 @@ export class Relay extends DurableObject<Env> {
     if (hostOf(tagValues(e, "relay")[0] ?? "") !== hostOf("ws://" + s.host)) return fail("invalid: auth relay tag does not name this relay");
     if (!s.authed.includes(e.pubkey)) s.authed.push(e.pubkey);
     void this.ownerSeen(e.pubkey);
+    this.notePresence();
     this.persist(ws, s);
     this.send(ws, "OK", e.id, true, "");
   }
