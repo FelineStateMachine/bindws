@@ -46,7 +46,7 @@ Who can do what, and how much.
 |---|---|
 | Writes | anyone, members, members and their follows, only me |
 | Open to anyone | kinds anyone may write whatever the write rule says, and whether anyone may reply to a member |
-| Reads | anyone, signed in, members |
+| Reads | anyone, signed in, members. One rule for everything the relay shows: events, counts, sync and search, pages and the feed, files and file listings, views and presence, signer traffic, and reports about files. What stays public whatever the rule: the information document with the owner's key and the relay's own key, the card, the terms, invite pages and the fuel meters. Tightening the rule closes the subscriptions it no longer admits. |
 | Proof of work | minimum bits an event must carry, 0 to disable |
 | Timestamp window | how far in the future an event may be dated |
 | Query limits | max events per query, max subscriptions per connection |

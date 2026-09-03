@@ -33,6 +33,8 @@ This needs the host to have switched custom domains on. If they have not, the bl
 
 Your relay stores images and files too. Who may upload follows the write rule: anyone, members or only you. The largest upload is set on the Rules tab, 25 MB by default and up to 95. Files count as files stored for fuel.
 
+Files follow the read rule, the same as events. While reads are *anyone*, a file is a public link by hash. Under *signed in* or *members*, a download needs a Blossom `get` token or a signed request from someone the rule admits, the per-uploader list needs the same, and clients that fetch images without signing will not show them from that relay.
+
 Clients that speak Blossom upload to `https://<name>.bind.ws` and get a link by hash. A client can ask first whether an upload would be accepted, and can have the relay copy a file from another server by URL instead of uploading it again.
 
 Clients that speak NIP-96 instead find the same store through `/.well-known/nostr/nip96.json`. The two doors share one bucket and one file list, so a file uploaded through either is served, listed and deleted through both. Every answer carries the file's metadata tags (NIP-94).
@@ -55,7 +57,7 @@ A view is a record the relay signs from what it holds, so a client reads one eve
 | zaps | sats received by the top 50 notes and authors here, from stored receipts | hourly, when something changed |
 | presence | who has a connection open and who wrote in the last 15 minutes | live, never stored |
 
-Profiles and relays follow the directory switch, calendar, articles and presence follow the read rule. A members-only view is never stored, since a stored event is readable by anyone the read rule lets in. It is folded and signed when a member asks for it with a signed request. Presence is an ephemeral event, kind 20078, sent to whoever subscribes to it and answered from memory at `/view/presence`; it is broadcast at most once every 30 seconds.
+Profiles and relays follow the directory switch; calendar, articles, zaps, moderation and presence follow the read rule. A members-only view is never stored, since a stored event is readable by anyone the read rule lets in. It is folded and signed when a member asks for it with a signed request. Presence is an ephemeral event, kind 20078, sent to whoever subscribes to it and answered from memory at `/view/presence`; it is broadcast at most once every 30 seconds.
 
 Views cost rows written, which fuel counts. The Views tab shows what each one wrote on its last run, and the weekly digest adds them up. Any view can be switched off there.
 

@@ -5,7 +5,7 @@ audience: integrator
 
 # HTTP reference
 
-Every path the worker and a relay answer. Paths are on `https://<name>.bind.ws` unless marked apex. Auth column: "NIP-98" is a signed request (see [Scripts and agents](13-scripts-and-agents.md)); "Blossom" is a kind 24242 token in the Authorization header; "none" is public. JSON errors carry `{ "error": "<prefix>: reason" }`; Blossom and NIP-96 errors also set an `X-Reason` header.
+Every path the worker and a relay answer. Paths are on `https://<name>.bind.ws` unless marked apex. One read rule covers every door that shows events, files, names or presence: where the auth column says "the read rule", a relay whose reads are *anyone* answers without a signature, one whose reads are *signed in* takes any valid signature, and one whose reads are *members* takes a member's. Auth column: "NIP-98" is a signed request (see [Scripts and agents](13-scripts-and-agents.md)); "Blossom" is a kind 24242 token in the Authorization header; "none" is public. JSON errors carry `{ "error": "<prefix>: reason" }`; Blossom and NIP-96 errors also set an `X-Reason` header.
 
 Any request with `Accept: application/nostr+json` answers the NIP-11 document, whatever the path. A websocket upgrade on any path opens the relay. A blocked address is refused with 403 on the socket and on the doors that write, read or serve files; the page, NIP-11 and management stay open.
 
@@ -47,9 +47,9 @@ Signed with NIP-98 over the exact URL, method and body. Same gates as a socket: 
 | `/upload` | HEAD | Blossom `upload` | whether an upload with the `X-SHA-256`, `X-Content-Type` and `X-Content-Length` headers would be accepted | 200; 400 bad headers; 401; 403 the write gate; 411 no length; 413 too big |
 | `/upload` | PUT | Blossom `upload` | the descriptor with `nip94` tags | 200 exists; 201 stored; 400; 401; 403 gate or a removed hash; 413 |
 | `/mirror` | PUT | Blossom `upload` | copies the blob at `{ "url": ... }` from another server, the descriptor | 200 exists; 201 stored; 400; 401; 403; 409 hash mismatch with the token; 413; 502 origin failed |
-| `/report` | PUT | none, the body is a signed kind 1984 | files a report for each `x` tag the relay holds | 200; 400 bad event or older than an hour; 403 unclaimed relay or banned reporter; 404 no such blob |
-| `/list/<pubkey>` | GET | none | that uploader's descriptors | 200; 400 bad pubkey |
-| `/<sha256>[.ext]` | GET, HEAD | none | the blob, ranges honoured | 200; 206; 404 |
+| `/report` | PUT | none, the body is a signed kind 1984; the reporter must pass the read rule | files a report for each `x` tag the relay holds | 200; 400 bad event or older than an hour; 401 reporter must sign in under a read rule; 403 unclaimed relay, banned reporter or reporter not admitted by the read rule; 404 no such blob |
+| `/list/<pubkey>` | GET | the read rule: none while reads are open, else Blossom `list` or NIP-98 | that uploader's descriptors | 200; 400 bad pubkey; 401; 403 |
+| `/<sha256>[.ext]` | GET, HEAD | the read rule: none while reads are open, else Blossom `get` or NIP-98 | the blob, ranges honoured; not cacheable by shared caches when gated | 200; 206; 401; 403; 404 |
 | `/<sha256>` | DELETE | Blossom `delete` | removes it; the uploader or the owner | 204; 400 token names another blob; 401; 403; 404 |
 
 ## Files: NIP-96
@@ -61,7 +61,7 @@ The same bucket and file list through the NIP-96 shape. Answers are `{ status, m
 | `/.well-known/nostr/nip96.json` | GET | none | `api_url`, `download_url`, `supported_nips`, content types, the free plan with the size cap | 200 |
 | `/nip96` | POST, multipart with a `file` field, optional `size` and `caption` | NIP-98, `payload` is the file's hash | the NIP-94 event in `nip94_event` and the Blossom URL | 200; 400; 401; 403; 413 |
 | `/nip96?page=&count=` | GET | NIP-98 | the caller's files | 200; 401 |
-| `/nip96/<sha256>` | GET, HEAD | none | the blob, same as the Blossom path | 200; 404 |
+| `/nip96/<sha256>` | GET, HEAD | the read rule, as the Blossom path | the blob, same as the Blossom path | 200; 401; 403; 404 |
 | `/nip96/<sha256>` | DELETE | NIP-98 | removes it; the uploader or anyone with the storage action | 200; 401; 403; 404 |
 
 ## Pages and feed
@@ -88,7 +88,7 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 
 | Path | Method | Auth | Answers | Status |
 |---|---|---|---|---|
-| `/.well-known/nostr.json?name=` | GET | none | NIP-05 for members with a name, with this relay as their relay | 200 |
+| `/.well-known/nostr.json?name=` | GET | none for a name; the directory switch for the listing without one, else NIP-98 by a member | NIP-05 for the member with that name, with this relay as their relay; without a name, every named member when the directory is public | 200; 401 bad signature |
 | `/invite/<code>` | GET | none | the invite page, with the join terms | 200 |
 | `/api/join-policy` | GET | none | `{ terms }` | 200 |
 | `/api/invites/claim` | POST `{ "code": ... }` | NIP-98 | `{ status: "joined" }` or `{ status: "already_member", role }` | 200; 400; 401; 403 invalid, used up or expired, or banned |
@@ -103,14 +103,14 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 
 | Path | Method | Auth | Answers | Status |
 |---|---|---|---|---|
-| `/fuel` | GET | none | meters, allowances, prices, balance and recent zaps | 200 |
+| `/fuel` | GET | none | meters, allowances, prices and balance; who zapped is in the `stats` management method | 200 |
 | `/fuel/invoice` | POST `{ "zapRequest": <kind 9734> }` | none | `{ invoice, providerPubkey, msats }` from the lightning provider | 200; 400 bad request or amount; 502 provider |
 
 ## Views
 
 | Path | Method | Auth | Answers | Codes |
 |---|---|---|---|---|
-| `/view/<name>` | GET | none for a public view; NIP-98 by a member for a members-only one | the view's latest signed kind 30078 record as JSON, or presence as a kind 20078 from memory | 200; 401 `auth-required:` when a members-only view is asked for without a signature; 403 when the signer is not a member; 404 when the view is off, unknown, or has not run yet |
+| `/view/<name>` | GET | none for a public view; NIP-98 by a member for a members-only one; `zaps`, `moderation`, `calendar`, `articles` and `presence` follow the read rule, `profiles` and `relays` the directory switch | the view's latest signed kind 30078 record as JSON, or presence as a kind 20078 from memory | 200; 401 `auth-required:` when a members-only view is asked for without a signature; 403 when the signer is not a member; 404 when the view is off, unknown, or has not run yet |
 
 Names: `profiles`, `relays`, `calendar`, `moderation`, `articles`, `zaps`, `presence`. The information document lists the ones a relay keeps under `views`, with each one's kind, `d`, trigger and audience.
 

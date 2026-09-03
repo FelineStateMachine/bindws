@@ -69,7 +69,7 @@ CI runs typecheck and the object tests on every push and pull request. `main` on
 2. Add a `case` in the switch. Use `num(i)` and `str(i)` for parameters. Return `reply({ result })` or `reply({ error }, 400)`.
 3. If it changes state that other code caches, update `Settings` and its in-memory sets.
 4. If the console should call it, add the control to `dashboard.ts` and a handler in its script.
-5. Cover it in `test/adopt.test.ts` with the `rpc` helper.
+5. Cover it in `test/adopt.test.ts` with the `rpc` helper. If it can show a member, an event or a file, ask `Settings.mayRead` (or `mayList` for names and counts) with what `whoAsks` found in the header, and add the path to the door walk in `test/exposure.test.ts`, which knocks on every path as a stranger and as a signed-in non-member and fails on anything of a member's that comes back.
 
 ## Add a NIP
 
