@@ -98,7 +98,7 @@ describe("fuel", () => {
 
     // Blow past the row-write allowance: writes stop, reads continue.
     const stub = env.RELAY.getByName("fuel-a");
-    await runInDurableObject(stub, async (r: Relay) => r.fuel.record(now(), { rowsWritten: 1_200_000 }));
+    await runInDurableObject(stub, async (r: Relay) => r.fuel.record(now(), { rowsWritten: 400_000 }) // 150k over the 250k allowance: 300 sats, which the zap below covers);
     status = await (await SELF.fetch(`http://${host}/fuel`)).json();
     expect(status.outOfFuel).toBe(true);
     expect(status.chargedMsats).toBeGreaterThan(0);
