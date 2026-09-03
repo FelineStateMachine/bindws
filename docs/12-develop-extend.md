@@ -9,7 +9,9 @@ audience: developer
 
 ```
 src/
-  index.ts      worker entry: hostname → object
+  index.ts      worker entry: hostname → object, POST /lease
+  names.ts      valid names, reserved names, lease names
+  pull.ts       copy another relay in: NIP-77 as the initiator, in alarm rounds
   relay.ts      the Durable Object: sockets, policy, fuel plumbing, NIP-11
   store.ts      SQLite schema and queries
   settings.ts   policy, members, bans, kind rules, retention, export/import
@@ -26,7 +28,7 @@ src/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
-  relay.test.ts fuel.test.ts adopt.test.ts   Durable Object tests in workerd
+  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts   Durable Object tests in workerd
   conformance/                               black-box suite for any relay URL
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs

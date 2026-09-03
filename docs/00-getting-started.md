@@ -17,6 +17,22 @@ You need a nostr key and a browser extension that signs with it, such as Alby, n
 
 If the page shows someone else's name, the relay is taken. Pick another.
 
+## Try one first
+
+Not ready to pick a name? Click **Try one now** on the front page, or ask for one from a script:
+
+```
+curl -X POST https://bind.ws/lease
+```
+
+You get a relay at a memorable name, such as `wss://brave-otter.bind.ws`. Anyone can read and write to it for 14 days. Then everything on it is deleted and the name is freed. Its page says when.
+
+To keep it, open its page and click **Claim** before it expires. The relay converts in place: the events and files stay, and you are the owner. The page then offers to switch to the default rules, since a temporary relay lets anyone write and keeps events for 14 days only.
+
+If you sign the request with your key (NIP-98), only that key can claim the relay. Agents and scripts with a key get a relay that nobody else can take from them.
+
+To keep the events but not the name, claim the name you want and pull the temporary relay into it. See [Bring events in](#bring-events-in).
+
 ## Connect a client
 
 Add the relay URL to your client's relay list:
@@ -47,6 +63,12 @@ Your relay stores images and files too. Clients that support Blossom upload to `
 ## Scripts
 
 If you write scripts, the relay has an HTTP door. Sign a request with your key (NIP-98) and post to `/events`, `/query` or `/count`. No websocket needed.
+
+## Bring events in
+
+Any relay that lets you read can be copied into yours. On the Storage tab, under **Pull from a relay**, enter its URL. Your relay syncs with it (NIP-77) and fetches what it lacks, in the background. Run it again later and only new events come over. Files come along when the other relay is on bind.ws.
+
+Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
 
 ## Leave
 
