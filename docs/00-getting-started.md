@@ -57,6 +57,12 @@ A relay only helps once your clients know about it. On the Identity tab, **Tell 
 
 Every relay has a card: `https://<name>.bind.ws/card.svg` is a picture with the name, who may read and write, the fuel state and a QR of the group address, and `/card.json` has the same facts as data. The **Share** block on the Identity tab shows the card, the group naddr with a copy button, and an embed snippet for a profile or a page.
 
+## Your own domain
+
+Your relay can answer at a hostname you own, such as `wss://relay.example.com`. On the Identity tab, under **Your own domain**, add the hostname. The page shows one record to create at your DNS: a CNAME from your hostname to the address it gives you. Once the record resolves, the certificate is issued on its own and **Check** turns green. Up to three hostnames per relay. Everything else stays the same: same events, same members, same console, reachable by either name.
+
+This needs the host to have switched custom domains on. If they have not, the block says so.
+
 ## Invite people
 
 A new relay accepts writes from its members only. To add someone:

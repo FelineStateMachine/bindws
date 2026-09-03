@@ -114,6 +114,7 @@ export function landing(req: Request, env: Env): Response {
     ["GET / (accept nostr+json)", "NIP-11", "none", "limitation, retention, payments_url, self"],
     ["POST /", "NIP-86", "NIP-98, owner", "claim and the management methods"],
     ["POST /lease", "lease", "optional NIP-98", `A temporary relay for ${leaseDays(env)} days. A signature reserves the claim for that key.`],
+    ["wss://relay.example.com", "custom domain", "owner", `A hostname you own, CNAME to customers.${domain}. Set on the Identity tab; up to three per relay.`],
     ["POST /events /query /count", "HTTP bridge", "NIP-98", "The signer has the same access as an authenticated socket."],
     ["PUT /upload, GET /&lt;sha256&gt;", "Blossom", "kind 24242", "Stored in R2. Counted as files. HEAD /upload checks first; PUT /mirror copies from a URL; PUT /report files a report."],
     ["POST /nip96, GET /.well-known/nostr/nip96.json", "NIP-96", "NIP-98", "Same bucket and file list as Blossom. NIP-94 tags in every answer."],

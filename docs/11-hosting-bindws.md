@@ -57,6 +57,37 @@ Nothing else is required: no origin, no certificates, no servers. An idle relay 
 - The `usage` table grows one row per relay per month. No cleanup is needed.
 - To take a relay down as the operator, use the owner's typed-name `deleterelay` call or the console.
 
+## Custom domains
+
+Owners can put a relay under a hostname they control, such as `relay.example.com`, through [Cloudflare for SaaS custom hostnames](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/getting-started/). The feature is off until the one-time setup below is done; the console says so until then.
+
+How it works, from the [docs](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/advanced-settings/worker-as-origin/): the customer's hostname CNAMEs to a name in your zone, so their traffic enters your zone, and a Worker route that matches any host sends it to the Worker. The Worker sees the customer's hostname in `Host`, looks it up in the `HOSTS` KV namespace to find the relay name, and forwards to that object exactly as it does for `<name>.<domain>`. Inside the object nothing changes; the URLs it prints already follow the request host. Certificates use [HTTP validation](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/security/certificate-management/issue-and-validate/validate-certificates/http/), which Cloudflare completes on its own once the CNAME resolves to you, so the owner has one DNS record to create. [Hostname validation](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/hostname-validation/) happens the same way; the optional TXT record the console also shows lets an owner activate the hostname before switching DNS.
+
+One-time setup, in this order:
+
+1. **Enable Cloudflare for SaaS** on the zone: dashboard, your zone, SSL/TLS, Custom Hostnames, Enable. Non-enterprise zones enter payment details; the first 100 hostnames are free ([enable](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/enable/), [plans](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/plans/)).
+2. **Create the fallback origin record**, originless and proxied, in the zone's DNS ([worker as origin](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/advanced-settings/worker-as-origin/)):
+
+   | Record | Name | Value | Proxy |
+   |---|---|---|---|
+   | `AAAA` | `fallback` | `100::` | on |
+
+   Then on the Custom Hostnames page set **Fallback Origin** to `fallback.<domain>` and wait for it to read Active. The wildcard placeholder records from the DNS section above are not enough here: the fallback origin must be a record of its own.
+3. **Create the CNAME target** owners will point at, proxied ([getting started, step 2](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/getting-started/#2-optional-create-cname-target)):
+
+   | Record | Name | Value | Proxy |
+   |---|---|---|---|
+   | `CNAME` | `customers` | `fallback.<domain>` | on |
+
+   `CNAME_TARGET` in `wrangler.jsonc` must match: `customers.<domain>`.
+4. **Routes.** `wrangler.jsonc` declares a `*/*` route on the zone next to the wildcard, which is what makes custom hostname traffic reach the Worker. Deploy once after the change and confirm in Workers Routes that the zone lists `*/*` for `bindws-relay`. If wrangler refuses the pattern, add it by hand on that page: route `*/*`, Worker `bindws-relay`.
+5. **KV namespace.** `npx wrangler kv namespace create HOSTS` and put the id in both `kv_namespaces` entries of `wrangler.jsonc` (the repo carries the bind.ws one).
+6. **API token.** My Profile, API Tokens, Create Token, Custom token: permission **Zone, SSL and Certificates, Edit**, zone resources limited to your zone. Store it as a secret: `npx wrangler secret put CF_API_TOKEN`. `ZONE_ID` in `wrangler.jsonc` is the zone the hostnames are created in (the same id the routes use). Without the secret the console reports custom domains as not enabled and the methods answer `unsupported:`.
+
+The Worker calls three endpoints with that token: [create](https://developers.cloudflare.com/api/resources/custom_hostnames/methods/create/), [get](https://developers.cloudflare.com/api/resources/custom_hostnames/methods/get/) and [delete](https://developers.cloudflare.com/api/resources/custom_hostnames/methods/delete/) under `/zones/<zone>/custom_hostnames`. A hostname is ready when the API reports `status: active` and `ssl.status: active` ([check when ready](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/getting-started/#check-when-a-custom-hostname-is-ready)). Deleting a relay removes its hostnames from Cloudflare and KV; transferring keeps them. Do not let an owner add the zone's own apex as a custom hostname; the relay refuses anything under `<domain>`.
+
+Locally, `wrangler dev` has no custom hostname traffic; the KV binding exists so tests can seed a mapping.
+
 ## Local development
 
 ```

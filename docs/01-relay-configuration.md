@@ -61,6 +61,8 @@ Banner is a wide image for the same document. Posting policy and privacy policy 
 
 Join terms are shown to people who open an invite link, and published at `/terms` as the relay's terms of service. The public directory switch decides whether `/people` lists your members to visitors.
 
+**Your own domain** puts the relay under a hostname you control. Add the hostname; the relay registers it with the host's Cloudflare zone and shows the CNAME to create at your DNS, plus an optional TXT record that activates the hostname before you switch the CNAME. **Check** asks where it stands: the hostname is live when both the hostname and its certificate read active. **Remove** deletes the hostname and its certificate. At most three per relay. Domains are not part of the exported configuration, because they belong to this relay instance rather than to its rules.
+
 **Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
 
 **Transfer ownership** hands the relay to a member you pick. You stay on as a moderator. The relay's key, events, files and fuel do not change. You type the relay's name to confirm.
