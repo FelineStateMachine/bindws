@@ -240,7 +240,7 @@ describe("NIP-29 moderation", () => {
 
     expect((await c.ok(ev(owner, 9007, "", [h]))).msg).toMatch(/^unsupported:/);
     expect((await c.ok(ev(owner, 9008, "", [h]))).msg).toMatch(/^unsupported:/);
-    expect((await c.ok(ev(owner, 9010, "", [h]))).msg).toMatch(/^unsupported:/);
+    expect((await c.ok(ev(owner, 9010, "", [h]))).ok).toBe(true); // an empty pin list clears the pins
     expect((await c.ok(ev(owner, 39000, "", [["d", "mod"], ["name", "forged"]]))).msg).toMatch(/written by the relay/);
   });
 

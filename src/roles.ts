@@ -42,7 +42,7 @@ export const METHOD_ACTIONS: Record<string, Action> = {
   listbannedevents: "read", listrecentevents: "read", listallowedkinds: "read", listblockedkinds: "read", listblobs: "read", listretention: "read", listreports: "read",
   setmember: "members", allowpubkey: "members", removemember: "members", unrulepubkey: "members",
   banpubkey: "ban", banevent: "ban", allowevent: "ban", blockip: "ban", unblockip: "ban", listblockedips: "read", setblockedwords: "ban",
-  deleteevent: "deleteEvent",
+  deleteevent: "deleteEvent", pinevent: "deleteEvent", unpinevent: "deleteEvent", listpins: "read", searchevents: "read",
   createinvite: "invites", revokeinvite: "invites",
   resolvereport: "reports", listeventsneedingmoderation: "reports",
   setpolicy: "rules", allowkind: "rules", disallowkind: "rules", unrulekind: "rules", setretention: "rules", purgekind: "rules", resetrules: "rules", applypreset: "rules",

@@ -8,13 +8,15 @@ import { dial } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 import type { FuelStatus } from "./fuel.ts";
 
-export type NotifyKind = "reports" | "fuel" | "jobs" | "succession" | "test";
+export type NotifyKind = "reports" | "fuel" | "jobs" | "succession" | "digest" | "test";
 export interface NotifySettings {
   reports: boolean;
   fuel: boolean;
   jobs: boolean;
   succession: boolean; // the dead-man's switch warnings and the handover
+  digest: boolean; // one message a week on how the relay is doing
 }
+export const DIGEST_DAYS = 7;
 
 const KIND_DM = 14;
 export const KIND_WRAP = 1059;
@@ -29,7 +31,7 @@ export function notifySettings(raw: unknown, cur: NotifySettings): NotifySetting
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const pick = (k: keyof NotifySettings) => (typeof r[k] === "boolean" ? (r[k] as boolean) : cur[k]);
-  return { reports: pick("reports"), fuel: pick("fuel"), jobs: pick("jobs"), succession: pick("succession") };
+  return { reports: pick("reports"), fuel: pick("fuel"), jobs: pick("jobs"), succession: pick("succession"), digest: pick("digest") };
 }
 
 // notify sends the owner (or `to`, a member the relay may address) a message
@@ -114,4 +116,37 @@ export function fuelText(relay: Relay, f: FuelStatus): string {
   const sats = Math.floor(f.balanceMsats / 1000);
   const state = f.outOfFuel ? "is out of fuel and read-only" : `is past its free allowance with ${sats} sats left`;
   return `Your relay ${relay.slug} ${state}. Zap it at https://${relay.slug}.${relay.domain}/ to keep it writing.`;
+}
+
+// digestText is the week on the relay in a few lines, from what the store,
+// the member list, the usage row and the job list already hold. When nothing
+// changed it says so in one line.
+export async function digestText(relay: Relay, since: number, t: number): Promise<string> {
+  const sql = relay.sql;
+  const one = (q: string, ...args: unknown[]) => sql.exec<{ n: number | null }>(q, ...args).one().n ?? 0;
+  const self = relay.identity.pubkey;
+  const joined = one(`SELECT count(*) AS n FROM members WHERE joined_at >= ? AND role <> 'owner'`, since);
+  const left = self ? one(`SELECT count(*) AS n FROM events WHERE kind=8001 AND pubkey=? AND created_at >= ?`, self, since) : 0;
+  const events = one(`SELECT count(*) AS n FROM events WHERE created_at >= ? AND pubkey <> ? AND kind <> 1059`, since, self);
+  const files = one(`SELECT count(*) AS n FROM blobs WHERE uploaded >= ?`, since);
+  const reports = one(`SELECT count(*) AS n FROM reports WHERE status='open'`);
+  const hidden = one(`SELECT count(*) AS n FROM event_rules WHERE rule='hide'`);
+  const jobs = (await relay.jobs()).filter((j) => j.last && j.last.finishedAt >= since);
+  const failed = jobs.filter((j) => j.last && j.last.error).length;
+  const f = relay.fuelStatus();
+  const spent = Math.floor(f.chargedMsats / 1000);
+  const balance = Math.floor(f.balanceMsats / 1000);
+  const sc = await relay.successionStatus();
+  const lines: string[] = [];
+  if (joined || left) lines.push(`People: ${joined} joined${left ? `, ${left} left` : ""}.`);
+  if (events || files) lines.push(`Stored: ${events} events${files ? ` and ${files} files` : ""}.`);
+  if (jobs.length) lines.push(`Jobs: ${jobs.length} ran${failed ? `, ${failed} failed` : ""}.`);
+  if (reports || hidden) lines.push(`Moderation: ${reports} open reports${hidden ? `, ${hidden} events hidden` : ""}.`);
+  if (f.enabled) {
+    const over = f.eventBytes > f.freeEventBytes || f.mediaBytes > f.freeMediaBytes || f.activeMs > f.freeActiveMs || f.rowsWritten > f.freeRowsWritten;
+    if (spent || over || f.outOfFuel) lines.push(`Fuel: ${spent} sats spent this month, ${balance} left${f.outOfFuel ? ", out of fuel" : over ? ", past the free allowance" : ""}.`);
+  }
+  if (sc.succession && sc.handoverAt) lines.push(`Handover to ${sc.succession.heir.slice(0, 8)} in ${Math.max(0, Math.ceil((sc.handoverAt - t) / 86400))} days unless you sign in.`);
+  const days = Math.max(1, Math.round((t - since) / 86400));
+  return lines.length ? [`The last ${days} days on ${relay.slug}:`, ...lines].join("\n") : `Nothing changed on ${relay.slug} in the last ${days} days.`;
 }

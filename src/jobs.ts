@@ -8,9 +8,10 @@ import { hasTag, isPrivate, now, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
 import { Socket, dial, checkPullURL, runPullRound, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
 import type { Relay } from "./relay.ts";
+import { runImportRound } from "./imports.ts";
 
-export type JobKind = "pull" | "push";
-export type JobLabel = "pull" | "backfill" | "push" | "replica";
+export type JobKind = "pull" | "push" | "import";
+export type JobLabel = "pull" | "backfill" | "push" | "replica" | "import";
 export const EVERY = [0, 1, 6, 24] as const; // hours; 0 runs once
 
 export interface JobResult {
@@ -22,6 +23,7 @@ export interface JobResult {
   blobs: number;
   sent: number;
   refused: number;
+  duplicates?: number;
 }
 
 export interface Job {
@@ -45,6 +47,10 @@ export interface Job {
   blobs: number;
   sent: number;
   refused: number;
+  duplicates?: number; // import: events the relay already had
+  object?: string; // import: the R2 object's id
+  size?: number; // import: the object's size in bytes
+  carry?: string; // import: the partial last line of the previous round, base64
   last: JobResult | null;
 }
 
@@ -116,6 +122,7 @@ export function relaysFromList(relay: Relay, pubkey: string): string[] {
 // runRound does one round of a job. more: call again for this run.
 export async function runRound(relay: Relay, job: Job): Promise<{ more: boolean; error: string }> {
   if (job.kind === "pull") return runPullSourceRound(relay, job);
+  if (job.kind === "import") return runImportRound(relay, job);
   return runPushRound(relay, job);
 }
 
@@ -219,11 +226,12 @@ export function startRun(job: Job, t: number) {
   job.blobs = 0;
   job.sent = 0;
   job.refused = 0;
+  job.duplicates = 0;
 }
 
 // finishRun closes the current run and schedules the next one.
 export function finishRun(job: Job, error: string, t: number) {
-  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused };
+  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0 };
   job.running = false;
   job.nextRun = job.every > 0 ? t + job.every * 3600 : 0;
 }

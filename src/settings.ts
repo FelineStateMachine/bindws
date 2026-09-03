@@ -84,7 +84,7 @@ export const DEFAULT_POLICY: Policy = {
   tags: [],
   languageTags: [],
   relayCountries: [],
-  notify: { reports: false, fuel: false, jobs: false, succession: false },
+  notify: { reports: false, fuel: false, jobs: false, succession: false, digest: false },
   succession: null,
   writes: "open",
   openKinds: [],
@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, created_by TEXT NOT N
 CREATE TABLE IF NOT EXISTS members (pubkey TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT 'member', name TEXT, note TEXT NOT NULL DEFAULT '', joined_at INTEGER NOT NULL, via TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS members_name ON members(name) WHERE name IS NOT NULL;
 CREATE TABLE IF NOT EXISTS nip05 (name TEXT PRIMARY KEY, pubkey TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS imports (id TEXT PRIMARY KEY, name TEXT NOT NULL, bytes INTEGER NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, reporter TEXT NOT NULL, target_pubkey TEXT NOT NULL, target_event TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'open', resolved_by TEXT NOT NULL DEFAULT '', resolved_at INTEGER NOT NULL DEFAULT 0, action TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS blobs (sha256 TEXT PRIMARY KEY, size INTEGER NOT NULL, type TEXT NOT NULL, uploader TEXT NOT NULL, uploaded INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS blobs_uploader ON blobs(uploader, uploaded DESC);
@@ -378,6 +379,16 @@ export class Settings {
     this.sql.exec(`INSERT INTO settings(key,value) VALUES('policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, JSON.stringify(this.policy));
     if (this.policy.writes === "wot" && !wasWot) this.rebuildWot();
     if (this.policy.writes !== "wot") this.wot.clear();
+  }
+
+  // ---- pins: the group's pinned events, e and a tags in order ----
+
+  pins(): string[][] {
+    const row = this.sql.exec<{ value: string }>(`SELECT value FROM settings WHERE key='pins'`).toArray()[0];
+    return row ? (JSON.parse(row.value) as string[][]) : [];
+  }
+  setPins(tags: string[][]) {
+    this.sql.exec(`INSERT INTO settings(key,value) VALUES('pins',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, JSON.stringify(tags));
   }
 
   isOwner(pubkey: string) {
@@ -720,7 +731,7 @@ const RETENTION_ANY = -1;
 // its deltas, the NIP-29 put-user and remove-user records, and the group's
 // metadata, admins, members and roles). Never expired, never purged, only
 // deleted one at a time.
-export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 33534, 39000, 39001, 39002, 39003]);
+export const PROTECTED_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 33534, 39000, 39001, 39002, 39003, 39005]);
 export function isProtected(kind: number): boolean {
   return PROTECTED_KINDS.has(kind);
 }

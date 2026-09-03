@@ -10,6 +10,7 @@ import { descriptor, type Blob } from "./blossom.ts";
 import { blockedWords, gateFields, isWriteRule } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
+import { MAX_PINS } from "./groups.ts";
 import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
 import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
@@ -52,7 +53,7 @@ const METHODS = [
   "supportedmethods", "claim", "stats", "getpolicy", "setpolicy",
   "banpubkey", "allowpubkey", "unrulepubkey", "listbannedpubkeys", "listallowedpubkeys",
   "setmember", "removemember", "listpeople",
-  "banevent", "allowevent", "listbannedevents", "deleteevent", "listrecentevents",
+  "banevent", "allowevent", "listbannedevents", "deleteevent", "listrecentevents", "searchevents", "pinevent", "unpinevent", "listpins",
   "allowkind", "disallowkind", "unrulekind", "listallowedkinds", "listblockedkinds",
   "changerelayname", "changerelaydescription", "changerelayicon",
   "createinvite", "listinvites", "revokeinvite", "listmembers",
@@ -353,6 +354,28 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: relay.store.deleteEvent(str(0)) });
     case "listrecentevents":
       return reply({ result: relay.store.recent(Math.min(Math.max(num(0) || 50, 1), 500), t).map((r) => JSON.parse(r)) });
+    case "searchevents": {
+      // (query, limit): the NIP-50 index, in the shape of listrecentevents.
+      const q = str(0).trim().slice(0, 200);
+      const limit = Math.min(Math.max(num(1) || 50, 1), 200);
+      if (!q) return reply({ result: relay.store.recent(limit, t).map((r) => JSON.parse(r)) });
+      return reply({ result: relay.store.query({ tags: {}, search: q, limit }, { pubkeys: [], all: true }, limit, t).rows.map((r) => JSON.parse(r)) });
+    }
+    case "pinevent":
+    case "unpinevent": {
+      // (id or address): the group's pin list, at most MAX_PINS, in order.
+      const ref = str(0).trim().toLowerCase();
+      const tag = hex64(ref) ? ["e", ref] : /^\d{1,5}:[0-9a-f]{64}:/.test(ref) ? ["a", ref] : null;
+      if (!tag) return reply({ error: "invalid: give an event id or an address kind:pubkey:d" }, 400);
+      const cur = s.pins().filter((x) => x[1] !== ref);
+      const next = method === "pinevent" ? [...cur, tag] : cur;
+      if (next.length > MAX_PINS) return reply({ error: `invalid: at most ${MAX_PINS} pins` }, 400);
+      s.setPins(next);
+      await relay.publishPins();
+      return reply({ result: next });
+    }
+    case "listpins":
+      return reply({ result: s.pins() });
     case "allowkind":
     case "disallowkind":
     case "unrulekind": {

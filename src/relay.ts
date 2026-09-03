@@ -18,6 +18,9 @@ import { bridge } from "./bridge.ts";
 import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
 import { nip96 } from "./nip96.ts";
 import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
+import { importBytes, importUpload } from "./imports.ts";
+import { KIND_GROUP_PINS } from "./identity.ts";
+import { DIGEST_DAYS, digestText } from "./notify.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98 } from "./manage.ts";
@@ -229,6 +232,19 @@ export class Relay extends DurableObject<Env> {
     events.push(this.identity.roster(this.settings.members(), t));
     events.push(...this.identity.group(f, t));
     this.emit(events, t);
+  }
+
+  // publishPins signs the group's pin list (39005); an empty list takes the
+  // record down.
+  async publishPins() {
+    if (this.settings.policy.owner === "") return;
+    await this.identity.ensure();
+    const tags = this.settings.pins();
+    if (tags.length === 0) {
+      for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM events WHERE kind=? AND pubkey=?`, KIND_GROUP_PINS, this.identity.pubkey).toArray()) this.store.deleteEvent(r.id);
+      return;
+    }
+    this.emit([this.identity.pins(this.slug, tags)], now());
   }
 
   private rolesOf(pubkey: string): string[] {
@@ -702,7 +718,7 @@ export class Relay extends DurableObject<Env> {
 
   // Files and dumps both live in R2 and both cost media storage.
   mediaBytes(): number {
-    return blobBytes(this.sql) + dumpBytes(this.sql);
+    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql);
   }
 
   fuelStatus() {
@@ -857,6 +873,7 @@ export class Relay extends DurableObject<Env> {
     }
     if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
     if (url.pathname.startsWith("/dumps/") && req.method === "GET") return dumpDownload(this, req);
+    if (url.pathname === "/import" && req.method === "PUT") return importUpload(this, req);
     if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
     if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
     if (url.pathname === "/fuel" && req.method === "GET") {
@@ -1276,6 +1293,16 @@ export class Relay extends DurableObject<Env> {
     }
     // Succession: the dead-man's switch, checked once a day.
     await this.successionTick(t);
+    // ---- digest: one message a week on how the relay is doing ----
+    if (this.settings.policy.notify.digest && this.settings.policy.owner !== "") {
+      const last = (await this.ctx.storage.get<number>("lastDigest")) ?? 0;
+      if (last === 0) await this.ctx.storage.put("lastDigest", t);
+      else if (t - last >= DIGEST_DAYS * 86400 - 3600) {
+        await this.ctx.storage.put("lastDigest", t);
+        await notify(this, "digest", await digestText(this, last, t), "the week on " + this.slug);
+      }
+    }
+    // ---- end digest ----
     const next = this.store.sweepExpired(t);
     // ---- dumps: a scheduled JSONL of everything, into R2 (dumps.ts) ----
     if (dumpDue(this, t)) {

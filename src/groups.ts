@@ -30,7 +30,7 @@ export const isModeration = (kind: number) => kind >= 9000 && kind <= 9020;
 export const isNIP43Request = (kind: number) => kind === KIND_NIP43_JOIN || kind === KIND_NIP43_LEAVE;
 export const isGroupManagement = (kind: number) => isModeration(kind) || kind === KIND_JOIN || kind === KIND_LEAVE || isNIP43Request(kind);
 // The addressable state kinds only the relay writes.
-export const isGroupState = (kind: number) => kind >= 39000 && kind <= 39003;
+export const isGroupState = (kind: number) => kind >= 39000 && kind <= 39005;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -180,9 +180,33 @@ export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> 
       return no("unsupported: this relay is one group; there is nothing to create");
     case KIND_DELETE_GROUP:
       return no("unsupported: delete the relay from its page");
-    case KIND_PINS:
-      return no("unsupported: pins are not supported");
+    case KIND_PINS: {
+      // update-pin-list replaces the whole list: e tags and a tags, in order.
+      const gate = need("deleteEvent");
+      if (gate) return no(gate);
+      const tags = pinTags(e.tags);
+      if (typeof tags === "string") return no(tags);
+      s.setPins(tags);
+      await relay.publishPins();
+      return OK;
+    }
     default:
       return no("unsupported: unknown moderation kind " + e.kind);
   }
+}
+
+export const MAX_PINS = 20;
+const ADDR = /^\d{1,5}:[0-9a-f]{64}:.*$/;
+
+// pinTags keeps the e and a tags of a pin list, in order, or says why not.
+export function pinTags(tags: string[][]): string[][] | string {
+  const out: string[][] = [];
+  for (const t of tags) {
+    if (t[0] === "e" && HEX64.test(t[1] ?? "")) out.push(["e", t[1]]);
+    else if (t[0] === "a" && ADDR.test(t[1] ?? "")) out.push(["a", t[1]]);
+  }
+  const seen = new Set<string>();
+  const unique = out.filter((t) => !seen.has(t[1]) && seen.add(t[1]));
+  if (unique.length > MAX_PINS) return `invalid: at most ${MAX_PINS} pins`;
+  return unique;
 }

@@ -18,6 +18,7 @@ export const KIND_GROUP_METADATA = 39000;
 export const KIND_GROUP_ADMINS = 39001;
 export const KIND_GROUP_MEMBERS = 39002;
 export const KIND_GROUP_ROLES = 39003;
+export const KIND_GROUP_PINS = 39005;
 export const KIND_ROLE_DEF = 33534;
 export const KIND_PROFILE = 0;
 
@@ -97,6 +98,15 @@ export class Identity {
   }
   removeUser(group: string, pubkey: string): Event {
     return this.sign(KIND_REMOVE_USER, [["-"], ["h", group], ["p", pubkey]]);
+  }
+
+  // pins signs the group's pinned list (NIP-29 kind 39005): e and a tags in
+  // the order they should show.
+  pins(group: string, tags: string[][], now = Math.floor(Date.now() / 1000)): Event {
+    const at = Math.max(now, this.lastGroup + 1);
+    this.lastGroup = at;
+    this.storage.put("relay-group-at", at);
+    return this.sign(KIND_GROUP_PINS, [["-"], ["d", group], ...tags], "", at);
   }
 
   // group signs the addressable NIP-29 state: metadata, admins, members

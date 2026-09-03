@@ -174,7 +174,7 @@ describe("relay-signed notifications", () => {
     const stranger = generateSecretKey();
     await rpc(host, owner, "claim");
     await rpc(host, owner, "setmember", getPublicKey(member), {});
-    expect((await rpc(host, owner, "getpolicy")).result.notify).toEqual({ reports: false, fuel: false, jobs: false, succession: false });
+    expect((await rpc(host, owner, "getpolicy")).result.notify).toEqual({ reports: false, fuel: false, jobs: false, succession: false, digest: false });
 
     // Off by default: a report stores nothing.
     const s = await WS.connect(host);
@@ -184,7 +184,7 @@ describe("relay-signed notifications", () => {
     expect(await o.live({ kinds: [1059], "#p": [ownerPk] }, "inbox")).toEqual([]);
 
     const set = await rpc(host, owner, "setpolicy", { notify: { reports: true } });
-    expect(set.result.notify).toEqual({ reports: true, fuel: false, jobs: false, succession: false });
+    expect(set.result.notify).toEqual({ reports: true, fuel: false, jobs: false, succession: false, digest: false });
     const m = await WS.connect(host);
     await m.auth(member, host);
     expect(await m.live({ kinds: [1059] }, "mine")).toEqual([]);
