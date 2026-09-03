@@ -80,6 +80,8 @@ Moderators cannot act on the owner or on each other; only the owner appoints or 
 
 `src/manage.ts` implements NIP-86 over NIP-98. The console is a client of it. `verifyNIP98` is a local implementation: kind 27235, 60-second window, `u` matches host and path, method matches, payload hash matches.
 
+`listeventsneedingmoderation` is a view over the reports queue: one entry per open reported thing, an event id or a blob hash, with the report's type and words as the reason. `blockip`, `unblockip` and `listblockedips` work on the client's address, which the worker stamps on every forwarded request as `x-relay-ip` from Cloudflare's `cf-connecting-ip`, never read from a client header. The address is kept in the socket's state and in the HTTP doors' virtual connection. Per-address token buckets sit beside the per-connection ones at four times the allowance, and are the bridge's only rate limit.
+
 ## Protocol surface
 
 NIP-01, 09, 11, 13, 17/59 private kinds, 29, 40, 42, 45 with HLL, 50, 56, 62, 67, 70, 77, 86, 98, plus NIP-05, NIP-43, NIP-57 and Blossom BUD-01/02/04/06. `test/conformance` is a black-box suite that runs against any relay URL.

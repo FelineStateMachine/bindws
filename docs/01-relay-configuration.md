@@ -18,6 +18,7 @@ Three things read that table: the write rule, the signed roster your relay publi
 - **Add** a member by pubkey or npub. Give them a name and a note if you like.
 - **Invite** with a link. Choose how long the link lives and how many people can use it.
 - **Ban** a pubkey. Their events are refused and their open connections are closed.
+- **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
 - **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
 - **Role** is *member* or *moderator*, set from the selector next to the pubkey. A moderator can add and remove members, ban, delete events, mint invites and resolve reports, here or from a group-aware client. They cannot touch the owner, other moderators, rules, identity, storage or fuel.
 
@@ -36,11 +37,13 @@ Who can do what, and how much.
 | Proof of work | minimum bits an event must carry, 0 to disable |
 | Timestamp window | how far in the future an event may be dated |
 | Query limits | max events per query, max subscriptions per connection |
-| Rate limits | events and queries per minute, per connection |
+| Rate limits | events and queries per minute, per connection; an address gets four times that across all its connections |
 | Upload size | largest file in megabytes, up to 95 |
 | Kinds | allow list and block list by kind number |
 
 An empty allow list means every kind. Blocks always win.
+
+The per-address limit is what stops a client from opening many sockets to multiply its allowance. It also serves as the HTTP bridge's rate limit, which has no socket to meter. Address buckets live in memory and reset when the relay sleeps.
 
 ## Identity
 
