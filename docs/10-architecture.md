@@ -59,7 +59,9 @@ Credits come from NIP-57 receipts. A receipt is validated (provider signature, s
 
 ## Identity
 
-On claim, the object generates a keypair, advertised as `self` in NIP-11. It signs the member roster (kind 13534) and its deltas (8000, 8001), all NIP-70 protected, with strictly increasing timestamps.
+On claim, the object generates a keypair, advertised as `self` in NIP-11. Everything the relay vouches for is signed with it and derived from one place, the `members` table and the policy, by one function, `publishMembership`: the NIP-43 roster (13534, roles named only when there is one) and its deltas (8000, 8001), the NIP-29 put-user and remove-user records (9000, 9001), the group's state (39000-39003), the NIP-43 role definitions (33534) and the relay's own kind 0 profile, re-signed only when name, description or icon changed. Every path that touches membership or roles goes through that function, so the roster and the group cannot drift. All but the profile are NIP-70 protected, with strictly increasing timestamps.
+
+NIP-43's own join and leave requests (28934 with a `claim` tag, 28936) are handled next to their NIP-29 counterparts; they are ephemeral, so the answer is the OK message and nothing is stored.
 
 ## Groups and roles
 

@@ -74,6 +74,8 @@ Your relay is also a NIP-29 group, one group per relay, so clients that understa
 
 Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it on the People tab, or a member sets it in their profile's NIP-05 field. Clients show the name next to the person.
 
+The relay has a profile of its own, made from the name, description and icon on the Identity tab, so it appears like a person where clients show relays.
+
 ## Media
 
 Your relay stores images and files too. Clients that support Blossom upload to `https://<name>.bind.ws` and get a link by hash. A client can ask first whether an upload would be accepted, and can have the relay copy a file from another server by URL instead of uploading it again. Set the maximum upload size on the Rules tab.

@@ -47,9 +47,11 @@ The per-address limit is what stops a client from opening many sockets to multip
 
 ## Identity
 
-Name, description, icon and contact appear in your relay's public information document, which clients read.
+Name, description, icon and contact appear in your relay's public information document, which clients read. The relay also keeps a profile of its own, signed with its own key, made from the name, description and icon, so it shows up like a person in clients that look one up.
 
-Join terms are shown to people who open an invite link. The public directory switch decides whether `/people` lists your members to visitors.
+Banner is a wide image for the same document. Posting policy and privacy policy are links to pages you host elsewhere; both must be https. Tags, languages and countries are short lists that tell relay directories what the relay is about: topic words, language codes such as `en` or `pt-BR`, and two-letter country codes.
+
+Join terms are shown to people who open an invite link, and published at `/terms` as the relay's terms of service. The public directory switch decides whether `/people` lists your members to visitors.
 
 **Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
 

@@ -31,7 +31,7 @@ src/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
-  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts groups.test.ts   Durable Object tests in workerd
+  relay.test.ts fuel.test.ts adopt.test.ts lease.test.ts groups.test.ts nip11.test.ts nip43.test.ts   Durable Object tests in workerd
   conformance/                               black-box suite for any relay URL
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
