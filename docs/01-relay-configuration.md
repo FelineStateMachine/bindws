@@ -79,9 +79,9 @@ Banner is a wide image for the same document. Posting policy and privacy policy 
 
 **Your own domain** puts the relay under a hostname you control: add it, create the CNAME shown, **Check** until it reads live, **Remove** to take it down. At most three per relay, never part of the exported configuration. See [Your relay on the web](05-your-relay-on-the-web.md#your-own-domain).
 
-### Tell your clients
+### Your relay lists
 
-One row per list that names relays: relay list, DM inbox, search relays and Blossom servers. **Check** finds your newest copy, **Add me** publishes a merged list with this relay first and **Remove me** publishes it without. See [Getting started](00-getting-started.md#tell-your-clients).
+One row per list that names relays: relay list, DM inbox, search relays and Blossom servers. **Check** finds your newest copy, **Add this relay** publishes a merged list with this relay first and **Remove this relay** publishes it without. See [Getting started](00-getting-started.md#tell-your-clients).
 
 ## Data
 

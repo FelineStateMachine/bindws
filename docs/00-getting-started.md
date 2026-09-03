@@ -47,9 +47,9 @@ wss://<name>.bind.ws
 
 That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrudel, Coracle and the rest need no special setup. Your notes, reactions and profile land on your relay the moment you publish.
 
-## Tell your clients
+## Your relay lists
 
-Clients find your relay through the lists you publish: your relay list, your DM inbox, your search relays and your Blossom servers. On the Identity tab, **Tell your clients** has one row per list. **Check** finds your newest copy here and on a few indexers. **Add me** puts this relay first, asks you to sign once and publishes the merged list here, to the relays it names and to the indexers. Nothing you had listed is lost.
+Clients learn where to find you from lists you sign and publish: your relay list, your DM inbox, your search relays and your file servers. A new relay is not on any of them yet. On the Identity tab, **Your relay lists** has one row per list. **Check** reads your newest copy from here and from a few indexers. **Add this relay** puts this relay at the front and, with one signature, publishes the list back to every relay it names. Everything already on the list stays.
 
 ## Invite people
 
