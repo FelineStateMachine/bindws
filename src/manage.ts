@@ -136,7 +136,7 @@ export const METHODS: Record<string, Method> = {
         if (lease && lease.until <= t) return reply({ error: "restricted: this temporary relay has expired" }, 403);
         s.update(lease ? { owner: caller, lease: null, name: "", description: "" } : { owner: caller });
         s.upsertMember(caller, { via: "claimed" }, t);
-        await relay.ownerSeenNow();
+        await relay.succession.seenNow();
         await relay.publishMembership();
         return reply({ result: { owner: caller, claimed: true, ...(lease ? { converted: true } : {}) } });
       }
@@ -587,7 +587,7 @@ export const METHODS: Record<string, Method> = {
       if (!hex64(pk)) return reply({ error: "invalid: pubkey must be 64 hex chars" }, 400);
       const err = s.transferOwner(pk);
       if (err) return reply({ error: err }, 400);
-      await relay.ownerSeenNow();
+      await relay.succession.seenNow();
       await relay.publishMembership({ pubkey: pk }, { pubkey: caller });
       return reply({ result: { owner: pk, previous: caller } });
     },
@@ -611,15 +611,15 @@ export const METHODS: Record<string, Method> = {
       if (!hex64(heir)) return reply({ error: "invalid: heir must be a 64 hex pubkey" }, 400);
       const err = s.setSuccession(heir, Number(o.afterDays));
       if (err) return reply({ error: err }, 400);
-      await relay.ownerSeenNow();
-      return reply({ result: await relay.successionStatus() });
+      await relay.succession.seenNow();
+      return reply({ result: await relay.succession.status() });
     },
   },
   clearsuccession: {
     action: "transfer",
     run: async ({ relay, s, reply }) => {
       s.update({ succession: null });
-      await relay.ownerSeenNow();
+      await relay.succession.seenNow();
       return reply({ result: true });
     },
   },
@@ -627,7 +627,7 @@ export const METHODS: Record<string, Method> = {
     action: "read", reads: true,
     run: async ({ relay, role, reply }) => {
       if (role !== "owner") return reply({ error: "restricted: only the owner and the heir may see this" }, 403);
-      return reply({ result: await relay.successionStatus() });
+      return reply({ result: await relay.succession.status() });
     },
   },
   changerelayname: {
@@ -719,11 +719,11 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
   const call: Call = { relay, req, s, p, t, caller, role, method, params, str, num, hex64, reply, outranks };
   if (m.action === "open") return m.run(call);
   // The heir may read the succession status: a member, with no console otherwise.
-  if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.successionStatus() });
+  if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.succession.status() });
   // A plain member reaches their own invites when the owner opened the
   // invite tree (memberInvites); the invite methods keep them to their own.
   const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
-  if (role === "owner") void relay.ownerSeen(caller);
+  if (role === "owner") void relay.succession.seen(caller);
   if (!ownInvites && !can(role, m.action)) {
     const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
     return reply({ error: why }, 403);

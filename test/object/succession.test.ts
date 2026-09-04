@@ -24,7 +24,7 @@ async function inbox(host: string, sk: Uint8Array): Promise<string[]> {
 async function silence(name: string, days: number) {
   await runInDurableObject(env.RELAY.getByName(name), async (r: Relay, state) => {
     await state.storage.put("ownerSeenAt", now() - days * DAY);
-    (r as unknown as { ownerSeenWrite: number }).ownerSeenWrite = Date.now();
+    r.succession.seenWrite = Date.now();
   });
 }
 
@@ -66,7 +66,7 @@ describe("succession", () => {
     expect(await seenAt()).toBeGreaterThan(now() - 5);
     const backdate = () => runInDurableObject(env.RELAY.getByName("seen"), async (r: Relay, state) => {
       await state.storage.put("ownerSeenAt", now() - 5 * DAY);
-      (r as unknown as { ownerSeenWrite: number }).ownerSeenWrite = 0;
+      r.succession.seenWrite = 0;
     });
     await backdate();
     const m = await WS.connect(host);
@@ -107,7 +107,7 @@ describe("succession", () => {
 
     // The owner acts: the warning is called off.
     await runInDurableObject(env.RELAY.getByName(name), async (r: Relay) => {
-      (r as unknown as { ownerSeenWrite: number }).ownerSeenWrite = 0;
+      r.succession.seenWrite = 0;
     });
     let st = (await rpc(host, owner, "successionstatus")).result;
     expect(st.warning).toBeNull();
@@ -121,7 +121,7 @@ describe("succession", () => {
     await runInDurableObject(env.RELAY.getByName(name), async (r: Relay, state) => {
       const warn = { since: now() - 31 * DAY, lastNotified: now() - 31 * DAY };
       await state.storage.put("succession_warn", warn);
-      (r as unknown as { successionWarn: unknown }).successionWarn = warn;
+      r.succession.warn = warn;
     });
     await alarm(name);
     doc = await info(host);

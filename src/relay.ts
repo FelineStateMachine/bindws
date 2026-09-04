@@ -12,6 +12,7 @@ import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
 import { manage } from "./manage.ts";
+import { Succession } from "./succession.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
 import { dashboard } from "./dashboard.ts";
 import { Fuel, fuelConfig, fetchLnurl, requestInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
@@ -104,17 +105,6 @@ export interface ConnState {
   syncs?: Record<string, Filter>;
 }
 
-// Succession bookkeeping, kept in storage next to the policy.
-interface SuccessionWarn {
-  since: number;
-  lastNotified: number;
-}
-interface SuccessionLog {
-  at: number;
-  from: string;
-  to: string;
-}
-
 const FLUSH_BYTES = 256 * 1024;
 // An address gets this many times a connection's per-minute allowance, so a
 // few tabs from one place are fine and a swarm of sockets is not.
@@ -149,10 +139,8 @@ export class Relay extends DurableObject<Env> {
   private lnurl: LnurlParams | null = null;
   // Outbound HTTP to the lightning provider and to Cloudflare; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
-  // Succession: a warning month in flight, mirrored from storage so NIP-11
-  // can say so without a read.
-  private successionWarn: SuccessionWarn | null = null;
-  private ownerSeenWrite = 0; // ms; the presence write happens at most hourly
+  // The heir and the dead-man's switch (succession.ts).
+  succession = new Succession(this);
   // A job round in flight, so overlapping alarms do not run two.
   private working = false;
   // Presence (views.ts): who wrote lately, in memory; the sockets are asked
@@ -181,13 +169,19 @@ export class Relay extends DurableObject<Env> {
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
       this.lnurl = (await ctx.storage.get<LnurlParams>("lnurl")) ?? null;
-      this.successionWarn = (await ctx.storage.get<SuccessionWarn>("succession_warn")) ?? null;
+      await this.succession.load();
       await this.identity.load();
     });
   }
 
   get sql(): SqlStorage {
     return this.ctx.storage.sql;
+  }
+
+  // storage is the object's key-value store, for the modules that keep a
+  // little state beside the tables.
+  get storage(): DurableObjectStorage {
+    return this.ctx.storage;
   }
 
   get media(): R2Bucket {
@@ -494,7 +488,7 @@ export class Relay extends DurableObject<Env> {
 
   // virtualConn represents an HTTP caller as if it had authenticated over the socket.
   virtualConn(host: string, pubkey: string, ip = "unknown"): ConnState {
-    void this.ownerSeen(pubkey);
+    void this.succession.seen(pubkey);
     return { challenge: "", host, authed: [pubkey], subs: {}, ip };
   }
 
@@ -593,96 +587,6 @@ export class Relay extends DurableObject<Env> {
   }
 
   // ---- owner presence and succession ----
-
-  // ownerSeen records that the owner acted, at most once an hour, and calls
-  // off a succession warning in flight. Anyone else is ignored.
-  async ownerSeen(pubkey: string) {
-    if (!this.settings.isOwner(pubkey)) return;
-    const ms = Date.now();
-    if (ms - this.ownerSeenWrite < 3600_000) return;
-    this.ownerSeenWrite = ms;
-    await this.ctx.storage.put("ownerSeenAt", now());
-    if (this.successionWarn) {
-      this.successionWarn = null;
-      await this.ctx.storage.delete("succession_warn");
-    }
-  }
-
-  // ownerSeenNow starts the clock afresh: claim, transfer, naming an heir.
-  async ownerSeenNow() {
-    this.ownerSeenWrite = Date.now();
-    await this.ctx.storage.put("ownerSeenAt", now());
-    this.successionWarn = null;
-    await this.ctx.storage.delete("succession_warn");
-  }
-
-  async successionStatus() {
-    const t = now();
-    const seen = (await this.ctx.storage.get<number>("ownerSeenAt")) ?? 0;
-    const log = (await this.ctx.storage.get<SuccessionLog[]>("succession_log")) ?? [];
-    const sc = this.settings.policy.succession;
-    const from = seen || t;
-    const handoverAt = !sc ? 0 : this.successionWarn ? this.successionWarn.since + SUCCESSION_WARN_DAYS * 86400 : from + (sc.afterDays + SUCCESSION_WARN_DAYS) * 86400;
-    return { succession: sc, ownerSeenAt: seen, silentDays: seen ? Math.floor((t - seen) / 86400) : 0, warning: this.successionWarn, handoverAt, log };
-  }
-
-  // successionTick runs from the daily alarm. Silence past the delay starts
-  // a month of weekly warnings; silence through the month hands the relay
-  // to the heir. Any owner action in between calls it off (ownerSeen).
-  private async successionTick(t: number) {
-    const sc = this.settings.policy.succession;
-    const dropWarning = async () => {
-      if (!this.successionWarn) return;
-      this.successionWarn = null;
-      await this.ctx.storage.delete("succession_warn");
-    };
-    if (!sc || this.settings.policy.owner === "" || this.settings.isLeased()) return dropWarning();
-    const subject = "succession on " + this.slug;
-    if (!this.settings.member(sc.heir)) {
-      // The heir left. Nobody to hand to; say so and stop.
-      this.settings.update({ succession: null });
-      await dropWarning();
-      await notify(this, "succession", `Your heir ${sc.heir.slice(0, 8)} is no longer a member of ${this.slug}, so the handover plan is off. Name another heir if you still want one.`, subject);
-      return;
-    }
-    let seen = (await this.ctx.storage.get<number>("ownerSeenAt")) ?? 0;
-    if (seen === 0) {
-      // Relays from before presence was recorded start the clock today.
-      seen = t;
-      await this.ctx.storage.put("ownerSeenAt", t);
-    }
-    if (t - seen < sc.afterDays * 86400) return dropWarning();
-    const day = (at: number) => new Date(at * 1000).toISOString().slice(0, 10);
-    if (!this.successionWarn) {
-      this.successionWarn = { since: t, lastNotified: t };
-      await this.ctx.storage.put("succession_warn", this.successionWarn);
-      await notify(this, "succession", `You have not signed in to ${this.slug} for ${Math.floor((t - seen) / 86400)} days. Unless you do, it goes to your heir ${sc.heir.slice(0, 8)} on ${day(t + SUCCESSION_WARN_DAYS * 86400)}. Any signed action on the relay calls this off.`, subject);
-      return;
-    }
-    if (t - this.successionWarn.since < SUCCESSION_WARN_DAYS * 86400) {
-      if (t - this.successionWarn.lastNotified >= 7 * 86400) {
-        this.successionWarn = { ...this.successionWarn, lastNotified: t };
-        await this.ctx.storage.put("succession_warn", this.successionWarn);
-        await notify(this, "succession", `Still no sign of you on ${this.slug}. It goes to ${sc.heir.slice(0, 8)} on ${day(this.successionWarn.since + SUCCESSION_WARN_DAYS * 86400)} unless you sign in.`, subject);
-      }
-      return;
-    }
-    // The month is up: hand over.
-    const old = this.settings.policy.owner;
-    const err = this.settings.transferOwner(sc.heir);
-    if (err) {
-      this.settings.update({ succession: null });
-      await dropWarning();
-      await notify(this, "succession", `The handover of ${this.slug} to ${sc.heir.slice(0, 8)} could not happen: ${err}. The plan is off.`, subject);
-      return;
-    }
-    const log = [...((await this.ctx.storage.get<SuccessionLog[]>("succession_log")) ?? []), { at: t, from: old, to: sc.heir }].slice(-10);
-    await this.ctx.storage.put("succession_log", log);
-    await this.ownerSeenNow();
-    await this.publishMembership({ pubkey: sc.heir }, { pubkey: old });
-    await notify(this, "succession", `${this.slug} now belongs to ${sc.heir.slice(0, 8)}, as you planned. You stay on as a moderator.`, subject, old);
-    await notify(this, "succession", `${this.slug} is yours now. Its owner named you heir and has been away for ${sc.afterDays + SUCCESSION_WARN_DAYS} days. Open https://${this.slug}.${this.domain}/ and sign in.`, subject, sc.heir);
-  }
 
   // ---- temporary leases ----
 
@@ -1147,7 +1051,7 @@ export class Relay extends DurableObject<Env> {
       doc.payments_url = "https://" + host + "/";
     }
     if (p.owner) doc.pubkey = p.owner;
-    if (p.succession && this.successionWarn) doc.succession_pending = new Date((this.successionWarn.since + SUCCESSION_WARN_DAYS * 86400) * 1000).toISOString().slice(0, 10);
+    if (p.succession && this.succession.warn) doc.succession_pending = new Date((this.succession.warn.since + SUCCESSION_WARN_DAYS * 86400) * 1000).toISOString().slice(0, 10);
     if (this.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
     if (host) doc.self_url = this.relayURL(host);
     if (this.identity.pubkey) {
@@ -1411,7 +1315,7 @@ export class Relay extends DurableObject<Env> {
     if (exp > 0) this.scheduleSweep(exp);
     else this.ensureAlarm();
     if (e.kind === 0 && conn) claimFromProfile(this.settings, e.content, e.pubkey, conn.host, t);
-    if (conn) void this.ownerSeen(e.pubkey);
+    if (conn) void this.succession.seen(e.pubkey);
     if (conn) this.notePresence(e.pubkey);
     if (e.kind === 30023) this.markView("articles");
     return { ok: true, msg: "", stored: true };
@@ -1451,7 +1355,7 @@ export class Relay extends DurableObject<Env> {
       } else if (!low && last) await this.ctx.storage.delete("fuel-low-at");
     }
     // Succession: the dead-man's switch, checked once a day.
-    await this.successionTick(t);
+    await this.succession.tick(t);
     // ---- digest: one message a week on how the relay is doing ----
     if (this.settings.policy.notify.digest && this.settings.policy.owner !== "") {
       const last = (await this.ctx.storage.get<number>("lastDigest")) ?? 0;
@@ -1600,7 +1504,7 @@ export class Relay extends DurableObject<Env> {
     if (tagValues(e, "challenge")[0] !== s.challenge) return fail("invalid: auth challenge does not match");
     if (hostOf(tagValues(e, "relay")[0] ?? "") !== hostOf("ws://" + s.host)) return fail("invalid: auth relay tag does not name this relay");
     if (!s.authed.includes(e.pubkey)) s.authed.push(e.pubkey);
-    void this.ownerSeen(e.pubkey);
+    void this.succession.seen(e.pubkey);
     this.notePresence();
     this.persist(ws, s);
     this.send(ws, "OK", e.id, true, "");

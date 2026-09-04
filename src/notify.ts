@@ -136,7 +136,7 @@ export async function digestText(relay: Relay, since: number, t: number): Promis
   const f = relay.fuelStatus();
   const spent = Math.floor(f.chargedMsats / 1000);
   const balance = Math.floor(f.balanceMsats / 1000);
-  const sc = await relay.successionStatus();
+  const sc = await relay.succession.status();
   const viewRows = await viewRowsSince(relay, since);
   const lines: string[] = [];
   if (joined || left) lines.push(`People: ${joined} joined${left ? `, ${left} left` : ""}.`);
