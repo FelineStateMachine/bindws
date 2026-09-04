@@ -1,9 +1,11 @@
 ---
 title: Marmot transport
-audience: developer
+audience: user
 ---
 
 # Marmot transport
+
+Status: `adopted` by [Marmot commit 4a2bc65f8db5866cec3b2a127dedb37818eaf207](https://github.com/marmot-protocol/marmot/tree/4a2bc65f8db5866cec3b2a127dedb37818eaf207), last checked 2026-09-04.
 
 Marmot relays carry MLS bytes in two Nostr event kinds. Kind `30443` publishes
 an account's KeyPackage as an addressable event. Kind `445` carries an opaque
