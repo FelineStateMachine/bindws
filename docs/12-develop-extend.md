@@ -49,9 +49,11 @@ test/
   helpers/      the socket client, the management call, media tokens, the QR reader
   conformance/  black-box suite for any relay URL, one file per NIP, files included
 scripts/
-  dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
-  build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
-  check-celld.mjs                    wrangler.celld.jsonc stays in step with wrangler.jsonc
+  build/   build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
+           build-console.mjs                  fold src/console into src/gen/console.ts
+  check/   check-console.mjs check-celld.mjs  run by npm run typecheck
+  dev/     dev-signer.mjs seed.mjs stage.mjs junk.mjs shot.mjs zaptest.mjs   for a dev relay
+  ops/     margin.mjs                         fuel prices against Cloudflare's rates, weekly in CI
 wrangler.jsonc        the Worker on Cloudflare
 wrangler.celld.jsonc  the same Worker on celld (docs/16)
 ```
@@ -98,19 +100,19 @@ A NIP that changes the query surface touches `store.ts`. Add the number to `SUPP
 
 ## The signer bundle
 
-Remote signing needs NIP-44 and secp256k1, which browsers do not ship. `scripts/signer-entry.js` imports the pieces of nostr-tools the console uses and `npm run build:signer` bundles them with esbuild into `src/gen/signer.ts`, a string the relay serves at `/signer.js`. The console loads it only when someone picks a remote signer. The generated file is committed; `npm run typecheck` fails when it is stale.
+Remote signing needs NIP-44 and secp256k1, which browsers do not ship. `scripts/build/signer-entry.js` imports the pieces of nostr-tools the console uses and `npm run build:signer` bundles them with esbuild into `src/gen/signer.ts`, a string the relay serves at `/signer.js`. The console loads it only when someone picks a remote signer. The generated file is committed; `npm run typecheck` fails when it is stale.
 
 ## The console
 
-The console is three ordinary files in `src/console`: `console.html` (the body), `console.css` and `console.js`. `npm run build:console` folds them into `src/gen/console.ts`, the strings the relay serves; `npm run dev` runs it first, and `npm run typecheck` fails when the generated file is stale. It is a generated module rather than a text-module rule in `wrangler.jsonc` because celld deploy refuses a config with `rules`. `scripts/check-console.mjs` runs the script's synchronous start against a stub document, so a handler wired above the helper it calls fails typecheck instead of a live page. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
+The console is three ordinary files in `src/console`: `console.html` (the body), `console.css` and `console.js`. `npm run build:console` folds them into `src/gen/console.ts`, the strings the relay serves; `npm run dev` runs it first, and `npm run typecheck` fails when the generated file is stale. It is a generated module rather than a text-module rule in `wrangler.jsonc` because celld deploy refuses a config with `rules`. `scripts/check/check-console.mjs` runs the script's synchronous start against a stub document, so a handler wired above the helper it calls fails typecheck instead of a live page. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
 
-To look at what you changed: `npm run dev`, then `node scripts/dev-signer.mjs`, open `http://<name>.localhost:8787/`, paste the `window.nostr` snippet from that script into the devtools console, and sign in or claim. Playwright's CLI can drive the same loop: open the page, inject the snippet with `eval`, click, screenshot at a phone width and at a desktop width. `scripts/shot.mjs` renders a page over the Chrome debugging protocol when Playwright is not around.
+To look at what you changed: `npm run dev`, then `node scripts/dev/dev-signer.mjs`, open `http://<name>.localhost:8787/`, paste the `window.nostr` snippet from that script into the devtools console, and sign in or claim. Playwright's CLI can drive the same loop: open the page, inject the snippet with `eval`, click, screenshot at a phone width and at a desktop width. `scripts/dev/shot.mjs` renders a page over the Chrome debugging protocol when Playwright is not around.
 
 Rules that hold across pages: no middle dots, no purposeless subtext, tables scroll inside their card on narrow screens, decorative elements are not selectable, a multi-field form uses the labelled grid rather than one row of inputs, and the copy above a block is one sentence.
 
 ## Screenshots
 
-`node scripts/shot.mjs <url> <out.png> [width] [height]` renders a page with phone or desktop emulation over the Chrome debugging protocol and prints the layout's scroll width, which should equal the viewport width.
+`node scripts/dev/shot.mjs <url> <out.png> [width] [height]` renders a page with phone or desktop emulation over the Chrome debugging protocol and prints the layout's scroll width, which should equal the viewport width.
 
 ## Pull requests
 

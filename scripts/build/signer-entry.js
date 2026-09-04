@@ -1,5 +1,5 @@
 // The browser half of NIP-46 for the relay console: bundled by
-// build-signer.mjs into src/gen/signer.ts and served at /signer.js.
+// build-signer.mjs, beside this file, into src/gen/signer.ts and served at /signer.js.
 // Loaded only when someone picks a remote signer, since NIP-44 and
 // secp256k1 are not in WebCrypto.
 import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from "nostr-tools/pure";

@@ -8,9 +8,9 @@ audience: developer
 What a relay costs the host, what fuel charges for it, and how to keep the two apart as the bitcoin price moves. The numbers come from one script:
 
 ```
-node scripts/margin.mjs                # today's price
-node scripts/margin.mjs --btc 60000    # a price you pick
-node scripts/margin.mjs --relays 5000  # the deployment at that size
+node scripts/ops/margin.mjs                # today's price
+node scripts/ops/margin.mjs --btc 60000    # a price you pick
+node scripts/ops/margin.mjs --relays 5000  # the deployment at that size
 ```
 
 It prints markdown and exits with code 1 when any priced line is under the target margin. A GitHub Actions workflow runs it every Monday, puts the tables in the run summary and opens or refreshes one issue when a line is under target.

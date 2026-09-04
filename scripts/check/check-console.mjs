@@ -4,7 +4,7 @@
 // enough: `node --check` passed the day the page came up empty.
 import { readFileSync } from "node:fs";
 
-const js = readFileSync(new URL("../src/console/console.js", import.meta.url), "utf8");
+const js = readFileSync(new URL("../../src/console/console.js", import.meta.url), "utf8");
 
 // Every element lookup answers with an object that accepts any property and
 // any method call, so the script gets through its wiring.

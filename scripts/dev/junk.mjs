@@ -9,7 +9,7 @@ const sign = (kind, tags, content = "") => finalizeEvent({ kind, created_at: now
 const auth = (e) => "Nostr " + Buffer.from(JSON.stringify(e)).toString("base64");
 
 const files = [
-  ["favicon.svg", "image/svg+xml", readFileSync(new URL("../src/ui.ts", import.meta.url), "utf8").match(/<svg[^`]*<\/svg>/)[0]],
+  ["favicon.svg", "image/svg+xml", readFileSync(new URL("../../src/ui.ts", import.meta.url), "utf8").match(/<svg[^`]*<\/svg>/)[0]],
   ["notes.txt", "text/plain", "junk file for testing the files list\n".repeat(200)],
   ["blob.bin", "application/octet-stream", Buffer.from(Array.from({ length: 3 * 1024 * 1024 }, (_, i) => (i * 7919) & 255))],
   ["hello.json", "application/json", JSON.stringify({ hello: "world", when: now() })],

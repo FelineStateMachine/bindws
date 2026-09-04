@@ -30,7 +30,7 @@ function stripComments(text) {
   }
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
-const load = (path) => JSON.parse(stripComments(readFileSync(new URL("../" + path, import.meta.url), "utf8")));
+const load = (path) => JSON.parse(stripComments(readFileSync(new URL("../../" + path, import.meta.url), "utf8")));
 
 const cf = load("wrangler.jsonc");
 const celld = load("wrangler.celld.jsonc");
@@ -69,7 +69,7 @@ for (const k of CELLD_ONLY) if (!(k in celld.vars)) problems.push(`vars.${k} is 
 
 // The lease door's in-memory limits (src/edge.ts) restate the rate limit
 // bindings, which celld does not have; the figures must agree.
-const edge = readFileSync(new URL("../src/edge.ts", import.meta.url), "utf8");
+const edge = readFileSync(new URL("../../src/edge.ts", import.meta.url), "utf8");
 const constant = (name) => Number(edge.match(new RegExp(`export const ${name} = (\\d+);`))?.[1]);
 const binding = (name) => cf.ratelimits.find((r) => r.name === name)?.simple.limit;
 same("leases per address per minute", binding("LEASE_LIMIT_IP"), constant("LEASES_PER_IP_MINUTE"));

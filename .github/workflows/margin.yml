@@ -21,7 +21,7 @@ jobs:
         id: compute
         run: |
           set +e
-          node scripts/margin.mjs > margin.md
+          node scripts/ops/margin.mjs > margin.md
           echo "below=$?" >> "$GITHUB_OUTPUT"
           cat margin.md >> "$GITHUB_STEP_SUMMARY"
       - name: Flag

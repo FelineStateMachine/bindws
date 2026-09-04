@@ -31,7 +31,7 @@ const CF = {
 };
 
 // The relay's own numbers, from wrangler.jsonc (comments stripped).
-const cfg = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1"));
+const cfg = JSON.parse(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1"));
 const v = cfg.vars;
 const num = (k) => Number(v[k]);
 const GBS_PER_HOUR = 3600 * CF.doMemoryGB; // 460.8 GB-s per hour awake at 128 MB

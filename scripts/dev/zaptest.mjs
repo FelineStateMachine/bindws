@@ -1,3 +1,6 @@
+// Asks a relay for a fuel invoice from a signed zap request, to check the
+// lightning provider end to end. Usage: node scripts/dev/zaptest.mjs [wss://relay] [direct]
+// With `direct`, the provider's LNURL callback is called straight, skipping the relay.
 import { finalizeEvent } from "nostr-tools/pure";
 const sk = new Uint8Array(32).fill(7);
 const relay = process.argv[2] || "wss://demo.bind.ws";
