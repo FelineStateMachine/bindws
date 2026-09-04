@@ -69,8 +69,6 @@ CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 
 CI runs typecheck and the object tests on every push, and, in a second job, the conformance suite against the Worker on `celld dev` ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
 
-The entry module `src/index.ts` exports the handler and the object and nothing else: workerd refuses an exported constant there, and the test pool does not, so a helper that tests import lives in its own module.
-
 ## Add a management method
 
 1. Add the name to `METHODS` in `src/manage.ts` and the action it needs to `METHOD_ACTIONS` in `src/roles.ts`; a method without an action is refused for everyone.

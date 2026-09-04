@@ -38,12 +38,13 @@ describe("the lease door without rate limit bindings", () => {
 });
 
 describe("which hostnames are ours", () => {
-  it("knows the apex, valid names under it and mapped custom hostnames, and nothing else", async () => {
+  it("knows the apex, valid and reserved names under it and mapped custom hostnames, and nothing else", async () => {
     const e = { DOMAIN: "bind.ws", HOSTS: env.HOSTS };
     await env.HOSTS.put("relay.example.org", "kitchen");
     expect(await hostnameKnown(e, "bind.ws")).toBe(true);
     expect(await hostnameKnown(e, "www.bind.ws")).toBe(true);
     expect(await hostnameKnown(e, "Kitchen.bind.ws.")).toBe(true);
+    expect(await hostnameKnown(e, "api.bind.ws")).toBe(true);
     expect(await hostnameKnown(e, "relay.example.org")).toBe(true);
     expect(await hostnameKnown(e, "a.b.bind.ws")).toBe(false);
     expect(await hostnameKnown(e, "-bad.bind.ws")).toBe(false);

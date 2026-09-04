@@ -27,7 +27,7 @@ What does not carry over: the console's custom domain tab says the feature is no
 ## What you need
 
 - A Linux box, x86-64 or ARM64. Two for celld's default durability posture, which acknowledges a write once a second node holds it; one node works with `CELLD_DURABILITY=bucket`, where every write waits for the bucket instead. Apple Silicon works for development.
-- An S3-compatible bucket with conditional writes. celld acquires each cell with `If-None-Match: *` and updates it with `If-Match`, and is not correct on a store without them. celld qualifies Amazon S3, Tigris, Google Cloud Storage and Azure Blob Storage for production, and says MinIO's community edition passes its storage test without being qualified. Backblaze B2, Hetzner Object Storage and DigitalOcean Spaces lack the conditional writes. `celld diagnose` tests a bucket before you trust it. The steps below use MinIO, the simplest thing to run on the same box; use `RELEASE.2025-09-07T16-13-09Z` or later, the release before it answers the conditional create wrongly.
+- An S3-compatible bucket with conditional writes. celld acquires each cell with `If-None-Match: *` and updates it with `If-Match`, and is not correct on a store without them. Which providers celld qualifies, and which lack the writes, is on its [guarantees page](https://celld.dev/docs/guarantees); `celld diagnose` tests a bucket before you trust it. The steps below use MinIO, the simplest thing to run on the same box, which passes celld's storage test without being qualified for production; use `RELEASE.2025-09-07T16-13-09Z` or later, the release before it answers the conditional create wrongly.
 - A domain, with the apex and a wildcard pointed at your proxy.
 - A reverse proxy for TLS: Caddy is shown, nginx works the same way.
 - Node 22 and the repo's `node_modules`, which carry the esbuild that `celld deploy` needs.
@@ -81,7 +81,7 @@ CELLD_DURABILITY=bucket celld --listen 127.0.0.1:8080 --trust-forwarded-headers
 
 `--trust-forwarded-headers` lets the proxy's `X-Forwarded-Host` and `X-Forwarded-Proto` set the request's host and scheme, which the relay prints in every URL it hands out; set it only behind your proxy. A second node makes the fleet, and the default durability posture, work: give each a private address peers can reach, `--internal-listen 10.0.0.2:8081 --advertise 10.0.0.2:8081`, on a network of your own or an overlay such as WireGuard, since peer traffic has no TLS of its own. The [celld docs](https://celld.dev/docs) cover the fleet: `celld diagnose --peer`, draining, memory limits, the health path at `/.well-known/celld/health`.
 
-Run it under systemd or whatever keeps your daemons up. Idle relays hibernate in celld as on Cloudflare; a node keeps about 4 MB per resident cell.
+Run it under systemd or whatever keeps your daemons up. Idle relays hibernate in celld as on Cloudflare; `CELLD_MAX_RESIDENT_CELLS` caps how many a node keeps in memory at once.
 
 ## TLS and names: the proxy
 
@@ -135,12 +135,6 @@ That serves `http://127.0.0.1:9876` as the relay named `DEV_RELAY`, with state i
 CLAIM=1 RELAY_URL=ws://127.0.0.1:9876 npm run test:conformance
 ```
 
-## What is checked, and the promise
+## The promise
 
-Three things keep this path working rather than merely described:
-
-- CI's `celld` job installs a pinned celld, starts `celld dev` on `wrangler.celld.jsonc` and runs the conformance suite against it on every push: the protocol, and files through the R2 binding (`test/conformance/media.test.ts`).
-- `npm run typecheck` runs `scripts/check-celld.mjs`, so a binding, migration or price changed in one config and not the other fails the build.
-- `test/selfhost.test.ts` covers what the Worker does without Cloudflare's bindings: the address header, the lease door's own count, the hostname question.
-
-Cloudflare is where bind.ws runs and what gets first attention; a celld release that breaks something here may take a little while to be caught up with, and the pinned version in CI says which one is known good. The path is not dropped quietly: removing support for any host takes a notice at the top of this page and in the README first, and the commit that removes it names the last commit that had it, so anyone on that host can stay there.
+CI runs the conformance suite against `celld dev` on every push, and `npm run typecheck` fails when the two configs drift, so this path is checked rather than merely described. Cloudflare is where bind.ws runs and what gets first attention; a celld release that breaks something here may take a little while to be caught up with, and the pinned version in CI says which one is known good. The path is not dropped quietly: removing support for any host takes a notice at the top of this page and in the README first, and the commit that removes it names the last commit that had it, so anyone on that host can stay there.

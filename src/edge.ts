@@ -5,7 +5,7 @@
 // docs/16-hosting-without-cloudflare.md.
 import type { Env } from "./relay.ts";
 import { Bucket } from "./ratelimit.ts";
-import { validName } from "./names.ts";
+import { RESERVED, validName } from "./names.ts";
 
 // Custom domains map to relay names through KV. Looked up once a minute per
 // hostname per isolate; a miss is cached too, so an unknown host does not
@@ -68,16 +68,17 @@ export async function leaseAllowed(env: Pick<Env, "LEASE_LIMIT_IP" | "LEASE_LIMI
 }
 
 // hostnameKnown says whether a hostname is one of ours: the apex, a valid
-// name under it, or a custom hostname in the map. A proxy that issues
-// certificates on demand asks this before it asks a certificate authority,
-// so a stranger cannot make it request certificates for junk names.
+// or reserved name under it (a reserved one redirects to the apex, which
+// needs a certificate too), or a custom hostname in the map. A proxy that
+// issues certificates on demand asks this before it asks a certificate
+// authority, so a stranger cannot make it request certificates for junk.
 export async function hostnameKnown(env: Pick<Env, "DOMAIN" | "HOSTS">, raw: string): Promise<boolean> {
   const host = raw.toLowerCase().replace(/\.$/, "");
   const domain = env.DOMAIN.toLowerCase();
   if (host === domain || host === "www." + domain) return true;
   if (host.endsWith("." + domain)) {
     const name = host.slice(0, -(domain.length + 1));
-    return validName(name) && !name.includes(".");
+    return validName(name) || RESERVED.has(name);
   }
   return host !== "" && (await customHost(env, host)) !== null;
 }

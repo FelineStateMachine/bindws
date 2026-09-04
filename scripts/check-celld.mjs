@@ -5,7 +5,8 @@
 // forgets the other fails the build instead of quietly dropping the host.
 import { readFileSync } from "node:fs";
 
-// stripComments removes // and /* */ comments outside strings.
+// stripComments removes // and /* */ comments outside strings, and the
+// trailing commas JSONC allows, so JSON.parse takes what wrangler takes.
 function stripComments(text) {
   let out = "";
   let inString = false;
@@ -22,10 +23,12 @@ function stripComments(text) {
       while (i < text.length && text[i] !== "\n") i++;
       out += "\n";
     } else if (c === "/" && text[i + 1] === "*") {
-      i = text.indexOf("*/", i + 2) + 1;
+      const end = text.indexOf("*/", i + 2);
+      if (end === -1) throw new Error("unterminated comment");
+      i = end + 1;
     } else out += c;
   }
-  return out;
+  return out.replace(/,(\s*[}\]])/g, "$1");
 }
 const load = (path) => JSON.parse(stripComments(readFileSync(new URL("../" + path, import.meta.url), "utf8")));
 
@@ -63,6 +66,14 @@ for (const k of Object.keys(cf.vars)) {
 }
 for (const k of Object.keys(celld.vars)) if (!(k in cf.vars) && !CELLD_ONLY.has(k)) problems.push(`vars.${k} is in wrangler.celld.jsonc but not in wrangler.jsonc`);
 for (const k of CELLD_ONLY) if (!(k in celld.vars)) problems.push(`vars.${k} is missing from wrangler.celld.jsonc`);
+
+// The lease door's in-memory limits (src/edge.ts) restate the rate limit
+// bindings, which celld does not have; the figures must agree.
+const edge = readFileSync(new URL("../src/edge.ts", import.meta.url), "utf8");
+const constant = (name) => Number(edge.match(new RegExp(`export const ${name} = (\\d+);`))?.[1]);
+const binding = (name) => cf.ratelimits.find((r) => r.name === name)?.simple.limit;
+same("leases per address per minute", binding("LEASE_LIMIT_IP"), constant("LEASES_PER_IP_MINUTE"));
+same("leases per minute", binding("LEASE_LIMIT_ALL"), constant("LEASES_PER_MINUTE"));
 
 if (problems.length) {
   console.error("wrangler.celld.jsonc is out of step with wrangler.jsonc:\n  " + problems.join("\n  "));
