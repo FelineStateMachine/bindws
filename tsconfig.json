@@ -3,13 +3,20 @@
     "target": "es2022",
     "module": "es2022",
     "moduleResolution": "bundler",
-    "lib": ["es2022"],
+    "lib": [
+      "es2022"
+    ],
     "types": [],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "worker-configuration.d.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "worker-configuration.d.ts"
+  ]
 }
