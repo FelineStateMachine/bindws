@@ -121,11 +121,23 @@ The hard limits are:
 |---|---:|---|
 | Relay | 16 repositories, 320 MiB Git storage | accepted repositories and billed retained Git objects across the relay |
 | Repository | 4 MiB per pack, 16 MiB packed history | one upload and the aggregate packed history read into memory |
-| Repository | 128 transactions, 1,024 refs, 4,096 objects | WAL history, ref maps and verified object graphs |
+| Repository | 1,024 refs, 4,096 objects | ref maps and verified object graphs |
+| Format 1 | 128 transactions | legacy WAL replay |
+| Format 2 | 128 unique packs, 2 MiB manifest | explicitly migrated repository metadata |
 
-Checkpoints, compaction, orphan collection, large-pack streaming and
-production capacity measurements remain follow-up work. Once a repository
-reaches its transaction limit, all further Git writes are refused, including
+ntig 0.2.0 reads both formats, but installing it leaves existing roots alone
+and new repositories still use format 1. Bindws exposes no checkpoint action
+or scheduled migration. The backend's explicit `checkpoint()` upgrade is
+one-way: every reader and writer must support format 2 before an isolated
+repository is migrated. Versions 0.1.x cannot read the upgraded root.
+Migration retains old data and receipts; it does not reclaim storage.
+
+Format-2 ref advertisements read the root and manifest without downloading
+packs. They retain the same accepted HEAD and hidden PR rules. Full clone,
+fetch and push still load the stored packs; selective object reads,
+compaction, orphan collection, large-pack streaming and production capacity
+measurements remain follow-up work. Once a format-1 repository reaches its
+transaction limit, all further Git writes are refused, including
 the timed cleanup transaction. An expired unknown PR ref therefore stays
 hidden when cleanup cannot commit, while immutable WAL history keeps its old
 object bytes billed until the relay is torn down. The same retention behavior

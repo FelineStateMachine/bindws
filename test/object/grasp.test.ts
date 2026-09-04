@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "../../src/kinds.ts";
+import { gitRepository } from "../../src/grasp.ts";
+import { repository as storedRepository } from "../../src/grasp-state.ts";
 import { gitRepositoryPath } from "../../src/grasp-policy.ts";
 import { ev, info, pk, rpc, sleep } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
@@ -29,15 +31,15 @@ const objectID = async (type: string, data: Uint8Array) => {
   value.set(header); value.set(data, header.length);
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-1", value)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
-const receivePack = (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array) => SELF.fetch(`http://${host}${path}/git-receive-pack`, {
+const receivePack = (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array, requestId?: string) => SELF.fetch(`http://${host}${path}/git-receive-pack`, {
   method: "POST",
-  headers: { "content-type": "application/x-git-receive-pack-request" },
+  headers: { "content-type": "application/x-git-receive-pack-request", ...(requestId ? { "X-Git-Request-Id": requestId } : {}) },
   body: concat(packet(`${old ?? "0".repeat(40)} ${next ?? "0".repeat(40)} ${ref}\0report-status\n`), flush(), ...(pack ? [pack] : [])),
 });
 // receiveSettled waits for transient alarm contention before testing the Git response.
-const receiveSettled = async (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array) => {
+const receiveSettled = async (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array, requestId?: string) => {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const response = await receivePack(path, host, old, next, ref, pack);
+    const response = await receivePack(path, host, old, next, ref, pack, requestId);
     if (response.status !== 429) return response;
     await response.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -45,8 +47,8 @@ const receiveSettled = async (path: string, host: string, old: string | null, ne
   throw new Error("Git transaction did not become available");
 };
 
-async function tinyRepository() {
-  const blob = encoder.encode("hello from grasp\n");
+async function tinyRepository(content = "hello from grasp\n") {
+  const blob = encoder.encode(content);
   const blobID = await objectID("blob", blob);
   const tree = new Uint8Array([...encoder.encode("100644 README\0"), ...Uint8Array.from(blobID.match(/../g)!, (part) => parseInt(part, 16))]);
   const treeID = await objectID("tree", tree);
@@ -248,6 +250,109 @@ describe("GRASP", () => {
     const afterExpiry = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
     expect(await afterExpiry.text()).not.toContain(expiringRef);
     late.ws.close();
+  });
+
+  it("replays a hidden PR correction after checkpointing and more than 128 later transactions", async () => {
+    const host = "grasp-pr-checkpoint.bind.ws";
+    const owner = generateSecretKey();
+    const first = await tinyRepository();
+    const next = await tinyRepository("corrected PR\n");
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "applypreset", "grasp");
+    const c = await WS.connect(host);
+    expect((await c.ok(repository(owner, host, "correction"))).ok).toBe(true);
+    expect((await c.ok(ev(owner, KIND_REPO_STATE, "", [["d", "correction"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", first.commitID]]))).ok).toBe(true);
+    c.ws.close();
+    const path = gitRepositoryPath(npubEncode(pk(owner)), "correction");
+    expect(await (await receiveSettled(path, host, null, first.commitID, "refs/heads/main", first.pack)).text()).toContain("ok refs/heads/main");
+    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:correction`], ["c", next.commitID]]);
+    const ref = `refs/nostr/${pr.id}`;
+    expect(await (await receiveSettled(path, host, null, first.commitID, ref)).text()).toContain(`ok ${ref}`);
+    const publisher = await WS.connect(host);
+    expect((await publisher.ok(pr)).ok).toBe(true);
+    publisher.ws.close();
+    const hidden = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
+    expect(await hidden.text()).not.toContain(ref);
+
+    const stub = env.RELAY.getByName("grasp-pr-checkpoint");
+    await runInDurableObject(stub, async (relay) => {
+      relay.graspBusy = true;
+      try {
+        const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
+        expect((await wal.checkpoint()).changed).toBe(true);
+      } finally { relay.graspBusy = false; }
+    });
+    const metadata = await runInDurableObject(stub, async (relay) => {
+      const bucket = relay.media;
+      const keys: string[] = [];
+      const observed = new Proxy(bucket, { get(target, name) {
+        if (name === "get") return (key: string, options?: R2GetOptions) => { keys.push(key); return target.get(key, options); };
+        const value = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+      Object.defineProperty(relay, "media", { value: observed, configurable: true });
+      try {
+        const response = await relay.fetch(new Request(`http://${host}${path}/info/refs?service=git-upload-pack`));
+        expect(response.status).toBe(200);
+        return { body: await response.text(), keys };
+      } finally { Reflect.deleteProperty(relay, "media"); }
+    });
+    expect(metadata.keys).toHaveLength(2);
+    expect(metadata.keys[0]).toMatch(/\/root.json$/);
+    expect(metadata.keys[1]).toContain("/manifests/");
+    expect(metadata.body).toContain("symref=HEAD:refs/heads/main");
+    expect(metadata.body).not.toContain(ref);
+    const requestId = "hidden-pr-correction";
+    expect(await (await receiveSettled(path, host, null, next.commitID, ref, next.pack, requestId)).text()).toContain(`ok ${ref}`);
+    const sequence = await runInDurableObject(stub, async (relay) => {
+      relay.graspBusy = true;
+      try {
+        const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
+        for (let i = 0; i < 130; i++) await wal.commit({ id: `later-${i}`, updates: [{ name: `refs/tags/later-${i}`, old: null, new: first.commitID }] });
+        const snapshot = await wal.load();
+        expect(snapshot.records).toHaveLength(1);
+        expect(snapshot.records[0].id).not.toBe(requestId);
+        return snapshot.sequence;
+      } finally { relay.graspBusy = false; }
+    });
+    const retried = await runInDurableObject(stub, async (relay) => {
+      const bucket = relay.media;
+      const counters = { gets: 0, getBytes: 0, puts: 0, heads: 0 };
+      const observed = new Proxy(bucket, { get(target, name) {
+        if (name === "get") return async (key: string, options?: R2GetOptions) => {
+          counters.gets++;
+          const object = await target.get(key, options);
+          counters.getBytes += object?.size ?? 0;
+          return object;
+        };
+        if (name === "put" || name === "head") return (...args: unknown[]) => {
+          if (name === "put") counters.puts++; else counters.heads++;
+          return Reflect.apply(target[name], target, args);
+        };
+        const value = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+      Object.defineProperty(relay, "media", { value: observed, configurable: true });
+      try {
+        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
+          method: "POST",
+          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
+          body: concat(packet(`${"0".repeat(40)} ${next.commitID} ${ref}\0report-status\n`), flush(), next.pack),
+        }));
+        return { body: await response.text(), counters };
+      } finally { Reflect.deleteProperty(relay, "media"); }
+    });
+    expect(retried.body).toContain(`ok ${ref}`);
+    expect(retried.counters.puts).toBe(0);
+    console.info("checkpoint old PR correction HTTP retry", JSON.stringify({ sequence, ...retried.counters }));
+    await runInDurableObject(stub, async (relay) => {
+      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
+      expect((await wal.load()).sequence).toBe(sequence);
+    });
+    const visible = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
+    const body = await visible.text();
+    expect(body).toContain(`${next.commitID} ${ref}`);
+    expect(body).toContain("symref=HEAD:refs/heads/main");
   });
 
   it("removes the public Git contract when reads become restricted", async () => {

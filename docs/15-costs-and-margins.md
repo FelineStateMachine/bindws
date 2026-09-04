@@ -103,7 +103,8 @@ Prices go up when bitcoin falls. When it rises, do nothing until a line has sat 
 
 ## Accounting coverage, checked Sept. 4, 2026
 
-The following inventory describes the host with ntig 0.1.1. Observing an
+The following inventory describes the host with ntig 0.2.0 and unmigrated
+format-1 repositories. Installing the library does not migrate roots. Observing an
 expense does not authorize a new customer charge. `/fuel` and the Health tab
 expose aggregate tenant meters, not every operation the host pays for.
 
@@ -135,6 +136,18 @@ exception leaves the reservation because the write may have succeeded. No
 automatic reconciliation queue or orphan collector exists. Counting PUT
 bytes again as stored bytes would double-charge existing media accounting.
 Future temporary packs also need reservations while both copies exist.
+
+For an explicitly migrated format-2 repository, ref advertisements read two
+R2 objects, the root and manifest. This saves legacy history and pack reads
+on that path; full loads and Git transfers still read all stored packs.
+Each new commit also retains a manifest and receipt-index path nodes beside
+its record and optional pack. Ref-only workloads can pass 128 transactions,
+but their metadata and reservation rows continue to grow. All of these keys
+use the same pre-PUT storage reservation. CAS-loser objects remain accounted
+for, and an ambiguous PUT can leave a reservation larger than physical
+storage. Neither receipt lookup nor checkpointing reclaims old bytes.
+Operation counts are host costs, not a new tenant charge; lower read costs
+alone do not establish a margin after metadata writes and retained storage.
 
 `graspBusy`, `graspControls` and the job round's `working` flag fence work
 within a live instance. Async handlers can interleave across awaits. Those
@@ -219,7 +232,7 @@ These are proposed operating boundaries, not new allowances or charges.
 
 ## Proposed maintenance contract
 
-ntig 0.1.1 has no resumable optimization runner. No maintenance job, budget
+ntig 0.2.0 has no resumable optimization runner. No maintenance job, budget
 setting, wake schedule, format migration or garbage collection is enabled by
 this contract. Existing ref cleanup, retention and alarms keep their current
 roles. An eventual integration has these boundaries:

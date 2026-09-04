@@ -94,6 +94,7 @@ function authorizedRepository(relay: Relay, repo: RepositoryAnnouncement, wal: W
   });
   return {
     load: () => authorized.load(),
+    loadRefs: () => authorized.loadRefs ? authorized.loadRefs() : authorized.load(),
     commit: async (request: CommitRequest) => {
       const receipt = await authorized.commit(request);
       for (const update of request.updates) {

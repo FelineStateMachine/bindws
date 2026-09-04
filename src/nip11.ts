@@ -68,7 +68,7 @@ export function nip11(relay: Relay, host: string) {
   if (relay.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
   if (featureOn(p, "grasp") && p.reads === "open") {
     doc.supported_grasps = ["GRASP-01"];
-    doc.repo_acceptance_criteria = "Repository announcements name this service in clone and relays; the relay write rule, bans, proof of work and fuel apply. At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per repository.";
+    doc.repo_acceptance_criteria = "Repository announcements name this service in clone and relays; the relay write rule, bans, proof of work and fuel apply. At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.";
     if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
   }
   if (featureOn(p, "sites")) doc.nsites = {
