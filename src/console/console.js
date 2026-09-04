@@ -407,6 +407,7 @@
     ["pages", "Pages and feed", "Notes and articles as pages, and the Atom feed."],
     ["sites", "Static websites", "NIP-5A sites on their own hostnames. Mirroring copies missing files into this relay and costs fuel.", ["mirror:on, mirror files", "proxy:on, fetch as needed", "off:off"]],
     ["marmot", "Marmot transport", "Signed KeyPackages and encrypted group messages, with account admission for ephemeral authors."],
+    ["grasp", "Git repositories", "GRASP Git hosting with admitted repository state. The prototype backend has bounded storage and compute limits."],
     ["signer", "Signer traffic", "NIP-46 remote signing carried for anyone, never stored."],
   ];
   function renderFeatures(f) {

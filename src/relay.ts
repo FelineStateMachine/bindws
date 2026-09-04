@@ -1,6 +1,8 @@
 // The relay: one Durable Object per name, holding its SQLite database and
 // its live websockets (hibernating while idle). Protocol handling mirrors
 // relay.go; policy is per relay and owner-managed (see manage.ts).
+import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
+import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
 import { queueMirrors } from "./site-mirror.ts";
 import { syncSiteIndex, forgetSites, serveSite } from "./sites.ts";
 import { DurableObject } from "cloudflare:workers";
@@ -125,6 +127,8 @@ export class Relay extends DurableObject<Env> {
   succession = new Succession(this);
   // A job round in flight, so overlapping alarms do not run two.
   private working = false;
+  graspBusy = false;
+  graspControls = 0;
   // Presence (views.ts): who wrote lately, in memory; the sockets are asked
   // directly. A broadcast is at most one per PRESENCE_THROTTLE_S.
   presenceActive = new Map<string, number>();
@@ -739,7 +743,7 @@ export class Relay extends DurableObject<Env> {
 
   // Files and dumps both live in R2 and both cost media storage.
   mediaBytes(): number {
-    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql);
+    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this);
   }
 
   fuelStatus() {
@@ -764,6 +768,7 @@ export class Relay extends DurableObject<Env> {
       await this.ctx.storage.put("slug", name);
     }
     const url = new URL(req.url);
+    const completed = (response: Response) => featureOn(this.settings.policy, "grasp") ? graspCORS(response, req.method === "OPTIONS") : response;
     // Relays claimed before identities existed get theirs on first contact.
     if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
     // The local custom-domain record wins over a cached edge mapping, so
@@ -774,11 +779,17 @@ export class Relay extends DurableObject<Env> {
     const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
     if ((site || upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
       const msg = "blocked: this address is blocked from this relay";
-      return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
+      return completed(new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } }));
     }
     if (site) return serveSite(this, req, site);
     if (upgrade) return this.acceptWebSocket(req);
-    return route(this, req, url);
+    if (isGitPath(url)) return route(this, req, url);
+    if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+      if (this.graspBusy) return completed(new Response("restricted: Git transaction in progress; retry", { status: 429, headers: { "access-control-allow-origin": "*", "retry-after": "1" } }));
+      this.graspControls++;
+      try { return completed(await route(this, req, url)); } finally { this.graspControls--; }
+    }
+    return completed(await route(this, req, url));
   }
 
   connections(): number {
@@ -960,6 +971,7 @@ export class Relay extends DurableObject<Env> {
   // acceptAny routes the special kinds (zap receipts, NIP-56 reports) and
   // falls back to the ordinary write path. Callers broadcast when stored.
   async acceptAny(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
+    if (this.graspBusy) return { ok: false, msg: "restricted: Git transaction in progress; retry the event", stored: false };
     if (e.kind === 9735) {
       const r = await acceptReceipt(this, e, conn.host);
       if (r) return r;
@@ -1052,6 +1064,8 @@ export class Relay extends DurableObject<Env> {
     const err = this.store.save(e, t);
     if (err === ERR_DUPLICATE) return { ok: true, msg: err, stored: false };
     if (err) return no(err);
+    const held = holdGrasp(this, e, conn?.host ?? "");
+    if (held) void this.ensureAlarm(now() + 1);
     if (e.kind === 3) this.settings.noteContacts(e.pubkey);
     if (e.kind === KIND_MARMOT_GROUP && conn) {
       const principal = marmotPrincipal(this, e, conn);
@@ -1064,7 +1078,7 @@ export class Relay extends DurableObject<Env> {
     if (conn) void this.succession.seen(e.pubkey);
     if (conn) notePresence(this, e.pubkey);
     if (e.kind === 30023) markView(this, "articles");
-    return { ok: true, msg: "", stored: true };
+    return { ok: true, msg: held ? "purgatory: won't be served until git data arrives" : "", stored: !held };
   }
 
   private scheduleSweep(at: number) {
@@ -1074,6 +1088,9 @@ export class Relay extends DurableObject<Env> {
   }
 
   async alarm() {
+    if (this.graspBusy) { await this.ctx.storage.setAlarm(Date.now() + 1000); return; }
+    this.graspControls++;
+    try {
     this.touch();
     const t = now();
     // A lease that has run out is wiped whole: the name is free again.
@@ -1081,6 +1098,7 @@ export class Relay extends DurableObject<Env> {
       await this.teardown();
       return;
     }
+    const graspAt = await graspTick(this);
     await this.syncSites();
     await queueMirrors(this);
     if (await this.jobsTick()) {
@@ -1135,7 +1153,9 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
     const run = await this.nextJobRun();
     if (run > 0 && run < at) at = Math.max(run, t + 1);
+    if (graspAt && graspAt < at) at = graspAt;
     await this.ctx.storage.setAlarm(at * 1000 + 500);
+    } finally { this.graspControls--; }
   }
 
   // sweepRetention applies the owner's keep-for rules. Returns how many
@@ -1175,6 +1195,7 @@ export class Relay extends DurableObject<Env> {
   }
 
   broadcast(e: Event) {
+    if (!graspVisible(this, e.id)) return;
     const raw = canonical(e);
     for (const ws of this.ctx.getWebSockets()) {
       const s = this.state(ws);

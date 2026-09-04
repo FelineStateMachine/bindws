@@ -83,7 +83,8 @@
                   "enabled": { "type": "boolean" }, "mirror": { "type": "boolean" }
                 } }
               ]
-            }
+            },
+            "grasp": { "type": "boolean" }
           }
         }
       }

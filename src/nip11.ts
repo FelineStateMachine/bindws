@@ -15,7 +15,7 @@ import { nip11Views } from "./views.ts";
 // (publishDiscovery); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
 // The numbers a switched-off feature takes with it (settings.ts, features).
-export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [] };
+export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [], grasp: [] };
 
 // supportedNips is the list as it stands with the features that are on.
 export function supportedNips(relay: Relay): number[] {
@@ -66,6 +66,11 @@ export function nip11(relay: Relay, host: string) {
   if (p.owner) doc.pubkey = p.owner;
   if (p.succession && relay.succession.warn) doc.succession_pending = new Date((relay.succession.warn.since + SUCCESSION_WARN_DAYS * 86400) * 1000).toISOString().slice(0, 10);
   if (relay.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
+  if (featureOn(p, "grasp") && p.reads === "open") {
+    doc.supported_grasps = ["GRASP-01"];
+    doc.repo_acceptance_criteria = "Repository announcements name this service in clone and relays; the relay write rule, bans, proof of work and fuel apply. At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per repository.";
+    if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
+  }
   if (featureOn(p, "sites")) doc.nsites = {
     host: relay.domain,
     kinds: SITE_KINDS,

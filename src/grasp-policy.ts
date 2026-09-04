@@ -82,7 +82,7 @@ export function parseRepositoryAnnouncement(event: GraspEvent): ParseResult<Repo
   if (identifier === null || !validIdentifier(identifier)) return { error: "invalid: bad repository identifier" };
   const clone = values(event, "clone");
   const relays = values(event, "relays");
-  if (clone.length === 0 || clone.some((url) => !isCanonicalCloneURL(url))) return { error: "invalid: bad clone URL" };
+  if (clone.some((url) => !isCanonicalCloneURL(url))) return { error: "invalid: bad clone URL" };
   if (relays.some((url) => !isWebSocketURL(url))) return { error: "invalid: relays must be WebSocket URLs" };
   const maintainers = [...new Set(values(event, "maintainers"))];
   if (maintainers.some((key) => !HEX64.test(key))) return { error: "invalid: bad maintainer pubkey" };
