@@ -54,6 +54,11 @@ Deleting a ref or expiring metadata does not reclaim immutable Git history;
 those bytes remain in file storage until the relay is deleted. See
 [GRASP-01 Git hosting](22-grasp-01-git-hosting.md) for the full limits.
 
+Git file usage includes transaction receipts and retained bookkeeping as
+well as packed files. It is not a fixed reservation per repository: the
+total grows with its history, including ref-only updates. The Health tab
+shows the combined file total, not a breakdown of these Git components.
+
 ## Prices past the allowance
 
 | Measured | Price |

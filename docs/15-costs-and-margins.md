@@ -158,6 +158,46 @@ lower CPU cost or a complete request-memory bound. Bulk initial checkpoint
 construction avoids writing intermediate receipt-index nodes; it removes
 no stored data and does not start migration automatically.
 
+The isolated checkpoint fixture separates physical storage from the objects
+referenced by the current format. Both workloads use one 214-byte Git pack,
+260 transactions and an explicit checkpoint after transaction 128. One keeps
+updating the same ref to the same commit; the other retains 259 new tags.
+These are local measurements with ntig 0.2.1, not production usage or a
+per-repository minimum.
+
+| Retained Git payload | One fixed ref | Growing tags |
+|---|---:|---:|
+| Pack | 214 bytes | 214 bytes |
+| Current root and manifest | 430 bytes | 16,888 bytes |
+| All 260 retry records and current receipt index | 136,165 bytes | 126,982 bytes |
+| Current-format total | 136,809 bytes | 144,084 bytes |
+| Superseded manifests | 42,900 bytes | 1,671,120 bytes |
+| Superseded receipt-index nodes | 332,722 bytes | 332,722 bytes |
+| Physical objects and reserved bytes | 512,431 bytes | 2,147,926 bytes |
+
+The ledger equals the paginated R2 inventory for every key and size in these
+quiet fixtures: there is no reservation slack. Each untouched fixture
+has no Git R2 keys; its first commit uses 631 bytes in three keys. SQLite
+allocation, provider operations and execution are separate quantities.
+The larger growing-tag total comes mainly from retained copies of earlier
+ref maps. Its current manifest is only 16,783 bytes. Fixed-ref transaction
+records are larger because their updates include an old object ID.
+
+All historical retry records remain required by the current retention
+contract. Current-format membership includes every pack in the manifest;
+it does not establish that every object inside those packs is reachable
+from today's refs. Superseded metadata is outside the latest root's
+dependency set, but older readers and in-flight publishers can still need
+it. This inventory supplies no online deletion authority. No collector or
+storage saving is deployed, and these bytes still count toward tenant file
+usage. Coordinated metadata collection is the larger target in this fixture;
+changing receipt retention would change retry semantics.
+
+`npm test -- test/object/grasp-checkpoint.test.ts --reporter=verbose --disableConsoleIntercept`
+reproduces the inventory, current-format traversal, all historical receipt
+lookups and unchanged root checks. The measurements apply to healthy,
+quiescent fixtures; ambiguous writes can still leave reservation slack.
+
 `graspBusy`, `graspControls` and the job round's `working` flag fence work
 within a live instance. Async handlers can interleave across awaits. Those
 flags are admission controls, not persisted crash recovery or authority to
