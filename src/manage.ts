@@ -14,7 +14,7 @@ import { badBlockedWord, blockedWords, gateFields, isWriteRule, limitFields, vie
 import { isReplaceable, isProtected, publicFields, dumpFields, validIP } from "./settings.ts";
 export { validIP };
 import { checkPullURL } from "./pull.ts";
-import { VIEWS, viewsSummary } from "./views.ts";
+import { VIEWS, publishView, viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
 import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
@@ -183,7 +183,7 @@ export const METHODS: Record<string, Method> = {
       // the read rule and the directory decide each one's audience.
       const names = patch.views && typeof patch.views === "object" ? Object.keys(patch.views as object) : [];
       if (clean.reads !== undefined || clean.directoryPublic !== undefined) for (const v of VIEWS) if (!names.includes(v.name)) names.push(v.name);
-      for (const name of names) await relay.publishView(name);
+      for (const name of names) await publishView(relay, name);
       return reply({ result: s.policy });
     },
   },
@@ -512,7 +512,7 @@ export const METHODS: Record<string, Method> = {
       }
       await relay.publishMembership();
       // The read rule and the directory moved, so every view's audience may have.
-      for (const v of VIEWS) await relay.publishView(v.name);
+      for (const v of VIEWS) await publishView(relay, v.name);
       return reply({ result: { ...s.policy, job } });
     },
   },

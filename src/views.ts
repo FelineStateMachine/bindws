@@ -319,7 +319,7 @@ export async function serveView(relay: Relay, req: Request, verify: (header: str
 export async function viewsSummary(relay: Relay) {
   const out = [];
   for (const v of VIEWS) {
-    const runs = await relay.viewRuns(v.name);
+    const runs = await viewRuns(relay, v.name);
     const last = runs[runs.length - 1] ?? null;
     out.push({ name: v.name, about: v.about, trigger: v.trigger, audience: v.audience(relay), on: viewOn(relay, v.name), stored: viewStored(relay, v), last, path: "/view/" + v.name });
   }
@@ -329,6 +329,96 @@ export async function viewsSummary(relay: Relay) {
 // viewRowsSince sums the rows the views wrote in a window, for the digest.
 export async function viewRowsSince(relay: Relay, since: number): Promise<number> {
   let rows = 0;
-  for (const v of VIEWS) for (const r of await relay.viewRuns(v.name)) if (r.at >= since) rows += r.rows;
+  for (const v of VIEWS) for (const r of await viewRuns(relay, v.name)) if (r.at >= since) rows += r.rows;
   return rows;
+}
+
+// ---- publishing: the relay's side, called from the socket handlers and the alarm ----
+
+export async function viewRuns(relay: Relay, name: string): Promise<ViewRun[]> {
+  return (await relay.storage.get<ViewRun[]>("view-runs:" + name)) ?? [];
+}
+
+// publishView folds one stored view and writes its record, or takes the
+// record down when the view is off, members-only or empty. The rows the
+// fold wrote are recorded so the console and the digest can say what a
+// view costs.
+export async function publishView(relay: Relay, name: string): Promise<void> {
+  const v = viewByName(name);
+  if (!v || v.trigger === "live" || relay.settings.policy.owner === "") return;
+  await relay.identity.ensure();
+  const self = relay.identity.pubkey;
+  const before = relay.rowsWritten();
+  const takeDown = () => {
+    for (const r of relay.sql.exec<{ id: string }>(`SELECT e.id FROM events e JOIN tags t ON t.event_id=e.id WHERE e.kind=30078 AND e.pubkey=? AND t.name='d' AND t.value=?`, self, viewD(name)).toArray()) relay.store.deleteEvent(r.id);
+  };
+  if (!viewOn(relay, name) || !viewStored(relay, v)) takeDown();
+  else {
+    const fold = v.fold(relay);
+    if (!fold) takeDown();
+    else relay.emit([viewEvent(relay, v, fold, true)], now());
+  }
+  const runs = (await viewRuns(relay, name)).slice(-59);
+  runs.push({ at: now(), rows: Math.max(0, relay.rowsWritten() - before) });
+  await relay.storage.put("view-runs:" + name, runs);
+  if (v.fingerprint) await relay.storage.put("view-fp:" + name, v.fingerprint(relay));
+}
+
+// markView republishes a write-triggered view shortly, once for a burst.
+export function markView(relay: Relay, name: string) {
+  if (!viewOn(relay, name) || relay.settings.policy.owner === "") return;
+  relay.viewDirty.add(name);
+  if (relay.viewTimer) return;
+  relay.viewTimer = setTimeout(() => {
+    relay.viewTimer = null;
+    const names = [...relay.viewDirty];
+    relay.viewDirty.clear();
+    void (async () => {
+      for (const n of names) {
+        try {
+          await publishView(relay, n);
+        } catch (err) {
+          console.log("view " + n + " failed: " + (err instanceof Error ? err.message : String(err)));
+        }
+      }
+    })();
+  }, 10_000);
+}
+
+// viewsTick runs the scheduled views: daily ones once a day, hourly ones
+// once an hour and only when their fingerprint moved or nothing is stored.
+export async function viewsTick(relay: Relay, t: number) {
+  if (relay.settings.policy.owner === "") return;
+  for (const v of VIEWS) {
+    if (v.trigger === "live" || !viewOn(relay, v.name)) continue;
+    const last = (await relay.storage.get<number>("view-at:" + v.name)) ?? 0;
+    const period = v.trigger === "hourly" ? 3600 : 86400;
+    if (t - last < period - 300) continue;
+    await relay.storage.put("view-at:" + v.name, t);
+    if (v.fingerprint && viewStored(relay, v) && latestStored(relay, v.name) !== null) {
+      const fp = v.fingerprint(relay);
+      if (fp === (await relay.storage.get<string>("view-fp:" + v.name))) continue;
+    }
+    await publishView(relay, v.name);
+  }
+}
+
+// notePresence records a writer and broadcasts the presence view when the
+// throttle allows, otherwise once it does.
+export function notePresence(relay: Relay, pubkey?: string) {
+  if (pubkey) relay.presenceActive.set(pubkey, now());
+  if (!relay.identity.pubkey || !viewOn(relay, "presence") || relay.settings.policy.owner === "") return;
+  const wait = relay.presenceAt + PRESENCE_THROTTLE_S - Date.now() / 1000;
+  if (wait <= 0) broadcastPresence(relay);
+  else if (!relay.presenceTimer) {
+    relay.presenceTimer = setTimeout(() => {
+      relay.presenceTimer = null;
+      broadcastPresence(relay);
+    }, wait * 1000);
+  }
+}
+
+function broadcastPresence(relay: Relay) {
+  relay.presenceAt = Date.now() / 1000;
+  relay.broadcast(relay.identity.sign(KIND_PRESENCE, [["d", viewD("presence")], ...presenceTags(relay)], ""));
 }
