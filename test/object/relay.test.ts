@@ -2,10 +2,10 @@ import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-import type { Relay } from "../src/relay.ts";
-import { difficulty } from "../src/event.ts";
-import { now, ev, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { difficulty } from "../../src/event.ts";
+import { now, ev, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("claiming", () => {
   it("starts unclaimed: reads work, writes are refused, management needs a claim", async () => {

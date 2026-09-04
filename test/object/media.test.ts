@@ -5,9 +5,9 @@ import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "../src/negentropy.ts";
-import { ev, rpc } from "./helpers/relay.ts";
-import { upload } from "./helpers/media.ts";
+import { bytesToHex } from "../../src/negentropy.ts";
+import { ev, rpc } from "../helpers/relay.ts";
+import { upload } from "../helpers/media.ts";
 
 // nip98 signs a token by hand so the payload tag can be the file hash, as
 // NIP-96 wants, rather than the hash of a JSON body.

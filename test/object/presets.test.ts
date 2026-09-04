@@ -2,8 +2,8 @@
 // own lists landing whatever the kind rules say.
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { PRESETS } from "../src/presets.ts";
-import { ev, rpc, post } from "./helpers/relay.ts";
+import { PRESETS } from "../../src/presets.ts";
+import { ev, rpc, post } from "../helpers/relay.ts";
 
 describe("presets", () => {
   it("each preset sets writes, reads, directory, kind rules and retention as its bundle says", async () => {

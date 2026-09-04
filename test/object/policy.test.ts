@@ -3,8 +3,8 @@
 // blocks that travel with the exported configuration.
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { ev, rpc, info } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import { ev, rpc, info } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("message size", () => {
   it("is the owner's rule, clamped, and NIP-11 says so", async () => {

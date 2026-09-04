@@ -5,11 +5,11 @@ import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-import type { Relay } from "../src/relay.ts";
-import { ADJECTIVES, ANIMALS } from "../src/names.ts";
-import { now, ev, rpc, info } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
-import { upload } from "./helpers/media.ts";
+import type { Relay } from "../../src/relay.ts";
+import { ADJECTIVES, ANIMALS } from "../../src/names.ts";
+import { now, ev, rpc, info } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
+import { upload } from "../helpers/media.ts";
 
 const APEX = "http://bind.ws";
 

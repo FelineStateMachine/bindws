@@ -4,7 +4,7 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, type Event } from "nostr-tools/pure";
-import { now, ev, pk, rpc } from "./helpers/relay.ts";
+import { now, ev, pk, rpc } from "../helpers/relay.ts";
 
 async function publish(host: string, e: Event): Promise<{ ok: boolean; msg: string }> {
   const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });

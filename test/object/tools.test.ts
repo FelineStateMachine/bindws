@@ -4,10 +4,10 @@ import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { unwrapEvent } from "nostr-tools/nip59";
 import { sha256 } from "@noble/hashes/sha2.js";
-import type { Relay } from "../src/relay.ts";
-import { bytesToHex } from "../src/negentropy.ts";
-import { now, ev, rpc, drive } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { bytesToHex } from "../../src/negentropy.ts";
+import { now, ev, rpc, drive } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 // signedPut sends a raw body with a NIP-98 token whose payload tag is the body's hash.
 async function signedPut(host: string, path: string, sk: Uint8Array | null, body: string) {

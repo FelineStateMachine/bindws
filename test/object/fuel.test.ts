@@ -2,10 +2,9 @@ import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-import type { Relay } from "../src/relay.ts";
-import { bolt11Msats } from "../src/fuel.ts";
-import { now, ev, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { now, ev, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 const SERVICE = "ab".repeat(32);
 const provider = generateSecretKey();
@@ -44,20 +43,6 @@ function zapRequest(payer: Uint8Array, host: string, msats: number) {
 function receipt(req: Event, bolt11: string, signer = provider, p = SERVICE) {
   return ev(signer, 9735, "", [["p", p], ["P", req.pubkey], ["bolt11", bolt11], ["description", JSON.stringify(req)]]);
 }
-
-describe("bolt11 amounts", () => {
-  it("reads the human-readable amount", () => {
-    expect(bolt11Msats("lnbc10n1abc")).toBe(1000);
-    expect(bolt11Msats("lnbc10u1abc")).toBe(1_000_000);
-    expect(bolt11Msats("lnbc2500u1abc")).toBe(250_000_000);
-    expect(bolt11Msats("lnbc1m1abc")).toBe(100_000_000);
-    expect(bolt11Msats("lnbc1abc")).toBe(0);
-    expect(bolt11Msats("lnbc20p1abc")).toBe(2);
-    expect(bolt11Msats("lnbc25p1abc")).toBe(0); // sub-msat precision is invalid
-    expect(bolt11Msats("lntb500n1abc")).toBe(50_000);
-    expect(bolt11Msats("nonsense")).toBe(0);
-  });
-});
 
 describe("fuel", () => {
   it("issues invoices, credits valid receipts once, ignores forgeries, and lifts the out-of-fuel restriction", async () => {

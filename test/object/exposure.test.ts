@@ -9,11 +9,11 @@ import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "../src/negentropy.ts";
-import { VIEWS } from "../src/views.ts";
-import { ev, pk, nip98, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
-import { blossomToken } from "./helpers/media.ts";
+import { bytesToHex } from "../../src/negentropy.ts";
+import { VIEWS } from "../../src/views.ts";
+import { ev, pk, nip98, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
+import { blossomToken } from "../helpers/media.ts";
 
 interface Fixture {
   host: string;

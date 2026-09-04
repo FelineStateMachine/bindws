@@ -4,9 +4,9 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { now, ev, pk, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
-import { upload } from "./helpers/media.ts";
+import { now, ev, pk, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
+import { upload } from "../helpers/media.ts";
 
 describe("guests", () => {
   it("lets a stranger through a members-only rule for open kinds and for replies to members", async () => {

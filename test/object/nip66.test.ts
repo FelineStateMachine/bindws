@@ -5,7 +5,7 @@ import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-import { rpc, info } from "./helpers/relay.ts";
+import { rpc, info } from "../helpers/relay.ts";
 
 // query reads through the HTTP bridge as the owner, so the read rule never gets in the way.
 async function query(host: string, sk: Uint8Array, filter: unknown): Promise<Event[]> {

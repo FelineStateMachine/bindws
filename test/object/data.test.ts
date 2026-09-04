@@ -2,10 +2,10 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import type { Relay } from "../src/relay.ts";
-import { writeDump } from "../src/dumps.ts";
-import { now, ev, pk, rpc, get, post } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { writeDump } from "../../src/dumps.ts";
+import { now, ev, pk, rpc, get, post } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("dumps", () => {
   it("writes a JSONL of every event to R2, lists it, serves it to a signature, rotates and counts as media", async () => {

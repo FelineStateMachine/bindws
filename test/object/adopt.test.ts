@@ -6,10 +6,10 @@ import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 import { sha256 } from "@noble/hashes/sha2.js";
-import type { Relay } from "../src/relay.ts";
-import { bytesToHex } from "../src/negentropy.ts";
-import { now, ev, rpc, post } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { bytesToHex } from "../../src/negentropy.ts";
+import { now, ev, rpc, post } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("HTTP bridge", () => {
   it("accepts events, answers queries and counts with NIP-98, applying the same gates", async () => {

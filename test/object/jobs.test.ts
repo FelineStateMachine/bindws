@@ -4,10 +4,10 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, type Event } from "nostr-tools/pure";
-import type { Relay } from "../src/relay.ts";
-import type { Job } from "../src/jobs.ts";
-import { now, ev, pk, rpc, drive } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import type { Job } from "../../src/jobs.ts";
+import { now, ev, pk, rpc, drive } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 // relay claims a name and posts the given events to it.
 async function relay(host: string, owner: Uint8Array, events: Event[] = []) {

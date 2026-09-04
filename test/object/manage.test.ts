@@ -4,8 +4,8 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { ev, pk, sleep, rpc, post } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import { ev, pk, sleep, rpc, post } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("listeventsneedingmoderation", () => {
   it("lists open reports by reported thing, deduplicated, for owner and moderator only", async () => {

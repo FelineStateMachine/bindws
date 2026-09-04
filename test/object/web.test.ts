@@ -4,9 +4,9 @@ import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { unwrapEvent } from "nostr-tools/nip59";
 import * as nip19 from "nostr-tools/nip19";
-import type { Relay } from "../src/relay.ts";
-import { now, ev, rpc, info } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { now, ev, rpc, info } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 const get = async (host: string, path: string) => {
   const r = await SELF.fetch(`http://${host}${path}`);

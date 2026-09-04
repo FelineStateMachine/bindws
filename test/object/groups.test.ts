@@ -4,8 +4,8 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { ev, tagsOf, rpc, info } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import { ev, tagsOf, rpc, info } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 const has = (e: Event, name: string) => e.tags.some((t) => t[0] === name);
 

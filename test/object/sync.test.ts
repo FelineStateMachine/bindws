@@ -5,10 +5,10 @@ import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, type Event } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
-import type { Relay } from "../src/relay.ts";
-import { Negentropy, bytesToHex, hexToBytes, type SyncItem } from "../src/negentropy.ts";
-import { now, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { Negentropy, bytesToHex, hexToBytes, type SyncItem } from "../../src/negentropy.ts";
+import { now, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 const note = (sk: Uint8Array, content: string, created_at: number) => finalizeEvent({ kind: 1, content, tags: [], created_at }, sk);
 const item = (e: Event): SyncItem => ({ timestamp: e.created_at, id: hexToBytes(e.id) });

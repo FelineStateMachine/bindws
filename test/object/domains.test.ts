@@ -4,9 +4,9 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import type { Relay } from "../src/relay.ts";
-import { Hostnames, checkHostname, MAX_CUSTOM_HOSTS } from "../src/domains.ts";
-import { rpc, info } from "./helpers/relay.ts";
+import type { Relay } from "../../src/relay.ts";
+import { Hostnames, checkHostname, MAX_CUSTOM_HOSTS } from "../../src/domains.ts";
+import { rpc, info } from "../helpers/relay.ts";
 
 // fakeCloudflare answers the custom hostnames API and records every call.
 function fakeCloudflare(opts: { active?: boolean; refuse?: boolean } = {}) {

@@ -4,8 +4,8 @@
 // the members.
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { ev, pk, tagsOf, rpc, info } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import { ev, pk, tagsOf, rpc, info } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("relay profile and roles", () => {
   it("signs a kind 0 for the self key, role definitions, and roles in the roster", async () => {

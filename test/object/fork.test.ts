@@ -3,9 +3,9 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import type { Relay } from "../src/relay.ts";
-import { ADJECTIVES, ANIMALS } from "../src/names.ts";
-import { now, ev, rpc, info, post } from "./helpers/relay.ts";
+import type { Relay } from "../../src/relay.ts";
+import { ADJECTIVES, ANIMALS } from "../../src/names.ts";
+import { now, ev, rpc, info, post } from "../helpers/relay.ts";
 
 // settle drives the new object's alarm until its pull has finished.
 async function settle(name: string) {

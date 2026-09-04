@@ -3,7 +3,7 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { rpc, info } from "./helpers/relay.ts";
+import { rpc, info } from "../helpers/relay.ts";
 
 describe("NIP-11 extras", () => {
   it("publishes the policy links and lists once set, validated", async () => {

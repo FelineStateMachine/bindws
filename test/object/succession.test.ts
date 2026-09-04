@@ -5,9 +5,9 @@ import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { unwrapEvent } from "nostr-tools/nip59";
-import type { Relay } from "../src/relay.ts";
-import { now, pk, rpc, info, alarm } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import type { Relay } from "../../src/relay.ts";
+import { now, pk, rpc, info, alarm } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 const DAY = 86400;
 

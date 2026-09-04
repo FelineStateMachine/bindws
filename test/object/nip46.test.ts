@@ -4,8 +4,8 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
-import { ev, rpc } from "./helpers/relay.ts";
-import { WS } from "./helpers/ws.ts";
+import { ev, rpc } from "../helpers/relay.ts";
+import { WS } from "../helpers/ws.ts";
 
 describe("NIP-46 transport", () => {
   it("carries kind 24133 on an unclaimed relay, live only, never stored", async () => {

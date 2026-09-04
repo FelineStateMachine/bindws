@@ -4,9 +4,9 @@ import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "../src/negentropy.ts";
-import { rpc } from "./helpers/relay.ts";
-import { blossomToken, upload } from "./helpers/media.ts";
+import { bytesToHex } from "../../src/negentropy.ts";
+import { rpc } from "../helpers/relay.ts";
+import { blossomToken, upload } from "../helpers/media.ts";
 
 async function head(host: string, headers: Record<string, string>) {
   const resp = await SELF.fetch(`http://${host}/upload`, { method: "HEAD", headers });
