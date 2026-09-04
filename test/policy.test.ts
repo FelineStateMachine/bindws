@@ -1,70 +1,10 @@
 // Rules an evaluator asked for: the socket message cap per relay, blocked
 // words that reach into tags and take a regular expression, and address
 // blocks that travel with the exported configuration.
-import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-const pk = (sk: Uint8Array) => getPublicKey(sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  closed: { code: number; reason: string } | null = null;
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-    ws.addEventListener("close", (e) => {
-      this.closed = { code: e.code, reason: e.reason };
-    });
-  }
-  static async connect(host: string, ip = "198.51.100.7"): Promise<WS | null> {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket", "cf-connecting-ip": ip } });
-    if (!resp.webSocket) return null;
-    const c = new WS(resp.webSocket);
-    await c.expect("AUTH");
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  raw(s: string) {
-    this.ws.send(s);
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-}
+import { generateSecretKey } from "nostr-tools/pure";
+import { ev, rpc, info } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("message size", () => {
   it("is the owner's rule, clamped, and NIP-11 says so", async () => {
@@ -79,7 +19,7 @@ describe("message size", () => {
     expect((await rpc(host, owner, "setpolicy", { maxMessageKB: 16 })).result.maxMessageKB).toBe(16);
     expect((await info(host)).limitation.max_message_length).toBe(16 * 1024);
 
-    const ws = (await WS.connect(host))!;
+    const ws = await WS.connect(host);
     // A note of 20 KB is over the 16 KB cap: refused with a NOTICE, not stored.
     const big = ev(owner, 1, "x".repeat(20 * 1024));
     ws.raw(JSON.stringify(["EVENT", big]));
@@ -114,7 +54,7 @@ describe("blocked words", () => {
     const kept = (await rpc(host, owner, "setblockedwords", ["Casino", "/free\\s+money/", "/\\bwin\\d{3,}/"])).result;
     expect(kept).toEqual(["casino", "/free\\s+money/", "/\\bwin\\d{3,}/"]);
 
-    const ws = (await WS.connect(host))!;
+    const ws = await WS.connect(host);
     expect((await ws.ok(ev(guest, 1, "FREE   MONEY here"))).msg).toBe("blocked: content contains a blocked word");
     expect((await ws.ok(ev(guest, 1, "you Win1234 now"))).msg).toBe("blocked: content contains a blocked word");
     expect((await ws.ok(ev(guest, 1, "winner takes all"))).ok).toBe(true);
@@ -152,7 +92,7 @@ describe("address blocks in the configuration", () => {
 
     // The second relay has a stale block of its own and an open socket from the address about to be refused.
     await rpc(b, owner, "blockip", "198.51.100.200", "old");
-    const open = (await WS.connect(b, bad))!;
+    const open = (await WS.tryConnect(b, bad))!;
     expect((await open.ok(ev(owner, 1, "before"))).ok).toBe(true);
     cfg.addresses.push({ ip: "not an address", reason: "x" }, { reason: "no ip" });
     const imported = await rpc(b, owner, "importconfig", cfg);
@@ -161,12 +101,12 @@ describe("address blocks in the configuration", () => {
     expect((await rpc(b, owner, "listblockedips")).result.map((x: { ip: string }) => x.ip).sort()).toEqual(["2001:db8::9", bad]);
     for (let i = 0; i < 40 && !open.closed; i++) await new Promise((r) => setTimeout(r, 25));
     expect(open.closed?.code).toBe(4403);
-    expect(await WS.connect(b, bad)).toBeNull();
-    expect(await WS.connect(b, "198.51.100.200")).not.toBeNull();
+    expect(await WS.tryConnect(b, bad)).toBeNull();
+    expect(await WS.tryConnect(b, "198.51.100.200")).not.toBeNull();
     // A document without the list clears the blocks, like the other lists.
     delete cfg.addresses;
     await rpc(b, owner, "importconfig", cfg);
     expect((await rpc(b, owner, "listblockedips")).result).toEqual([]);
-    expect(await WS.connect(b, bad)).not.toBeNull();
+    expect(await WS.tryConnect(b, bad)).not.toBeNull();
   });
 });

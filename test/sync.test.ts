@@ -1,63 +1,17 @@
 // NIP-77 across a wake: the filter of an open sync rides on the socket's
 // attachment, so a session whose Negentropy object left with the object's
 // memory carries on from the store instead of ending with closed:.
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Relay } from "../src/relay.ts";
 import { Negentropy, bytesToHex, hexToBytes, type SyncItem } from "../src/negentropy.ts";
+import { now, rpc } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, content: string, created_at: number) => finalizeEvent({ kind: 1, content, tags: [], created_at }, sk);
+const note = (sk: Uint8Array, content: string, created_at: number) => finalizeEvent({ kind: 1, content, tags: [], created_at }, sk);
 const item = (e: Event): SyncItem => ({ timestamp: e.created_at, id: hexToBytes(e.id) });
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string): Promise<WS> {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    await c.expect("AUTH");
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-}
 
 // wake empties the relay's in-memory sync sessions, which is what a
 // hibernation does to them; the sockets and their attachments stay.
@@ -74,9 +28,9 @@ async function seed(name: string) {
   await rpc(host, owner, "claim");
   const c = await WS.connect(host);
   const t = now() - 100;
-  const notes = [ev(author, "one", t), ev(author, "two", t + 1), ev(author, "three", t + 2)];
+  const notes = [note(author, "one", t), note(author, "two", t + 1), note(author, "three", t + 2)];
   for (const n of notes) expect((await c.ok(n)).ok).toBe(true);
-  const stray = ev(author, "stray", t + 3);
+  const stray = note(author, "stray", t + 3);
   const mine = [notes[0], notes[1], stray];
   return { host, owner, c, notes, stray, mine };
 }

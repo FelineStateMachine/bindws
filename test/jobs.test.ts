@@ -1,76 +1,13 @@
 // Jobs: owner backfill from the relays in a kind 10002, rebroadcast to
 // other relays with a cursor, standing jobs on an interval, caps and
 // removal. Relays on this host are dialled object to object.
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, type Event } from "nostr-tools/pure";
 import type { Relay } from "../src/relay.ts";
 import type { Job } from "../src/jobs.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-const pk = (sk: Uint8Array) => getPublicKey(sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    await c.expect("AUTH");
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return events;
-      } else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
+import { now, ev, pk, rpc, drive } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 // relay claims a name and posts the given events to it.
 async function relay(host: string, owner: Uint8Array, events: Event[] = []) {
@@ -78,20 +15,6 @@ async function relay(host: string, owner: Uint8Array, events: Event[] = []) {
   const c = await WS.connect(host);
   for (const e of events) expect((await c.ok(e)).ok, e.id).toBe(true);
   return c;
-}
-
-const due = (j: Job) => j.running || (j.nextRun > 0 && j.nextRun <= now());
-
-// drive fires the alarm until no job is running or due, and returns the list.
-async function drive(host: string, owner: Uint8Array): Promise<Job[]> {
-  const stub = env.RELAY.getByName(host.split(".")[0]);
-  for (let i = 0; i < 80; i++) {
-    await runInDurableObject(stub, async (r: Relay) => r.alarm());
-    const jobs = (await rpc(host, owner, "listjobs")).result as Job[];
-    if (!jobs.some(due)) return jobs;
-    await new Promise((r) => setTimeout(r, 25));
-  }
-  throw new Error("jobs did not settle");
 }
 
 describe("owner backfill", () => {

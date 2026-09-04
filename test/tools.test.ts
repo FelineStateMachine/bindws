@@ -1,24 +1,13 @@
 // Console search, importing a file, NIP-29 pins, and the weekly digest.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { unwrapEvent } from "nostr-tools/nip59";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Relay } from "../src/relay.ts";
 import { bytesToHex } from "../src/negentropy.ts";
-import type { Job } from "../src/jobs.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
+import { now, ev, rpc, drive } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 // signedPut sends a raw body with a NIP-98 token whose payload tag is the body's hash.
 async function signedPut(host: string, path: string, sk: Uint8Array | null, body: string) {
@@ -30,78 +19,6 @@ async function signedPut(host: string, path: string, sk: Uint8Array | null, body
   }
   const resp = await SELF.fetch(url, { method: "PUT", headers, body });
   return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    const m = await c.expect("AUTH");
-    c.challenge = m[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const got: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return got;
-      }
-      if (m[0] === "EVENT" && m[1] === id) got.push(m[2]);
-      else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
-
-// drive fires the alarm until no job is running or due.
-async function drive(host: string, owner: Uint8Array): Promise<Job[]> {
-  const stub = env.RELAY.getByName(host.split(".")[0]);
-  for (let i = 0; i < 80; i++) {
-    await runInDurableObject(stub, async (r: Relay) => r.alarm());
-    const jobs = (await rpc(host, owner, "listjobs")).result as Job[];
-    if (!jobs.some((j) => j.running || (j.nextRun > 0 && j.nextRun <= now()))) return jobs;
-    await new Promise((r) => setTimeout(r, 25));
-  }
-  throw new Error("jobs did not settle");
 }
 
 describe("search in the console", () => {

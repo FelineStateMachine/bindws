@@ -2,84 +2,10 @@
 // in the roster, the NIP-43 join and leave requests, and the promise that
 // the roster and the NIP-29 group never disagree, whichever path changed
 // the members.
-import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-const pk = (sk: Uint8Array) => getPublicKey(sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    c.challenge = (await c.expect("AUTH"))[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return events;
-      } else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
-
-const tagsOf = (e: Event, name: string) => e.tags.filter((t) => t[0] === name);
+import { generateSecretKey } from "nostr-tools/pure";
+import { ev, pk, tagsOf, rpc, info } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("relay profile and roles", () => {
   it("signs a kind 0 for the self key, role definitions, and roles in the roster", async () => {

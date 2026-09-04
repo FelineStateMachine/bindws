@@ -6,17 +6,8 @@ import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nost
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../src/relay.ts";
 import { KIND_PRESENCE, KIND_VIEW, viewD } from "../src/views.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
+import { now, ev, tagsOf, rpc, info, alarm } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 async function view(host: string, name: string, sk: Uint8Array | null = null) {
   const url = `http://${host}/view/${name}`;
@@ -25,77 +16,6 @@ async function view(host: string, name: string, sk: Uint8Array | null = null) {
   const resp = await SELF.fetch(url, { headers });
   return { status: resp.status, body: (await resp.json()) as any };
 }
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  challenge = "";
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    const m = await c.expect("AUTH");
-    c.challenge = m[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(ms = 0): Promise<any[] | null> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => {
-      this.waiters.push(res);
-      if (ms) setTimeout(() => {
-        const i = this.waiters.indexOf(res);
-        if (i >= 0) { this.waiters.splice(i, 1); res(null); }
-      }, ms);
-    });
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m![0], JSON.stringify(m)).toBe(type);
-    return m!;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (!m) throw new Error("no answer");
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return events;
-      } else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
-
-const alarm = (name: string) => runInDurableObject(env.RELAY.getByName(name), async (r: Relay) => r.alarm());
-const tagsOf = (e: Event, name: string) => e.tags.filter((t) => t[0] === name);
 
 // A relay with an owner, a member with a profile and a relay list, a
 // calendar event with an RSVP, two articles and a zap receipt.
@@ -221,14 +141,14 @@ describe("views", () => {
     // Seeding signed alice in, which broadcast once; start the throttle over.
     await runInDurableObject(env.RELAY.getByName("views-presence"), async (r: Relay) => { (r as unknown as { presenceAt: number }).presenceAt = 0; });
     await b.auth(bob, s.host);
-    const first = await watcher.recv(2000);
+    const first = await watcher.recvOr(2000);
     expect(first && first[0]).toBe("EVENT");
     const pres = first![2] as Event;
     expect(pres.kind).toBe(KIND_PRESENCE);
     expect(tagsOf(pres, "p").some((t) => t[1] === getPublicKey(bob) && t[2] === "online")).toBe(true);
     // A write inside the throttle window waits.
     expect((await b.ok(ev(bob, 1, "hi", [], now()))).ok).toBe(true);
-    expect(await watcher.recv(400)).toBeNull();
+    expect(await watcher.recvOr(400)).toBeNull();
     const live = await view(s.host, "presence");
     expect(live.status).toBe(200);
     expect(tagsOf(live.body, "p").some((t) => t[1] === getPublicKey(bob) && t[2] === "online")).toBe(true);

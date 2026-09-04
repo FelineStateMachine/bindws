@@ -8,102 +8,8 @@ import { getToken } from "nostr-tools/nip98";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Relay } from "../src/relay.ts";
 import { bytesToHex } from "../src/negentropy.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-// post signs a NIP-98 request to any path with a raw JSON body.
-async function post(host: string, sk: Uint8Array | null, path: string, body: unknown) {
-  const url = `http://${host}${path}`;
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (sk) headers.authorization = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, body as Record<string, unknown>);
-  const resp = await SELF.fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  const text = await resp.text();
-  return { status: resp.status, body: text ? JSON.parse(text) : null };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  closed: { code: number; reason: string } | null = null;
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-    ws.addEventListener("close", (e) => {
-      this.closed = { code: e.code, reason: e.reason };
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    c.challenge = (await c.expect("AUTH"))[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  // live opens a subscription that stays open, draining stored results first.
-  async live(filter: unknown, id: string) {
-    this.send("REQ", id, filter);
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EOSE" && m[1] === id) return;
-      if (m[0] !== "EVENT") throw new Error(JSON.stringify(m));
-    }
-  }
-
-  private n = 0;
-  // req is a one-shot query: unique id, closed after EOSE so it never leaks
-  // live pushes into a later query.
-  async req(filter: unknown, id = "q" + ++this.n) {
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return { events, closed: "" };
-      } else if (m[0] === "CLOSED" && m[1] === id) return { events, closed: m[2] as string };
-      else if (m[0] === "EVENT" || m[0] === "CLOSED") this.queue.push(m);
-      else throw new Error(JSON.stringify(m));
-    }
-  }
-}
+import { now, ev, rpc, post } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("HTTP bridge", () => {
   it("accepts events, answers queries and counts with NIP-98, applying the same gates", async () => {
@@ -133,7 +39,7 @@ describe("HTTP bridge", () => {
 
     // A subscriber on the socket sees bridge writes live.
     const c = await WS.connect(host);
-    await c.live({ kinds: [1] }, "live");
+    await c.open("live", { kinds: [1] });
     const e2 = ev(owner, 1, "pushed");
     await post(host, owner, "/events", e2);
     expect((await c.expect("EVENT"))[2].id).toBe(e2.id);
@@ -242,23 +148,23 @@ describe("relay identity and NIP-43 roster", () => {
     c.send("REQ", "live", { kinds: [8000, 8001] });
     await c.expect("EOSE");
     let r = await c.req({ kinds: [13534] });
-    expect(r.events.length).toBe(1);
-    expect(r.events[0].pubkey).toBe(info.self);
-    expect(r.events[0].tags).toEqual([["-"], ["member", getPublicKey(owner), "owner"]]);
+    expect(r.length).toBe(1);
+    expect(r[0].pubkey).toBe(info.self);
+    expect(r[0].tags).toEqual([["-"], ["member", getPublicKey(owner), "owner"]]);
 
     await rpc(host, owner, "allowpubkey", getPublicKey(bob), "friend");
     const added = await c.expect("EVENT");
     expect(added[2].kind).toBe(8000);
     expect(added[2].tags).toContainEqual(["p", getPublicKey(bob)]);
     r = await c.req({ kinds: [13534] });
-    expect(r.events[0].tags).toContainEqual(["member", getPublicKey(bob)]);
+    expect(r[0].tags).toContainEqual(["member", getPublicKey(bob)]);
     await rpc(host, owner, "unrulepubkey", getPublicKey(bob));
     expect((await c.expect("EVENT"))[2].kind).toBe(8001);
     // Nobody can forge relay-signed kinds: a client-signed 13534 is just another replaceable event by another author.
     const forged = await c.ok(ev(bob, 13534, "", [["member", getPublicKey(bob), "owner"]]));
     expect(forged.ok).toBe(true);
     r = await c.req({ kinds: [13534], authors: [info.self] });
-    expect(r.events.map((x) => [x.pubkey, x.tags]), JSON.stringify(r.events)).toEqual([[info.self, [["-"], ["member", getPublicKey(owner), "owner"]]]]);
+    expect(r.map((x) => [x.pubkey, x.tags]), JSON.stringify(r)).toEqual([[info.self, [["-"], ["member", getPublicKey(owner), "owner"]]]]);
   });
 });
 
@@ -272,12 +178,12 @@ describe("members-only reads and eviction", () => {
     await rpc(host, owner, "allowpubkey", getPublicKey(member));
     await rpc(host, owner, "setpolicy", { reads: "members" });
     const s = await WS.connect(host);
-    expect((await s.req({ kinds: [1] })).closed).toMatch(/^auth-required:/);
+    expect((await s.query({ kinds: [1] })).closed).toMatch(/^auth-required:/);
     await s.auth(stranger, host);
-    expect((await s.req({ kinds: [1] })).closed).toMatch(/^restricted: .*members/);
+    expect((await s.query({ kinds: [1] })).closed).toMatch(/^restricted: .*members/);
     const m = await WS.connect(host);
     await m.auth(member, host);
-    expect((await m.req({ kinds: [1] })).closed).toBe("");
+    expect((await m.query({ kinds: [1] })).closed).toBe("");
     m.send("REQ", "live", { kinds: [1] });
     await m.expect("EOSE");
 
@@ -309,9 +215,9 @@ describe("rate limits", () => {
     const third = await c.ok(ev(owner, 1, "c"));
     expect(third.ok).toBe(false);
     expect(third.msg).toMatch(/^rate-limited: quota exceeded; retry in \d+s$/);
-    await c.req({ kinds: [1] }, "r1");
-    await c.req({ kinds: [1] }, "r2");
-    expect((await c.req({ kinds: [1] }, "r3")).closed).toMatch(/^rate-limited:/);
+    await c.open("r1", { kinds: [1] });
+    await c.open("r2", { kinds: [1] });
+    expect((await c.open("r3", { kinds: [1] })).closed).toMatch(/^rate-limited:/);
   });
 });
 
@@ -327,12 +233,12 @@ describe("moderation queue", () => {
     await c.ok(bad);
     const report = ev(reporter, 1984, "please look", [["e", bad.id, "spam"], ["p", getPublicKey(troll)]]);
     expect((await c.ok(report)).msg).toBe("info: report received");
-    expect((await c.req({ kinds: [1984] })).events).toEqual([]); // never served
+    expect(await c.req({ kinds: [1984] })).toEqual([]); // never served
     let q = (await rpc(host, owner, "listreports")).result;
     expect(q.length).toBe(1);
     expect(q[0]).toMatchObject({ id: report.id, target_event: bad.id, target_pubkey: getPublicKey(troll), type: "spam", status: "open" });
     expect((await rpc(host, owner, "resolvereport", report.id, "ban")).result).toBe(true);
-    expect((await c.req({ ids: [bad.id] })).events).toEqual([]);
+    expect(await c.req({ ids: [bad.id] })).toEqual([]);
     expect((await c.ok(ev(troll, 1, "back"))).msg).toMatch(/^blocked:/);
     expect((await rpc(host, owner, "listreports")).result).toEqual([]);
     expect((await rpc(host, owner, "listreports", "resolved")).result[0].action).toBe("ban");
@@ -420,7 +326,7 @@ describe("teardown", () => {
     await rpc(host, owner, "setmember", getPublicKey(member), { name: "bob" });
     const c = await WS.connect(host);
     await c.ok(ev(owner, 1, "to be deleted"));
-    await c.live({ kinds: [1] }, "live");
+    await c.open("live", { kinds: [1] });
     const body = new TextEncoder().encode("bytes");
     const sha = bytesToHex(sha256(body));
     const token = "Nostr " + btoa(JSON.stringify(ev(owner, 24242, "upload", [["t", "upload"], ["x", sha], ["expiration", String(now() + 300)]])));
@@ -440,7 +346,7 @@ describe("teardown", () => {
     expect((await SELF.fetch(`http://${host}/${sha}`)).status).toBe(404);
     expect((await env.MEDIA.list({ prefix: "gone/" })).objects).toEqual([]);
     const fresh = await WS.connect(host);
-    expect((await fresh.req({ kinds: [1] })).events).toEqual([]);
+    expect(await fresh.req({ kinds: [1] })).toEqual([]);
     expect((await fresh.ok(ev(owner, 1, "again"))).msg).toMatch(/unclaimed/);
     const doc: any = await (await SELF.fetch(`http://${host}/.well-known/nostr.json?name=bob`)).json();
     expect(doc.names).toEqual({});
@@ -485,7 +391,7 @@ describe("configuration export and import", () => {
     const rc = await WS.connect(b);
     await rc.auth(ownerB, b);
     const r = await rc.req({ kinds: [13534] });
-    expect(r.events[0].tags).toContainEqual(["member", m1]);
+    expect(r[0].tags).toContainEqual(["member", m1]);
   });
 });
 

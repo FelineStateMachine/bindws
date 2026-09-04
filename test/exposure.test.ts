@@ -6,100 +6,14 @@
 // door honest: add a path here when you add one to the relay.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "../src/negentropy.ts";
 import { VIEWS } from "../src/views.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = []) => finalizeEvent({ kind, content, tags, created_at: now() }, sk);
-const pk = (sk: Uint8Array) => getPublicKey(sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-// nip98 signs a GET or a body-less request for the exact URL.
-const nip98 = (sk: Uint8Array, url: string, method = "GET") => getToken(url, method, (e) => finalizeEvent(e, sk), true);
-// nip98Body signs a request with a body, for the bridge.
-const nip98Body = (sk: Uint8Array, url: string, method: string, body: unknown) => getToken(url, method, (e) => finalizeEvent(e, sk), true, body as object);
-// blossom mints a kind 24242 token for an action, optionally naming a hash.
-const blossom = (sk: Uint8Array, action: string, sha?: string) =>
-  "Nostr " + btoa(JSON.stringify(ev(sk, 24242, action, [["t", action], ...(sha ? [["x", sha]] : []), ["expiration", String(now() + 300)]])));
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  frames: string[] = []; // every frame received, for the leak check
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      this.frames.push(e.data as string);
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    c.challenge = (await c.expect("AUTH"))[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  // open subscribes and returns the events plus "" on EOSE, or the CLOSED reason.
-  async open(id: string, ...filters: unknown[]) {
-    this.send("REQ", id, ...filters);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) return { events, closed: "" };
-      else if (m[0] === "CLOSED" && m[1] === id) return { events, closed: m[2] as string };
-      else throw new Error(JSON.stringify(m));
-    }
-  }
-  async count(id: string, filter: unknown) {
-    this.send("COUNT", id, filter);
-    const m = await this.recv();
-    return m[0] === "COUNT" ? { count: m[2].count as number, closed: "" } : { count: -1, closed: m[2] as string };
-  }
-  async sync(id: string, filter: unknown) {
-    this.send("NEG-OPEN", id, filter, "61");
-    const m = await this.recv();
-    return m[0] === "NEG-ERR" ? (m[2] as string) : "";
-  }
-}
+import { ev, pk, nip98, rpc } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
+import { blossomToken } from "./helpers/media.ts";
 
 interface Fixture {
   host: string;
@@ -119,7 +33,7 @@ async function seed(host: string): Promise<Fixture> {
   expect((await rpc(host, owner, "setmember", pk(eve), { name: "evelynq7" })).status).toBe(200);
   const body = new TextEncoder().encode("eve's quarterly numbers");
   const sha = bytesToHex(sha256(body));
-  const up = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossom(eve, "upload", sha), "content-type": "text/plain" }, body });
+  const up = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossomToken(eve, "upload", sha), "content-type": "text/plain" }, body });
   expect([200, 201]).toContain(up.status);
   const c = await WS.connect(host);
   const note = ev(eve, 1, "the numbers are in");
@@ -193,7 +107,7 @@ describe("the read rule at every door", () => {
     // payload is ciphertext, and NIP-46 clients and signers never AUTH.
     const c = await WS.connect(f.host);
     expect((await c.open("r", { authors: [pk(f.eve)] })).closed).toMatch(/^auth-required/);
-    expect((await c.count("n", { authors: [pk(f.eve)] })).closed).toMatch(/^auth-required/);
+    expect((await c.count({ authors: [pk(f.eve)] }, "n")).closed).toMatch(/^auth-required/);
     expect(await c.sync("s", { authors: [pk(f.eve)] })).toMatch(/^auth-required/);
     expect((await c.open("nc", { kinds: [24133] })).closed).toBe("");
     const sender = await WS.connect(f.host);
@@ -213,7 +127,7 @@ describe("the read rule at every door", () => {
       expect(leaks(await resp.text(), f.secrets), `${method} ${d.path} -> ${resp.status}`).toEqual([]);
       if (d.gated) expect(resp.status, d.path).toBe(403);
       if (d.blossom) {
-        const withToken = await SELF.fetch(url, { method, headers: { authorization: blossom(f.stranger, d.blossom, d.blossom === "get" ? f.sha : undefined) } });
+        const withToken = await SELF.fetch(url, { method, headers: { authorization: blossomToken(f.stranger, d.blossom, d.blossom === "get" ? f.sha : undefined) } });
         expect(withToken.status, `${d.path} with a Blossom ${d.blossom} token`).toBe(403);
         expect(leaks(await withToken.text(), f.secrets)).toEqual([]);
       }
@@ -221,14 +135,14 @@ describe("the read rule at every door", () => {
     for (const path of ["/query", "/count"]) {
       const url = `http://${f.host}${path}`;
       const body = [{ authors: [pk(f.eve)] }];
-      const resp = await SELF.fetch(url, { method: "POST", headers: { authorization: await nip98Body(f.stranger, url, "POST", body) }, body: JSON.stringify(body) });
+      const resp = await SELF.fetch(url, { method: "POST", headers: { authorization: await nip98(f.stranger, url, "POST", body) }, body: JSON.stringify(body) });
       expect(resp.status, path).toBe(403);
       expect(leaks(await resp.text(), f.secrets)).toEqual([]);
     }
     const c = await WS.connect(f.host);
     await c.auth(f.stranger, f.host);
     expect((await c.open("r", { authors: [pk(f.eve)] })).closed).toMatch(/^restricted/);
-    expect((await c.count("n", { authors: [pk(f.eve)] })).closed).toMatch(/^restricted/);
+    expect((await c.count({ authors: [pk(f.eve)] }, "n")).closed).toMatch(/^restricted/);
     expect(await c.sync("s", { authors: [pk(f.eve)] })).toMatch(/^restricted/);
     expect(leaks(c.frames.join("\n"), f.secrets.filter((s) => s !== pk(f.eve)))).toEqual([]);
   });
@@ -241,14 +155,14 @@ describe("the read rule at every door", () => {
     };
     const url = (path: string) => `http://${f.host}${path}`;
     // Her file, with a Blossom get token and with NIP-98.
-    let r = await get(`/${f.sha}`, blossom(f.eve, "get", f.sha));
+    let r = await get(`/${f.sha}`, blossomToken(f.eve, "get", f.sha));
     expect(r.status).toBe(200);
     expect(r.text).toBe("eve's quarterly numbers");
     r = await get(`/${f.sha}`, await nip98(f.eve, url(`/${f.sha}`)));
     expect(r.status).toBe(200);
     // A get token naming another blob does not open this one.
-    expect((await get(`/${f.sha}`, blossom(f.eve, "get", "ab".repeat(32)))).status).toBe(401);
-    r = await get(`/list/${pk(f.eve)}`, blossom(f.eve, "list"));
+    expect((await get(`/${f.sha}`, blossomToken(f.eve, "get", "ab".repeat(32)))).status).toBe(401);
+    r = await get(`/list/${pk(f.eve)}`, blossomToken(f.eve, "list"));
     expect(r.status).toBe(200);
     expect(r.text).toContain(f.sha);
     r = await get(`/.well-known/nostr.json`, await nip98(f.eve, url(`/.well-known/nostr.json`)));
@@ -296,7 +210,7 @@ describe("the read rule at every door", () => {
     await rpc(host, owner, "claim");
     const body = new TextEncoder().encode("a public file");
     const sha = bytesToHex(sha256(body));
-    await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossom(owner, "upload", sha), "content-type": "text/plain" }, body });
+    await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossomToken(owner, "upload", sha), "content-type": "text/plain" }, body });
     // Anyone: a public link by hash, cacheable.
     let resp = await SELF.fetch(`http://${host}/${sha}`);
     expect(resp.status).toBe(200);
@@ -305,12 +219,12 @@ describe("the read rule at every door", () => {
     // Signed in: any valid signature, member or not; no signature is 401; not for shared caches.
     await rpc(host, owner, "setpolicy", { reads: "auth" });
     expect((await SELF.fetch(`http://${host}/${sha}`)).status).toBe(401);
-    resp = await SELF.fetch(`http://${host}/${sha}`, { headers: { authorization: blossom(stranger, "get", sha) } });
+    resp = await SELF.fetch(`http://${host}/${sha}`, { headers: { authorization: blossomToken(stranger, "get", sha) } });
     expect(resp.status).toBe(200);
     expect(resp.headers.get("cache-control")).toContain("no-store");
-    expect((await SELF.fetch(`http://${host}/list/${pk(owner)}`, { headers: { authorization: blossom(stranger, "list") } })).status).toBe(200);
+    expect((await SELF.fetch(`http://${host}/list/${pk(owner)}`, { headers: { authorization: blossomToken(stranger, "list") } })).status).toBe(200);
     // A token for the wrong action, or a malformed one, is refused with the reason rather than served as a stranger.
-    resp = await SELF.fetch(`http://${host}/${sha}`, { headers: { authorization: blossom(stranger, "upload", sha) } });
+    resp = await SELF.fetch(`http://${host}/${sha}`, { headers: { authorization: blossomToken(stranger, "upload", sha) } });
     expect(resp.status).toBe(401);
     expect(resp.headers.get("x-reason")).toMatch(/not for get/);
     expect((await SELF.fetch(`http://${host}/${sha}`, { headers: { authorization: "Nostr nonsense" } })).status).toBe(401);

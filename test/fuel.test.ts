@@ -4,12 +4,12 @@ import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nost
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../src/relay.ts";
 import { bolt11Msats } from "../src/fuel.ts";
+import { now, ev, rpc } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 const SERVICE = "ab".repeat(32);
 const provider = generateSecretKey();
 const providerPk = getPublicKey(provider);
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
 
 // A fake lightning provider, injected into the relay instance: the LNURL
 // document names our provider key, and the callback returns a fixed invoice.
@@ -35,37 +35,6 @@ async function claim(host: string, sk: Uint8Array) {
   const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
   const r = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
   expect(r.status).toBe(200);
-}
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-async function ws(host: string) {
-  const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-  const sock = resp.webSocket!;
-  sock.accept();
-  const queue: any[][] = [];
-  const waiters: ((m: any[]) => void)[] = [];
-  sock.addEventListener("message", (e) => {
-    const m = JSON.parse(e.data as string);
-    const w = waiters.shift();
-    if (w) w(m);
-    else queue.push(m);
-  });
-  const recv = () => (queue.length ? Promise.resolve(queue.shift()!) : new Promise<any[]>((res) => waiters.push(res)));
-  await recv(); // AUTH
-  return {
-    async ok(e: Event) {
-      sock.send(JSON.stringify(["EVENT", e]));
-      const m = await recv();
-      return { ok: m[2] as boolean, msg: m[3] as string };
-    },
-  };
 }
 
 function zapRequest(payer: Uint8Array, host: string, msats: number) {
@@ -111,7 +80,7 @@ describe("fuel", () => {
     status = await (await SELF.fetch(`http://${host}/fuel`)).json();
     expect(status.outOfFuel).toBe(true);
     expect(status.chargedMsats).toBeGreaterThan(0);
-    const c = await ws(host);
+    const c = await WS.connect(host);
     expect((await c.ok(ev(owner, 1, "no fuel"))).msg).toMatch(/^restricted: .*out of fuel/);
     const info: any = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
     expect(info.limitation.payment_required).toBe(true);
@@ -169,7 +138,7 @@ describe("fuel", () => {
     const payload = { method: "setpolicy", params: [{ writes: "owner" }] };
     const token = await getToken(url, "POST", (e) => finalizeEvent(e, owner), true, payload);
     await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-    const c = await ws(host);
+    const c = await WS.connect(host);
     expect((await c.ok(ev(generateSecretKey(), 1, "stranger"))).msg).toMatch(/^restricted:/);
     const req = zapRequest(generateSecretKey(), host, 21_000);
     expect((await c.ok(receipt(req, "lnbc210n1x"))).msg).toBe("fuel: credited 21 sats");
@@ -192,7 +161,7 @@ describe("fuel", () => {
     const host = "fuel-c.bind.ws";
     const owner = generateSecretKey();
     await claim(host, owner);
-    const c = await ws(host);
+    const c = await WS.connect(host);
     for (let i = 0; i < 5; i++) await c.ok(ev(owner, 1, "metered " + i));
     const stub = env.RELAY.getByName("fuel-c");
     await runInDurableObject(stub, async (r: Relay) => {

@@ -1,88 +1,11 @@
 // Dumps to R2, per-member keep-for and caps, and members inviting members.
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey } from "nostr-tools/pure";
 import type { Relay } from "../src/relay.ts";
 import { writeDump } from "../src/dumps.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-const pk = (sk: Uint8Array) => getPublicKey(sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-async function get(host: string, sk: Uint8Array | null, path: string) {
-  const url = `http://${host}${path}`;
-  const headers: Record<string, string> = {};
-  if (sk) headers.authorization = await getToken(url, "GET", (e) => finalizeEvent(e, sk), true);
-  return SELF.fetch(url, { headers });
-}
-
-async function post(host: string, sk: Uint8Array, path: string, body: unknown) {
-  const url = `http://${host}${path}`;
-  const headers: Record<string, string> = { "content-type": "application/json", authorization: await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, body as Record<string, unknown>) };
-  const resp = await SELF.fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    await c.expect("AUTH");
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return events;
-      } else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
+import { now, ev, pk, rpc, get, post } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("dumps", () => {
   it("writes a JSONL of every event to R2, lists it, serves it to a signature, rotates and counts as media", async () => {
@@ -112,14 +35,14 @@ describe("dumps", () => {
     expect(list[0].url).toBe("/dumps/" + d.name);
 
     // Download needs a signature from someone with the storage action.
-    const signed = await get(host, owner, "/dumps/" + d.name);
+    const signed = await get(host, "/dumps/" + d.name, owner);
     expect(signed.status).toBe(200);
     expect(signed.headers.get("content-disposition")).toContain(d.name);
     expect(await signed.text()).toBe(text);
-    expect((await get(host, null, "/dumps/" + d.name)).status).toBe(401);
-    expect((await get(host, writer, "/dumps/" + d.name)).status).toBe(403);
-    expect((await get(host, owner, "/dumps/nope.jsonl")).status).toBe(400);
-    expect((await get(host, owner, "/dumps/1999-01-01.jsonl")).status).toBe(404);
+    expect((await get(host, "/dumps/" + d.name, null)).status).toBe(401);
+    expect((await get(host, "/dumps/" + d.name, writer)).status).toBe(403);
+    expect((await get(host, "/dumps/nope.jsonl", owner)).status).toBe(400);
+    expect((await get(host, "/dumps/1999-01-01.jsonl", owner)).status).toBe(404);
 
     const stub = env.RELAY.getByName("dumpy");
     await runInDurableObject(stub, async (r: Relay) => {
@@ -224,7 +147,7 @@ describe("members invite members", () => {
 
     // The owner invites A through the HTTP door.
     const inv = (await rpc(host, owner, "createinvite", 86400, 0, "for a")).result;
-    expect((await post(host, a, "/api/invites/claim", { code: inv.code })).status).toBe("joined");
+    expect((await post(host, a, "/api/invites/claim", { code: inv.code })).body.status).toBe("joined");
     let members = (await rpc(host, owner, "listmembers")).result.members;
     expect(members.find((m: any) => m.pubkey === pk(a)).invited_by).toBe(pk(owner));
 

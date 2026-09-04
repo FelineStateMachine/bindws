@@ -2,31 +2,11 @@
 // accepted, BUD-04 copies a blob from a URL, ours or anyone's.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "../src/negentropy.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = []) => finalizeEvent({ kind, content, tags, created_at: now() }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const token = (sk: Uint8Array, sha?: string) =>
-  "Nostr " + btoa(JSON.stringify(ev(sk, 24242, "upload", [["t", "upload"], ...(sha ? [["x", sha]] : []), ["expiration", String(now() + 300)]])));
-
-async function upload(host: string, sk: Uint8Array, text: string) {
-  const body = new TextEncoder().encode(text);
-  const sha = bytesToHex(sha256(body));
-  const resp = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: token(sk, sha), "content-type": "text/plain" }, body });
-  return { status: resp.status, sha, body: await resp.json<any>() };
-}
+import { rpc } from "./helpers/relay.ts";
+import { blossomToken, upload } from "./helpers/media.ts";
 
 async function head(host: string, headers: Record<string, string>) {
   const resp = await SELF.fetch(`http://${host}/upload`, { method: "HEAD", headers });
@@ -34,7 +14,7 @@ async function head(host: string, headers: Record<string, string>) {
 }
 
 async function mirror(host: string, sk: Uint8Array, url: unknown, sha?: string, raw?: string) {
-  const resp = await SELF.fetch(`http://${host}/mirror`, { method: "PUT", headers: { authorization: token(sk, sha), "content-type": "application/json" }, body: raw ?? JSON.stringify({ url }) });
+  const resp = await SELF.fetch(`http://${host}/mirror`, { method: "PUT", headers: { authorization: blossomToken(sk, "upload", sha), "content-type": "application/json" }, body: raw ?? JSON.stringify({ url }) });
   const text = await resp.text();
   return { status: resp.status, body: text ? JSON.parse(text) : null, reason: resp.headers.get("x-reason") ?? "" };
 }
@@ -47,7 +27,7 @@ describe("BUD-06 upload requirements", () => {
     await rpc(host, owner, "claim");
     const bytes = new TextEncoder().encode("a small file");
     const sha = bytesToHex(sha256(bytes));
-    const ok = { "x-sha-256": sha, "x-content-type": "text/plain", "x-content-length": String(bytes.length), authorization: token(owner, sha) };
+    const ok = { "x-sha-256": sha, "x-content-type": "text/plain", "x-content-length": String(bytes.length), authorization: blossomToken(owner, "upload", sha) };
 
     let r = await head(host, ok);
     expect([r.status, r.reason, r.text]).toEqual([200, "", ""]);
@@ -65,11 +45,11 @@ describe("BUD-06 upload requirements", () => {
     r = await head(host, { ...ok, "x-content-length": String(26 * 1024 * 1024) });
     expect(r.status).toBe(413);
     expect(r.reason).toMatch(/25 MB/);
-    r = await head(host, { ...ok, authorization: token(owner, "ab".repeat(32)) });
+    r = await head(host, { ...ok, authorization: blossomToken(owner, "upload", "ab".repeat(32)) });
     expect(r.status).toBe(400);
 
     await rpc(host, owner, "setpolicy", { writes: "owner" });
-    r = await head(host, { ...ok, authorization: token(stranger, sha) });
+    r = await head(host, { ...ok, authorization: blossomToken(stranger, "upload", sha) });
     expect(r.status).toBe(403);
     expect(r.reason).toMatch(/^restricted/);
 
@@ -138,7 +118,7 @@ describe("BUD-04 mirror", () => {
     await rpc(b, bob, "setpolicy", { writes: "open", maxBlobMB: 1 });
     // The origin declares its size, so an oversized blob is refused before any bytes move.
     await rpc(a, alice, "setpolicy", { maxBlobMB: 2 });
-    const big = await SELF.fetch(`http://${a}/upload`, { method: "PUT", headers: { authorization: token(alice), "content-type": "application/octet-stream" }, body: new Uint8Array(1024 * 1024 + 1) });
+    const big = await SELF.fetch(`http://${a}/upload`, { method: "PUT", headers: { authorization: blossomToken(alice, "upload"), "content-type": "application/octet-stream" }, body: new Uint8Array(1024 * 1024 + 1) });
     expect(big.status).toBe(200);
     r = await mirror(b, bob, (await big.json<any>()).url);
     expect(r.status).toBe(413);

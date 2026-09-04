@@ -3,24 +3,15 @@
 // copies one relay into another.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
+import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-import { sha256 } from "@noble/hashes/sha2.js";
 import type { Relay } from "../src/relay.ts";
-import { bytesToHex } from "../src/negentropy.ts";
 import { ADJECTIVES, ANIMALS } from "../src/names.ts";
+import { now, ev, rpc, info } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
+import { upload } from "./helpers/media.ts";
 
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
 const APEX = "http://bind.ws";
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
 
 // Each caller gets its own address so the per-address limit is tested on its own.
 let callers = 0;
@@ -29,68 +20,6 @@ async function lease(sk: Uint8Array | null = null, ip = "10.0.0." + ++callers) {
   if (sk) headers.authorization = await getToken(APEX + "/lease", "POST", (e) => finalizeEvent(e, sk), true);
   const resp = await SELF.fetch(APEX + "/lease", { method: "POST", headers });
   return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    await c.expect("AUTH");
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  private n = 0;
-  async req(filter: unknown) {
-    const id = "q" + ++this.n;
-    this.send("REQ", id, filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT" && m[1] === id) events.push(m[2]);
-      else if (m[0] === "EOSE" && m[1] === id) {
-        this.send("CLOSE", id);
-        return events;
-      } else if (m[0] === "CLOSED" && m[1] === id) throw new Error(m[2]);
-    }
-  }
-}
-
-async function upload(host: string, sk: Uint8Array, text: string) {
-  const body = new TextEncoder().encode(text);
-  const sha = bytesToHex(sha256(body));
-  const token = "Nostr " + btoa(JSON.stringify(ev(sk, 24242, "upload", [["t", "upload"], ["x", sha], ["expiration", String(now() + 300)]])));
-  const resp = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: token, "content-type": "text/plain" }, body });
-  return { status: resp.status, sha };
 }
 
 // pull drives the alarm until the job is done; the runtime may fire it too.

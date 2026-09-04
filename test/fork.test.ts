@@ -1,31 +1,11 @@
 // Fork a name: lease a new name reserved for a key, pull this relay into
 // it, hand over the claim. Built from lease and jobs.
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import type { Relay } from "../src/relay.ts";
 import { ADJECTIVES, ANIMALS } from "../src/names.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-async function post(host: string, sk: Uint8Array, path: string, body: unknown) {
-  const url = `http://${host}${path}`;
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, body as Record<string, unknown>);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: token }, body: JSON.stringify(body) });
-  return { status: resp.status, body: await resp.json<any>() };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
+import { now, ev, rpc, info, post } from "./helpers/relay.ts";
 
 // settle drives the new object's alarm until its pull has finished.
 async function settle(name: string) {

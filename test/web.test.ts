@@ -1,87 +1,17 @@
 // Pages, the feed, and relay-signed notifications.
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { unwrapEvent } from "nostr-tools/nip59";
 import * as nip19 from "nostr-tools/nip19";
 import type { Relay } from "../src/relay.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
+import { now, ev, rpc, info } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 const get = async (host: string, path: string) => {
   const r = await SELF.fetch(`http://${host}${path}`);
   return { status: r.status, type: r.headers.get("content-type") ?? "", text: await r.text() };
 };
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    const m = await c.expect("AUTH");
-    c.challenge = m[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  // recvOr resolves null when nothing arrives within ms.
-  recvOr(ms: number): Promise<any[] | null> {
-    return Promise.race([this.recv(), new Promise<null>((res) => setTimeout(() => res(null), ms))]);
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  async live(filter: unknown, id: string) {
-    this.send("REQ", id, filter);
-    const got: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EOSE" && m[1] === id) return got;
-      if (m[0] === "EVENT") got.push(m[2]);
-      else throw new Error(JSON.stringify(m));
-    }
-  }
-}
 
 describe("pages and feed", () => {
   it("renders notes and articles with open graph tags, hides what must stay hidden", async () => {
@@ -181,13 +111,13 @@ describe("relay-signed notifications", () => {
     expect((await s.ok(ev(stranger, 1984, "spam", [["p", getPublicKey(member), "spam"]]))).ok).toBe(true);
     const o = await WS.connect(host);
     await o.auth(owner, host);
-    expect(await o.live({ kinds: [1059], "#p": [ownerPk] }, "inbox")).toEqual([]);
+    expect((await o.open("inbox", { kinds: [1059], "#p": [ownerPk] })).events).toEqual([]);
 
     const set = await rpc(host, owner, "setpolicy", { notify: { reports: true } });
     expect(set.result.notify).toEqual({ reports: true, fuel: false, jobs: false, succession: false, digest: false });
     const m = await WS.connect(host);
     await m.auth(member, host);
-    expect(await m.live({ kinds: [1059] }, "mine")).toEqual([]);
+    expect((await m.open("mine", { kinds: [1059] })).events).toEqual([]);
 
     expect((await s.ok(ev(stranger, 1984, "still spam", [["p", getPublicKey(member), "spam"]]))).ok).toBe(true);
     const got = await o.expect("EVENT");
@@ -205,7 +135,7 @@ describe("relay-signed notifications", () => {
     // Stored: the owner can fetch it later; nobody else can see it.
     const o2 = await WS.connect(host);
     await o2.auth(owner, host);
-    expect((await o2.live({ kinds: [1059] }, "again")).map((e) => e.id)).toEqual([wrap.id]);
+    expect((await o2.open("again", { kinds: [1059] })).events.map((e) => e.id)).toEqual([wrap.id]);
     const anon = await WS.connect(host);
     anon.send("REQ", "anon", { kinds: [1059] });
     const closed = await anon.expect("CLOSED");
@@ -243,7 +173,7 @@ describe("relay-signed notifications", () => {
     });
     const o = await WS.connect(host);
     await o.auth(owner, host);
-    const [wrap] = await o.live({ kinds: [1059] }, "fuel");
+    const [wrap] = (await o.open("fuel", { kinds: [1059] })).events;
     expect(unwrapEvent(wrap, owner).content).toMatch(/out of fuel/);
   });
 });

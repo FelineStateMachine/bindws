@@ -3,20 +3,11 @@
 // syndromes, and the bytes themselves.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from "nostr-tools/pure";
+import { generateSecretKey, getPublicKey, verifyEvent } from "nostr-tools/pure";
 import { decode } from "nostr-tools/nip19";
-import { getToken } from "nostr-tools/nip98";
 import jsQR from "jsqr";
 import { EC_M, MASKS, dataCodewords, dataOrder, encode, formatBits, gfMul, gfPow, layout, capacity } from "../src/qr.ts";
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-const get = (host: string, path: string) => SELF.fetch(`http://${host}${path}`);
+import { rpc, get } from "./helpers/relay.ts";
 
 // scan rasterizes a module grid and reads it with jsQR, a decoder that
 // shares nothing with the encoder, so it proves a phone can read it.

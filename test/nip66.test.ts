@@ -5,16 +5,7 @@ import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
+import { rpc, info } from "./helpers/relay.ts";
 
 // query reads through the HTTP bridge as the owner, so the read rule never gets in the way.
 async function query(host: string, sk: Uint8Array, filter: unknown): Promise<Event[]> {

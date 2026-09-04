@@ -3,31 +3,11 @@
 // same bucket and table.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "../src/negentropy.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const blossomToken = (sk: Uint8Array, sha: string, action = "upload") =>
-  "Nostr " + btoa(JSON.stringify(ev(sk, 24242, action, [["t", action], ["x", sha], ["expiration", String(now() + 300)]])));
-
-async function upload(host: string, sk: Uint8Array, text: string) {
-  const body = new TextEncoder().encode(text);
-  const sha = bytesToHex(sha256(body));
-  const resp = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossomToken(sk, sha), "content-type": "text/plain" }, body });
-  return { status: resp.status, sha, body: await resp.json<any>() };
-}
+import { ev, rpc } from "./helpers/relay.ts";
+import { upload } from "./helpers/media.ts";
 
 // nip98 signs a token by hand so the payload tag can be the file hash, as
 // NIP-96 wants, rather than the hash of a JSON body.

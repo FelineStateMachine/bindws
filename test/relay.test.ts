@@ -1,87 +1,18 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
+import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../src/relay.ts";
 import { difficulty } from "../src/event.ts";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = [], created_at = now()) => finalizeEvent({ kind, content, tags, created_at }, sk);
-
-// rpc calls the NIP-86 management API as the given key.
-async function rpc(host: string, sk: Uint8Array | null, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const headers: Record<string, string> = { "content-type": "application/nostr+json+rpc" };
-  if (sk) headers.authorization = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  challenge = "";
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    expect(resp.status).toBe(101);
-    const c = new WS(resp.webSocket!);
-    c.challenge = (await c.expect("AUTH"))[1];
-    return c;
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    expect(m[1]).toBe(e.id);
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  async auth(sk: Uint8Array, host: string) {
-    const e = ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]);
-    this.send("AUTH", e);
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  async req(filter: unknown) {
-    this.send("REQ", "q", filter);
-    const events: Event[] = [];
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EVENT") events.push(m[2]);
-      else if (m[0] === "EOSE") return { events, closed: "" };
-      else if (m[0] === "CLOSED") return { events, closed: m[2] as string };
-      else throw new Error(JSON.stringify(m));
-    }
-  }
-}
+import { now, ev, rpc } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("claiming", () => {
   it("starts unclaimed: reads work, writes are refused, management needs a claim", async () => {
     const host = "alpha.bind.ws";
     const sk = generateSecretKey();
     const c = await WS.connect(host);
-    expect((await c.req({ kinds: [1] })).events).toEqual([]);
+    expect(await c.req({ kinds: [1] })).toEqual([]);
     const r = await c.ok(ev(sk, 1, "hi"));
     expect(r.ok).toBe(false);
     expect(r.msg).toMatch(/^restricted: .*unclaimed/);
@@ -157,7 +88,8 @@ describe("policy", () => {
     const e = ev(stranger, 1, "offensive");
     expect((await c.ok(e)).ok).toBe(true);
     await rpc(host, owner, "banevent", e.id, "nope");
-    expect((await c.req({ ids: [e.id] })).events).toEqual([]);
+    // Left open on purpose: the read rule below has to close it.
+    expect((await c.open("q", { ids: [e.id] })).events).toEqual([]);
     expect((await c.ok(e)).msg).toMatch(/^blocked:/);
     expect((await rpc(host, owner, "listbannedevents")).result).toEqual([{ id: e.id, reason: "nope" }]);
 
@@ -182,9 +114,9 @@ describe("policy", () => {
     // reads need auth: tightening the rule closes the subscription still open
     await rpc(host, owner, "setpolicy", { reads: "auth" });
     expect((await c.expect("CLOSED"))[2]).toMatch(/^auth-required:/);
-    expect((await c.req({ kinds: [1] })).closed).toMatch(/^auth-required:/);
+    expect((await c.query({ kinds: [1] })).closed).toMatch(/^auth-required:/);
     await c.auth(stranger, host);
-    expect((await c.req({ kinds: [1] })).events.length).toBeGreaterThan(0);
+    expect((await c.req({ kinds: [1] })).length).toBeGreaterThan(0);
 
     // NIP-11 reflects it all
     await rpc(host, owner, "changerelayname", "Gamma Club");
@@ -236,7 +168,7 @@ describe("worker routing", () => {
     const a = await WS.connect("one.bind.ws");
     expect((await a.ok(ev(sk, 1, "only here"))).ok).toBe(true);
     const b = await WS.connect("two.bind.ws");
-    expect((await b.req({ kinds: [1] })).events).toEqual([]);
+    expect(await b.req({ kinds: [1] })).toEqual([]);
     const page = await SELF.fetch("http://one.bind.ws/");
     expect(page.headers.get("content-type")).toContain("text/html");
   });

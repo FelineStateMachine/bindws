@@ -3,75 +3,9 @@
 // remote signer's session for anyone, including someone about to claim it.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
-
-const now = () => Math.floor(Date.now() / 1000);
-const ev = (sk: Uint8Array, kind: number, content: string, tags: string[][] = []) => finalizeEvent({ kind, content, tags, created_at: now() }, sk);
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-class WS {
-  private queue: any[][] = [];
-  private waiters: ((m: any[]) => void)[] = [];
-  constructor(public ws: WebSocket) {
-    ws.accept();
-    ws.addEventListener("message", (e) => {
-      const m = JSON.parse(e.data as string);
-      const w = this.waiters.shift();
-      if (w) w(m);
-      else this.queue.push(m);
-    });
-  }
-  challenge = "";
-  static async connect(host: string) {
-    const resp = await SELF.fetch(`http://${host}/`, { headers: { upgrade: "websocket" } });
-    const c = new WS(resp.webSocket!);
-    c.challenge = (await c.expect("AUTH"))[1];
-    return c;
-  }
-  // auth proves a key over the socket: 24133 is a private kind, delivered
-  // only to a socket that has proved it is the sender or the recipient.
-  async auth(sk: Uint8Array, host: string) {
-    this.send("AUTH", ev(sk, 22242, "", [["relay", "ws://" + host], ["challenge", this.challenge]]));
-    const m = await this.expect("OK");
-    expect(m[2], m[3]).toBe(true);
-  }
-  send(...m: unknown[]) {
-    this.ws.send(JSON.stringify(m));
-  }
-  recv(): Promise<any[]> {
-    const m = this.queue.shift();
-    if (m) return Promise.resolve(m);
-    return new Promise((res) => this.waiters.push(res));
-  }
-  async expect(type: string) {
-    const m = await this.recv();
-    expect(m[0], JSON.stringify(m)).toBe(type);
-    return m;
-  }
-  async ok(e: Event) {
-    this.send("EVENT", e);
-    const m = await this.expect("OK");
-    return { ok: m[2] as boolean, msg: m[3] as string };
-  }
-  // open subscribes and returns "" on EOSE or the CLOSED reason.
-  async open(id: string, ...filters: unknown[]): Promise<string> {
-    this.send("REQ", id, ...filters);
-    for (;;) {
-      const m = await this.recv();
-      if (m[0] === "EOSE" && m[1] === id) return "";
-      if (m[0] === "CLOSED" && m[1] === id) return m[2];
-      if (m[0] !== "EVENT") throw new Error(JSON.stringify(m));
-    }
-  }
-}
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
+import { ev, rpc } from "./helpers/relay.ts";
+import { WS } from "./helpers/ws.ts";
 
 describe("NIP-46 transport", () => {
   it("carries kind 24133 on an unclaimed relay, live only, never stored", async () => {
@@ -81,10 +15,10 @@ describe("NIP-46 transport", () => {
     // A signer that names its key in the filter and never AUTHs, the way
     // Amethyst's bunker listens under a transport key.
     const listener = await WS.connect(host);
-    expect(await listener.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).toBe("");
+    expect((await listener.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).closed).toBe("");
     // A bystander subscribed to the kind alone, naming no key.
     const bystander = await WS.connect(host);
-    expect(await bystander.open("nc", { kinds: [24133] })).toBe("");
+    expect((await bystander.open("nc", { kinds: [24133] })).closed).toBe("");
 
     const sender = await WS.connect(host);
     const req = ev(client, 24133, "ciphertext", [["p", getPublicKey(signerKey)]]);
@@ -95,20 +29,20 @@ describe("NIP-46 transport", () => {
     // The reply, addressed to the client, reaches a socket that AUTHed as the
     // client, and one that asks by the signer's key as author.
     const clientSock = await WS.connect(host);
-    expect(await clientSock.open("nc", { kinds: [24133] })).toBe("");
+    expect((await clientSock.open("nc", { kinds: [24133] })).closed).toBe("");
     await clientSock.auth(client, host);
     const byAuthor = await WS.connect(host);
-    expect(await byAuthor.open("nc", { kinds: [24133], authors: [getPublicKey(signerKey)] })).toBe("");
+    expect((await byAuthor.open("nc", { kinds: [24133], authors: [getPublicKey(signerKey)] })).closed).toBe("");
     const reply = ev(signerKey, 24133, "ciphertext", [["p", getPublicKey(client)]]);
     expect(await listener.ok(reply)).toEqual({ ok: true, msg: "" });
     expect((await clientSock.expect("EVENT"))[2].id).toBe(reply.id);
     expect((await byAuthor.expect("EVENT"))[2].id).toBe(reply.id);
     // The bystander saw neither; a later frame proves the queue is empty.
-    expect(await bystander.open("probe", { kinds: [24133] })).toBe("");
+    expect((await bystander.open("probe", { kinds: [24133] })).closed).toBe("");
     // Anything else is still refused while unclaimed, and the request left no trace.
     expect((await sender.ok(ev(client, 1, "hello"))).msg).toMatch(/unclaimed/);
     const later = await WS.connect(host);
-    expect(await later.open("q", { kinds: [24133] })).toBe("");
+    expect((await later.open("q", { kinds: [24133] })).closed).toBe("");
     const info: any = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
     expect(info.pubkey).toBeUndefined();
   });
@@ -134,11 +68,11 @@ describe("NIP-46 transport", () => {
     await rpc(host, owner, "claim");
     await rpc(host, owner, "setpolicy", { reads: "members" });
     const c = await WS.connect(host);
-    expect(await c.open("a", { kinds: [24133] })).toBe("");
-    expect(await c.open("b", { kinds: [24133], "#p": ["ab".repeat(32)] }, { kinds: [24133] })).toBe("");
-    expect(await c.open("c", { kinds: [24133, 1] })).toMatch(/^auth-required/);
-    expect(await c.open("d", { kinds: [24133] }, { kinds: [1] })).toMatch(/^auth-required/);
-    expect(await c.open("e", {})).toMatch(/^auth-required/);
+    expect((await c.open("a", { kinds: [24133] })).closed).toBe("");
+    expect((await c.open("b", { kinds: [24133], "#p": ["ab".repeat(32)] }, { kinds: [24133] })).closed).toBe("");
+    expect((await c.open("c", { kinds: [24133, 1] })).closed).toMatch(/^auth-required/);
+    expect((await c.open("d", { kinds: [24133] }, { kinds: [1] })).closed).toMatch(/^auth-required/);
+    expect((await c.open("e", {})).closed).toMatch(/^auth-required/);
     // NIP-11 says so, and advertises the transport.
     const info: any = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
     expect(info.limitation.auth_required).toBe(true);
@@ -146,14 +80,14 @@ describe("NIP-46 transport", () => {
     // Amber's probe before it lists a relay: a throwaway key, no AUTH, a
     // subscription naming the key, and its own event echoed back.
     const probe = generateSecretKey();
-    expect(await c.open("nc", { kinds: [24133], "#p": [getPublicKey(probe)] })).toBe("");
+    expect((await c.open("nc", { kinds: [24133], "#p": [getPublicKey(probe)] })).closed).toBe("");
     const self = ev(probe, 24133, "Test bunker event", [["p", getPublicKey(probe)]]);
     expect(await c.ok(self)).toEqual({ ok: true, msg: "" });
     expect((await c.expect("EVENT"))[2].id).toBe(self.id);
     // A signer's reply reaches the client that asked for it by key, unauthed.
     const client = generateSecretKey();
     const d = await WS.connect(host);
-    expect(await d.open("nc", { kinds: [24133], "#p": [getPublicKey(client)] })).toBe("");
+    expect((await d.open("nc", { kinds: [24133], "#p": [getPublicKey(client)] })).closed).toBe("");
     const reply = ev(owner, 24133, "ciphertext", [["p", getPublicKey(client)]]);
     expect(await c.ok(reply)).toEqual({ ok: true, msg: "" });
     expect((await d.expect("EVENT"))[2].id).toBe(reply.id);

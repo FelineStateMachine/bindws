@@ -1,22 +1,12 @@
 // Custom domains: a hostname the owner controls, mapped to the relay through
 // KV and registered with Cloudflare for SaaS. The Cloudflare API is a fake
 // fetch here; routing goes through the real worker and the KV binding.
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
-import { getToken } from "nostr-tools/nip98";
+import { generateSecretKey } from "nostr-tools/pure";
 import type { Relay } from "../src/relay.ts";
 import { Hostnames, checkHostname, MAX_CUSTOM_HOSTS } from "../src/domains.ts";
-
-async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
-  const url = `http://${host}/`;
-  const payload = { method, params };
-  const token = await getToken(url, "POST", (e) => finalizeEvent(e, sk), true, payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc", authorization: token }, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
-}
-
-const info = async (host: string) => (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json<any>();
+import { rpc, info } from "./helpers/relay.ts";
 
 // fakeCloudflare answers the custom hostnames API and records every call.
 function fakeCloudflare(opts: { active?: boolean; refuse?: boolean } = {}) {
