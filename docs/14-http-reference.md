@@ -69,24 +69,33 @@ NIP-98 directly instead of a cookie.
 
 ## GRASP-01 Git
 
-When the feature is on and the repository announcement is accepted, the
-percent-encoded repository path exposes Git Smart HTTP. The Git door follows
-the relay read rule and does not accept a websocket upgrade.
+When the feature is on, reads are open and the repository announcement is
+accepted, the percent-encoded repository path exposes Git Smart HTTP. It uses
+public HTTP with signed NIP-34 state authorizing writes. A restricted read
+rule disables this door rather than offering authenticated private Git.
 
 | Path | Method | Auth | Answers | Status |
 |---|---|---|---|---|
-| `/<npub>/<identifier>.git` | GET | the read rule | repository page or Git `info/refs` and upload-pack response | 200; 401/403 by the read rule; 404 unhosted repository |
-| `/<npub>/<identifier>.git/git-receive-pack` | POST | the read rule | a receive-pack response after the NIP-34 state and maintainer checks | 200; 400 malformed pack or ref; 401/403 by the read rule; 409 state mismatch; 413 over the object-store limit |
-| `/<npub>/<identifier>.git/git-upload-pack` | POST | the read rule | a bounded pack for reachable, tip or filtered wants | 200; 400 malformed request; 401/403 by the read rule; 404 unavailable object |
-| `/<npub>/<identifier>.git` | OPTIONS | none | CORS preflight | 204 |
+| `/<npub>/<identifier>.git` | GET, HEAD | public | repository page | 200; 404 unhosted repository |
+| `/<npub>/<identifier>.git/info/refs?service=git-upload-pack` or `service=git-receive-pack` | GET | public | service and ref advertisement | 200; 400 unsupported service |
+| `/<npub>/<identifier>.git/git-receive-pack` | POST | signed NIP-34 state and PR rules | receive-pack report | 200, including protocol-level rejection; 409 rejection without report-status; 400 malformed request; 413 request limit; 415 media type |
+| `/<npub>/<identifier>.git/git-upload-pack` | POST | public | bounded pack for reachable, tip or filtered wants | 200; 400 malformed or invalid want; 413 request or response limit; 415 media type |
+| a Git path | OPTIONS | none | CORS preflight | 204 |
+
+The door also returns 403 for a restricted read rule, inactive relay or
+exhausted fuel; 429 for rate limits or an operation already in progress; and
+503 when repository storage is unavailable. Receive-pack clients must read
+the Git report: HTTP 200 alone does not mean a push was accepted.
 
 Git responses include `Access-Control-Allow-Origin: *`,
 `Access-Control-Allow-Methods: GET, POST` and
-`Access-Control-Allow-Headers: Content-Type`. Upload-pack advertises
-`allow-reachable-sha1-in-want`, `allow-tip-sha1-in-want` and `filter`, and
-accepts `blob:none` and `tree:0`. A `refs/nostr/<event-id>` push remains
-temporary until its matching NIP-34 event is accepted; unresolved PR data is
-discarded after the GRASP-01 holding window.
+`Access-Control-Allow-Headers: Content-Type, Authorization, Git-Protocol, X-Git-Request-Id`.
+Upload-pack advertises `allow-reachable-sha1-in-want`,
+`allow-tip-sha1-in-want` and `filter`, and accepts `blob:none` and `tree:0`.
+An unknown `refs/nostr/<event-id>` has a 20-minute holding window. Expired
+unmatched refs are hidden and scheduled for deletion, but immutable Git
+objects remain in retained storage. The 128-transaction ceiling can prevent
+physical cleanup; it does not make those bytes free.
 
 ## Custom domains
 

@@ -62,16 +62,16 @@ const MAP = `<svg viewBox="0 0 640 470" role="img" aria-label="how a request rea
 <text x="126" y="310">alarm     sweep, retention, fuel</text>
 <text x="126" y="338" class="k">hibernates when idle</text>
 <path class="e" d="M270 356v26" marker-end="url(#ar)"/>
-<rect class="sh" x="224" y="390" width="100" height="34" rx="10"/><rect class="n" x="220" y="386" width="100" height="34" rx="10"/><text class="k" x="270.0" y="407.0" text-anchor="middle">r2</text><text class="d" x="330" y="407">blobs by sha256</text>
+<rect class="sh" x="224" y="390" width="100" height="34" rx="10"/><rect class="n" x="220" y="386" width="100" height="34" rx="10"/><text class="k" x="270.0" y="407.0" text-anchor="middle">r2</text><text class="d" x="330" y="407">files, dumps, Git objects</text>
 <text class="k" x="600" y="266" text-anchor="end">zap</text><text class="d" x="600" y="250" text-anchor="end">kind 9735</text><path class="e" d="M556 262H432" marker-end="url(#ar)"/>
 <text class="k" x="600" y="330" text-anchor="end">leave</text><text class="d" x="600" y="314" text-anchor="end">nip-77</text><path class="e" d="M432 326H556" marker-end="url(#ar)"/>
 </svg>`;
 
 const NOTES = `<div class="notes">
-<h3 id="o">durable object</h3><p>Each name has one object. The object holds the SQLite database and the relay's open sockets. The <b>owner</b> is the pubkey that signed the first <b>claim</b>. After the claim, all management is done via NIP-86 calls signed by that key. The relay page is a client of this API. The object leaves memory between frames. An idle relay has no cost.</p>
+<h3 id="o">durable object</h3><p>Each name has one object. The object holds the SQLite database and the relay's open sockets. The <b>owner</b> is the pubkey that signed the first <b>claim</b>. After the claim, all management is done via NIP-86 calls signed by that key. The relay page is a client of this API. The object can hibernate between frames; retained storage and scheduled work still count.</p>
 <h3 id="l">lease</h3><p>A lease is a relay at a name picked for you, open to everyone, for a fixed number of days. <b>POST /lease</b> returns one; no key needed. A claim before it expires keeps it, events and files included. After that, the object is wiped and the name is free again.</p>
-<h3 id="f">fuel</h3><p>The relay measures four values: events stored, files stored, hours awake, rows written. Each value is a line on the hosting bill. Traffic is free. Below the allowance, you owe nothing. Above the allowance, a zap to the relay adds balance. The zap receipt is the record.</p>
-<h3 id="x">leave</h3><p>NIP-77 sync copies all events to a different relay. Nothing on bind.ws is proprietary. You do not move anything else.</p>
+<h3 id="f">fuel</h3><p>Fuel prices four values: events stored, files stored, estimated hours awake and metered rows written. Mirrored site files and retained Git data share the file allowance. Traffic is visible but uncharged. Below the allowances, you owe nothing. Above them, a zap adds balance. The Health tab and public <b>/fuel</b> show usage and prices.</p>
+<h3 id="x">leave</h3><p>NIP-77 sync copies readable events to a different relay. Copy site files through Blossom and clone Git repositories separately; event sync does not copy their bytes.</p>
 </div>`;
 
 const PROTOCOL: [string, string][] = [
@@ -83,7 +83,7 @@ const PROTOCOL: [string, string][] = [
   ["40", "Events with an expiration tag are removed at that time."],
   ["42", "Clients prove their key. Needed for private kinds and members-only reads."],
   ["45", "Count events without downloading them."],
-  ["50", "Full-text search on notes, articles, profiles and comments."],
+  ["50", "Prose search by default; the owner can index all public content or switch search off."],
   ["17, 59", "Private messages are sent only to the sender and the recipient."],
   ["62", "Request to vanish: the relay deletes all your events and refuses older ones."],
   ["70", "Protected events are accepted only from their author, over an authenticated socket."],
@@ -96,6 +96,9 @@ const PROTOCOL: [string, string][] = [
   ["66", "The relay signs a discovery record about itself, so directories find it without a probe."],
   ["Blossom", "Upload and fetch files by hash on the same host. Check an upload before sending it, mirror a file from a URL, report one by hash."],
   ["94, 96", "The same files through the NIP-96 door, with NIP-94 metadata in every answer."],
+  ["NIP-5A", "Root, named and snapshot websites from signed manifests, on isolated hostnames. Site hosting and mirroring are on by default; the relay's read rule governs access."],
+  ["Marmot", "Opt-in KeyPackages and opaque MLS group messages. Account admission and caps apply to ephemeral authors; clients handle encryption."],
+  ["GRASP-01", "Opt-in public Git Smart HTTP. Signed NIP-34 state authorizes refs, and publication waits for matching Git objects. Later GRASP specifications are not advertised."],
 ];
 
 function table(heads: string[], rows: string[][], right: number[] = []): string {
@@ -124,6 +127,8 @@ export function landing(req: Request, env: Env): Response {
     ["GET /e/&lt;id&gt;, /a/&lt;d&gt;, /feed.xml", "pages, Atom", "none", "Notes and articles as pages with Open Graph tags, and a feed. Only when anyone may read."],
     ["GET /card.json, /card.svg, /card.nostr", "card", "none", "A status card for links and profiles: members, rules, fuel, the group naddr as a QR. The .nostr form is signed by the relay key."],
     ["GET /fuel, POST /fuel/invoice", "NIP-57", "none", "Gauges are public. The invoice comes from a signed zap request."],
+    [`https://&lt;site-label&gt;.${domain}/`, "NIP-5A", "relay read rule", "Root, named and snapshot sites, verified files and custom-domain targets. Restricted sites use browser sign-in or NIP-98."],
+    ["/&lt;npub&gt;/&lt;identifier&gt;.git", "GRASP-01", "signed NIP-34 state", "Public clone, fetch and state-authorized push while enabled with open reads. The identifier is percent-encoded. Bounded hosting; storage limits remain independent of fuel balance."],
   ]);
   const limits = table(["Parameter", "Default", "Range"], [
     ["name", "3 to 32 of a-z 0-9 -", "some names are reserved"],
@@ -139,7 +144,7 @@ export function landing(req: Request, env: Env): Response {
     ["files stored", "R2", `${n(fuel.freeMediaMB)} MB`, `${n(fuel.satsPerGBMonthMedia)} sats/GB-mo`],
     ["time awake", "DO duration", `${n(fuel.freeActiveHours)} h`, `${n(fuel.satsPerActiveHour)} sats/h`],
     ["rows written", "SQLite writes", n(fuel.freeRowsWritten), `${n(fuel.satsPerMillionRows)} sats/M`],
-    ["traffic, rows read", "no cost", "unlimited", "free"],
+    ["traffic, rows read", "not fuel-priced", "not billed", "free"],
   ], [2, 3]);
   const protocol = table(["NIP", "What it does here"], PROTOCOL.map(([a, b]) => [a, b.replace("name.bind.ws", `name.${domain}`)]));
   const body = `<main>
@@ -150,7 +155,8 @@ export function landing(req: Request, env: Env): Response {
     <h2>Interfaces</h2>${interfaces}
     <h2>Limits</h2>${limits}
     <h2>Metering</h2>${metering}
-    <p class="desc">Below the allowances, you owe nothing. Above an allowance with no balance, the relay is read-only. The relay does not delete data.</p>
+    <p class="desc">Below the allowances, you owe nothing. With no balance past an allowance, event writes and uploads stop; GRASP requests and remote site fetches also stop. Fuel exhaustion does not delete stored data.</p>
+    <p class="desc">The meters are relay totals, not a bill per feature. Git history remains in file storage after refs expire. Provider requests and object operations are host overhead, not separate tenant charges. <a href="${REPO}/blob/main/docs/02-understanding-fuel.md">Understanding fuel</a> explains the shared allowances and metering limits.</p>
     <h2>Protocol</h2>${protocol}
   </div>
   <footer class="foot"><a href="${REPO}">-&gt; github.com/FelineStateMachine/bindws</a><span class="muted">v${VERSION}</span></footer>
@@ -158,7 +164,7 @@ export function landing(req: Request, env: Env): Response {
 <script>
 document.getElementById("try").onclick = async (ev) => {
   const b = ev.target, note = document.getElementById("trynote");
-  b.disabled = true; note.textContent = "Finding a name…";
+  b.disabled = true; note.textContent = "Finding a name...";
   try {
     const r = await fetch("/lease", { method: "POST" });
     const j = await r.json();
