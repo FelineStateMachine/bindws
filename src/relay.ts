@@ -10,9 +10,10 @@ import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
 import { discovery } from "./nip66.ts";
 import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
-import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
+import { Settings, isReplaceable, isProtected } from "./settings.ts";
 import { manage } from "./manage.ts";
 import { Succession } from "./succession.ts";
+import { nip11 } from "./nip11.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
 import { dashboard } from "./dashboard.ts";
 import { Fuel, fuelConfig, acceptReceipt, fuelInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
@@ -38,7 +39,7 @@ import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
 import { card } from "./card.ts";
-import { PRESENCE_THROTTLE_S, markView, nip11Views, notePresence, serveView, viewsTick } from "./views.ts";
+import { markView, notePresence, serveView, viewsTick } from "./views.ts";
 import type { Blob } from "./blossom.ts";
 import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY } from "./kinds.ts";
 
@@ -77,14 +78,6 @@ export interface Env {
   METRICS?: AnalyticsEngineDataset;
 }
 
-// The less obvious numbers: 43 is added by info() once the relay has an
-// identity; 62 is request-to-vanish (store.vanish); 67 is the EOSE hint
-// array at the end of the subscription handler; 70 is the "-" tag check in
-// gate(); 66 is the discovery record the relay signs about itself
-// (publishDiscovery); 77 is negentropy sync (handleSync).
-export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
-export const SOFTWARE = "https://bind.ws";
-export const VERSION = "0.1.0";
 export const MAX_MESSAGE = 1024 * 1024;
 const FAVICON = FAVICON_SVG;
 const MAX_SYNC = 100_000;
@@ -763,7 +756,7 @@ export class Relay extends DurableObject<Env> {
     }
     if (upgrade) return this.acceptWebSocket(req);
     if (req.headers.get("accept")?.includes("application/nostr+json")) {
-      return Response.json(this.info(url.host), {
+      return Response.json(nip11(this, url.host), {
         headers: { "content-type": "application/nostr+json", "access-control-allow-origin": "*" },
       });
     }
@@ -838,56 +831,6 @@ export class Relay extends DurableObject<Env> {
   // maxMessage is the socket message cap in bytes: the owner's rule, under the platform's ceiling.
   maxMessage(): number {
     return Math.min(this.settings.policy.maxMessageKB * 1024, MAX_MESSAGE);
-  }
-
-  info(host: string) {
-    const p = this.settings.policy;
-    const doc: Record<string, unknown> = {
-      name: p.name || this.slug,
-      description: p.description,
-      supported_nips: SUPPORTED_NIPS,
-      software: SOFTWARE,
-      version: VERSION,
-      limitation: {
-        max_message_length: this.maxMessage(),
-        max_subscriptions: p.maxSubs,
-        max_limit: p.maxLimit,
-        default_limit: p.maxLimit,
-        max_subid_length: 64,
-        // True whenever a fresh socket cannot REQ: reads for the authenticated or for members.
-        auth_required: p.reads !== "open",
-        payment_required: false,
-        restricted_writes: p.writes !== "open" || this.settings.isUnclaimed(),
-        created_at_upper_limit: p.maxFuture || undefined,
-        min_pow_difficulty: p.minPow || undefined,
-      },
-    };
-    if (p.icon) doc.icon = p.icon;
-    if (p.banner) doc.banner = p.banner;
-    if (p.joinTerms && host) doc.terms_of_service = this.webURL(host) + "/terms";
-    if (p.postingPolicy) doc.posting_policy = p.postingPolicy;
-    if (p.privacyPolicy) doc.privacy_policy = p.privacyPolicy;
-    if (p.tags.length) doc.tags = p.tags;
-    if (p.languageTags.length) doc.language_tags = p.languageTags;
-    if (p.relayCountries.length) doc.relay_countries = p.relayCountries;
-    if (p.contact) doc.contact = p.contact;
-    const retention = this.settings.listRetention().map((r) => (r.kind === null ? { time: r.days * 86400 } : { kinds: [r.kind], time: r.days * 86400 }));
-    if (retention.length) doc.retention = retention;
-    if (this.fuel.cfg.lightningAddress && this.fuel.cfg.servicePubkey && host) {
-      const f = this.fuel.status(now(), this.eventBytes(), this.mediaBytes());
-      (doc.limitation as Record<string, unknown>).payment_required = f.outOfFuel;
-      doc.payments_url = "https://" + host + "/";
-    }
-    if (p.owner) doc.pubkey = p.owner;
-    if (p.succession && this.succession.warn) doc.succession_pending = new Date((this.succession.warn.since + SUCCESSION_WARN_DAYS * 86400) * 1000).toISOString().slice(0, 10);
-    if (this.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
-    if (host) doc.self_url = this.relayURL(host);
-    if (this.identity.pubkey) {
-      doc.self = this.identity.pubkey;
-      doc.supported_nips = [...SUPPORTED_NIPS, 43];
-      doc.views = nip11Views(this);
-    }
-    return doc;
   }
 
   // ---- websockets ----

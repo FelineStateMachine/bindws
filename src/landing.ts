@@ -1,7 +1,8 @@
 // The apex page: what bind.ws is, drawn as the system it is, with the
 // datasheet under it. Every number comes from the same config the relay runs
 // on, so the page cannot drift from the service.
-import { MAX_MESSAGE, VERSION, type Env } from "./relay.ts";
+import { MAX_MESSAGE, type Env } from "./relay.ts";
+import { VERSION } from "./nip11.ts";
 import { leaseDays } from "./names.ts";
 import { fuelConfig } from "./fuel.ts";
 import { DEFAULT_POLICY } from "./settings.ts";

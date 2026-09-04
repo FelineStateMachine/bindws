@@ -5,6 +5,7 @@
 // content is the NIP-11 document. Nothing here is measured, so there are
 // no rtt or geohash tags: those are a monitor's to add.
 import type { Relay } from "./relay.ts";
+import { nip11 } from "./nip11.ts";
 
 export interface Discovery {
   url: string;
@@ -29,7 +30,7 @@ export function relayTypes(writes: string, reads: string): string[] {
 // discovery builds the record's tags and content for the relay at `host`.
 export function discovery(relay: Relay, host: string): Discovery {
   const p = relay.settings.policy;
-  const doc = relay.info(host);
+  const doc = nip11(relay, host);
   const lim = (doc.limitation ?? {}) as Record<string, unknown>;
   const url = new URL(relay.relayURL(host)).toString();
   const tags: string[][] = [["-"], ["d", url], ["n", "clearnet"]];
