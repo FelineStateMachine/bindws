@@ -25,7 +25,7 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 |---|---|---|---|---|
 | `/` | GET | none | the console, one page for visitors and owner alike | 200 |
 | `/` | GET with `Accept: application/nostr+json` | none | NIP-11: rules, limits, retention, `self`, `lease` while leased, `succession_pending` while warning | 200 |
-| `/` | POST, `content-type: application/nostr+json+rpc` | NIP-98 | NIP-86 management, `{ result }` or `{ error }` | 200; 400 invalid; 401 bad signature; 403 not allowed; 409 conflict |
+| `/` | POST, `content-type: application/nostr+json+rpc` | NIP-98 | NIP-86 management, `{ result }` or `{ error }` | 200; 400 invalid; 401 bad signature; 403 not allowed; 409 conflict; 429 active relay operation |
 | `/people` | GET | none | `{ public, self, host, people }`, the members when the directory is public | 200 |
 | `/terms` | GET | none | the join terms as a page | 200; 404 none set |
 | `/signer.js` | GET | none | the NIP-46 client bundle, cached a week | 200 |
@@ -96,6 +96,22 @@ An unknown `refs/nostr/<event-id>` has a 20-minute holding window. Expired
 unmatched refs are hidden and scheduled for deletion, but immutable Git
 objects remain in retained storage. The 128-transaction ceiling can prevent
 physical cleanup; it does not make those bytes free.
+
+The owner can inspect one accepted repository through the NIP-86
+`gitstorage` method at the relay root. It performs a bounded, read-only walk
+of the physical R2 prefix and compares it with the live Git dependency set.
+The result reports physical, live, unreferenced and unknown objects by class,
+SQL reservations and `reservationMinusListedBytes`, together with operation
+counts for diagnostics, limits and capture time. These counts are not tenant
+billing meters. Unreferenced does not authorize deletion:
+there is no collector or automatic storage reclamation. A complete report is
+required, so a changed root or any inventory budget exhaustion returns an
+error instead of partial data. The method has a 60-second per-instance
+cooldown; a Durable Object restart or eviction resets that cooldown.
+
+| Method | Parameters | Auth | Answers | Status |
+|---|---|---|---|---|
+| `gitstorage` | repository owner hex pubkey, identifier | NIP-98, owner with the storage action | bounded physical and live inventory, reservations and limits | 200; 400 invalid parameters; 403 inactive, fuel or role; 404 feature or repository unavailable; 413 inventory limit; 429 cooldown or another repository operation; 503 storage unavailable |
 
 ## Custom domains
 

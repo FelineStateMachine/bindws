@@ -163,6 +163,31 @@ accepted state as its authorization boundary and passes Git objects through
 the object-store seam. It stays separate from the NIP-5A site door, so a site
 hostname cannot reach relay events or repository data.
 
+`repository-access.ts` gives one live Durable Object operation the repository
+authority token across awaits. Git HTTP, owner controls, alarms, event
+ingestion and direct lease, adoption and teardown paths use the same admission
+seam; nested work owned by the active token proceeds, while another live
+operation receives a retry response. Async context carries the token, so the
+fence replaces separate Git and control flags without becoming a durable lock.
+It does not coordinate a crashed instance, another R2 client or another object
+using the prefix, and it never authorizes garbage collection.
+
+`git-storage.ts` implements the owner-only `gitstorage` management method. It
+walks one accepted repository's physical R2 objects within explicit budgets,
+compares them with the live dependency inventory and reports physical, live,
+unreferenced and unknown objects by class alongside SQL reservations and their
+difference from listed bytes. An incomplete, over-budget or changed-root walk
+returns an error and no partial report. The manual scan has a 60-second
+per-instance cooldown and does not delete or reclaim storage.
+
+[Tangled knots](https://docs.tangled.org/knot-self-hosting-guide) provide
+useful prior art: AT Protocol identity sits above a filesystem Git host with
+repository maintenance. Bindws instead publishes immutable objects through
+an R2 root. The storage layout and recovery contract determine which old
+objects can be reclaimed; decentralized identity does not require retaining
+every superseded manifest. A collection protocol still needs to protect old
+readers, unpublished writes and retained transaction receipts.
+
 ## Views
 
 `src/views.ts` is a registry of folds. Each view names a trigger, an audience and a fold that returns tags and content; hourly views add a fingerprint so nothing is republished when the inputs did not move. The record is a kind 30078 signed by the identity key on the same strictly increasing clock as the group state, `d` = `bind.ws/view/<name>`, stored and broadcast through `emit` like the roster, taken down when the view is switched off, empty, or no longer public. The rows a run wrote are measured around the fold from the store's write counter and kept as the last 60 runs, which the console and the digest read.

@@ -67,6 +67,7 @@ await rpc("claim");                       // { result: { owner, claimed: true, c
 await rpc("applypreset", "outbox");       // one call sets writes, reads, kinds and keep-for
 await rpc("backfill", ["wss://relay.damus.io", "wss://nos.lol"]);
 console.log(await rpc("listjobs"));
+console.log(await rpc("gitstorage", "<owner hex pubkey>", "my-project"));
 ```
 
 The bridge takes the same header. `POST /events` answers `{ event_id, accepted, message }`; `POST /query` answers a list of events; `POST /count` answers `{ count }`. The bridge is rate limited per address at four times the per-connection allowance and answers `429` past it.
@@ -137,6 +138,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 **Storage**
 
 - `storagestats`: bytes by kind, files, retention.
+- `gitstorage owner identifier`: an owner-only inventory of one accepted GRASP repository. The result compares bounded physical R2 listing with live Git dependencies and reports physical, live, unreferenced and unknown objects by class, SQL reservations and the byte difference. It never deletes data.
 - `deleteblob sha256`.
 - `listdumps`, `dumpnow`, `deletedump name`.
 
@@ -163,6 +165,10 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 **Delete**
 
 - `deleterelay name`: the relay's own name, typed, is the confirmation.
+
+`gitstorage` is a diagnostic read, not a billing ledger or a deletion grant.
+Its operation counts do not add a tenant charge, and its 60-second cooldown is
+per live Durable Object instance, so eviction or restart resets it.
 
 ## The configuration file
 

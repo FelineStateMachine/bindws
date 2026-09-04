@@ -130,7 +130,7 @@ The hard limits are:
 | Format 1 | 128 transactions | legacy WAL replay |
 | Format 2 | 128 unique packs, 2 MiB manifest | explicitly migrated repository metadata |
 
-ntig 0.2.1 reads both formats, but installing it leaves existing roots alone
+ntig 0.3.0 reads both formats, but installing it leaves existing roots alone
 and new repositories still use format 1. Bindws exposes no checkpoint action
 or scheduled migration. The backend's explicit `checkpoint()` upgrade is
 one-way: every reader and writer must support format 2 before an isolated
@@ -157,6 +157,20 @@ write still passes through storage reservations, and each new request
 rechecks authority. The session closes on return or error. This bounds the
 cache, not total request memory, and does not skip Git validation or pending
 promotion.
+
+The owner can request `gitstorage <repository-owner-hex> <identifier>` through
+the management API to compare physical Git objects with quota reservations.
+The report breaks storage down by object class and distinguishes current-root
+references, unreferenced objects and unknown keys. Unreferenced bytes are not
+safe-to-delete bytes: readers and unpublished writes can still need them.
+The scan does not change roots, reservations or stored objects.
+
+Scans run manually with fixed read limits and a 60-second cooldown per live
+relay instance. A restart resets that cooldown. A limit, corrupt dependency or
+changed root returns an error rather than a partial report. Git requests,
+event writes and configuration changes receive a retry response while a scan
+owns the relay. See [HTTP reference](14-http-reference.md) for the method and
+[Costs and margins](15-costs-and-margins.md) for its host costs and limits.
 
 ## Information document and limits
 

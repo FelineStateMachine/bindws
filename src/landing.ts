@@ -98,7 +98,7 @@ const PROTOCOL: [string, string][] = [
   ["94, 96", "The same files through the NIP-96 door, with NIP-94 metadata in every answer."],
   ["NIP-5A", "Root, named and snapshot websites from signed manifests, on isolated hostnames. Site hosting and mirroring are on by default; the relay's read rule governs access."],
   ["Marmot", "Opt-in KeyPackages and opaque MLS group messages. Account admission and caps apply to ephemeral authors; clients handle encryption."],
-  ["GRASP-01", "Opt-in public Git Smart HTTP. Signed NIP-34 state authorizes refs, and publication waits for matching Git objects. Later GRASP specifications are not advertised."],
+  ["GRASP-01", "Opt-in public Git Smart HTTP. Signed NIP-34 state authorizes refs, and publication waits for matching Git objects. Owners can inspect retained storage. Later GRASP specifications are not advertised."],
 ];
 
 function table(heads: string[], rows: string[][], right: number[] = []): string {

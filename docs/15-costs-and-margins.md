@@ -103,10 +103,12 @@ Prices go up when bitcoin falls. When it rises, do nothing until a line has sat 
 
 ## Accounting coverage, checked Sept. 4, 2026
 
-The following inventory describes the host with ntig 0.2.1 and unmigrated
-format-1 repositories. Installing the library does not migrate roots. Observing an
-expense does not authorize a new customer charge. `/fuel` and the Health tab
-expose aggregate tenant meters, not every operation the host pays for.
+The following inventory describes the host with the current repository
+inventory contract and the owner-only inventory admission path. The pinned ntig 0.3.0
+package supports both formats; installing it does not migrate roots.
+Observing an expense does not authorize a new customer charge. `/fuel` and the
+Health tab expose aggregate tenant meters, not every operation the host pays
+for.
 
 | Dimension | Existing source and persistence | Coverage limit |
 |---|---|---|
@@ -149,21 +151,23 @@ storage. Neither receipt lookup nor checkpointing reclaims old bytes.
 Operation counts are host costs, not a new tenant charge; lower read costs
 alone do not establish a margin after metadata writes and retained storage.
 
-Git HTTP requests reuse up to 2 MiB and 512 entries of immutable payload in a
-session that ends with the request. Repeated validation and promotion can
-reuse those bytes, while mutable roots and all writes still reach R2 and
-its accounting adapter. New requests start fresh, oversized objects bypass
-the cache, and Git validation still runs. Lower R2 read counts do not imply
-lower CPU cost or a complete request-memory bound. Bulk initial checkpoint
-construction avoids writing intermediate receipt-index nodes; it removes
-no stored data and does not start migration automatically.
+Git HTTP requests reuse bounded immutable payload in a session that ends with
+the request. Repeated validation and promotion can reuse those bytes, while
+mutable roots and all writes still reach R2 and its accounting adapter. New
+requests start fresh, oversized objects bypass the cache, and Git validation
+still runs. Lower R2 read counts do not imply lower CPU cost or a complete
+request-memory bound. Inventory uses its own 16 MiB total-read, 4 MiB object,
+10,000-key, 100-page, 10,000-node and 10,000-receipt budgets,
+with a 1,024-byte key and 8,192-byte cursor limit; it returns no partial report
+when a budget or root-stability check fails.
 
 The isolated checkpoint fixture separates physical storage from the objects
 referenced by the current format. Both workloads use one 214-byte Git pack,
 260 transactions and an explicit checkpoint after transaction 128. One keeps
 updating the same ref to the same commit; the other retains 259 new tags.
-These are local measurements with ntig 0.2.1, not production usage or a
-per-repository minimum.
+These local fixtures were first measured with ntig 0.2.1. The ntig 0.3.0
+runtime inventory reproduces their physical, current-format and reservation
+totals exactly. They are not production usage or a per-repository minimum.
 
 | Retained Git payload | One fixed ref | Growing tags |
 |---|---:|---:|
@@ -174,6 +178,13 @@ per-repository minimum.
 | Superseded manifests | 42,900 bytes | 1,671,120 bytes |
 | Superseded receipt-index nodes | 332,722 bytes | 332,722 bytes |
 | Physical objects and reserved bytes | 512,431 bytes | 2,147,926 bytes |
+
+Each runtime scan uses 349 R2 GETs and one LIST. It reads 137,239 bytes for
+fixed refs and 160,972 bytes for growing tags. At the R2 unit rates below,
+those requests represent about $0.00013 per scan before pooled allowances
+and billing-unit rounding, excluding execution and SQL costs. The scan does
+not reclaim bytes or add a tenant fuel rate; its operation counts are
+diagnostics rather than a billing ledger.
 
 The ledger equals the paginated R2 inventory for every key and size in these
 quiet fixtures: there is no reservation slack. Each untouched fixture
@@ -198,40 +209,52 @@ reproduces the inventory, current-format traversal, all historical receipt
 lookups and unchanged root checks. The measurements apply to healthy,
 quiescent fixtures; ambiguous writes can still leave reservation slack.
 
-`graspBusy`, `graspControls` and the job round's `working` flag fence work
-within a live instance. Async handlers can interleave across awaits. Those
-flags are admission controls, not persisted crash recovery or authority to
-delete data. Repository CAS and persisted authority remain necessary.
+`repository-access.ts` carries one live owner token across awaits. Git,
+non-GET controls, alarms, event ingestion and direct lease, adoption and
+teardown paths use the same admission seam, and nested work owned by that
+token proceeds. Async handlers can still interleave across independent
+instances or R2 clients. The token is admission control, not persisted crash
+recovery or authority to delete data. Repository CAS and persisted authority
+remain necessary.
 
 The coordination tests pause actual Git HTTP and alarm requests at an R2
-root read. Competing Git requests return 429 without reading R2. While HTTP
-holds `graspBusy`, signed event writes and HTTP management are refused and
-an alarm defers its storage work. While an alarm holds `graspControls`, a
-signed repository-state event still enters purgatory. This is intentional
-evidence of a narrower admission fence, not proof of exclusive maintenance.
-That event changes SQL authority without an R2 operation in the paused
-fixture; it does not demonstrate an existing Git publication or data-loss bug.
-Both successful and failed R2 reads release their flags. Consuming the
-completed HTTP response performs no more R2 reads in this fixture.
+root read. Competing Git requests return 429 without reading R2. The active
+`repositoryAccess` token admits nested work owned by that operation and
+refuses unrelated controls, event writes and alarms until it releases. This
+is live-instance admission evidence, not proof of crash recovery or exclusive
+maintenance across clients. Both successful and failed R2 reads release the
+token. Consuming the completed HTTP response performs no more R2 reads in this
+fixture.
 
 | Entry point | Existing coordination | Limit before collection |
 |---|---|---|
-| Git advertisement, fetch and push | `grasp` sets `graspBusy` before its first await and rejects either occupied flag | Live-instance admission only; no persisted reader lease |
-| Accepted state and promotion | Run inside the HTTP fence or alarm controls; promotion rechecks candidates after reads | An immutable read session caches bytes but acquires no lock |
-| Non-GET HTTP management | `Relay.fetch` holds `graspControls` while the route runs and refuses `graspBusy` | Other controls and event writes can still interleave |
-| Signed events, imports and pulls | `acceptAny` or `writeGate` refuses `graspBusy` | `graspControls` alone does not refuse event writes |
-| Alarm, PR expiry and pending promotion | Alarm defers during `graspBusy`, otherwise holds `graspControls` | Alarm entry does not refuse an already active control operation |
-| Whole-relay deletion | Management or lease-expiry alarm calls `teardown` | Teardown has no internal lock and deletes the whole slug prefix; it is not a metadata collector |
-| Direct repository helper calls | Production callers are the HTTP handler and `graspTick` | `gitRepository` and `checkpoint()` acquire no host fence themselves; test calls bypass admission |
+| Git advertisement, fetch and push | `repositoryAccess` owns the live token across the Git operation | Live-instance admission only; no persisted reader lease |
+| Accepted state and promotion | Run inside the Git token or the alarm token; promotion rechecks candidates after reads | An immutable read session caches bytes but acquires no cross-instance lock |
+| Non-GET HTTP management | The control token refuses an active Git operation | Nested work owned by the active token proceeds |
+| Signed events, imports and pulls | The event token refuses an unrelated Git or control operation | Independent instances can still interleave |
+| Alarm, PR expiry and pending promotion | The alarm defers and reschedules when another token is active, otherwise it owns the alarm token | Alarm work is not crash recovery |
+| Whole-relay deletion | Management or lease-expiry alarm enters the teardown token | Teardown deletes the whole slug prefix; it is not a metadata collector |
+| Direct repository helper calls | Production callers enter through the repository access seam | Helpers do not become durable locks or deletion authority |
 
 The current HTTP handler constructs its response bytes before the read
 session closes. A future streaming path would need to preserve coordination
-until its last storage read. None of these in-memory flags coordinates an
+until its last storage read. The owner token does not coordinate an
 independent R2 client, another object ID sharing a prefix, or recovery after
 the owning instance is replaced. CAS protects root publication, but does not
 prevent deletion of an object that a reader or unpublished writer still
 needs. Removing a repository announcement also leaves its WAL and quota
-rows behind; visibility is not a storage-liveness test.
+rows behind; visibility is not a storage-liveness test. The repository helper
+itself has no host admission; production callers enter through
+`repositoryAccess`.
+
+The owner-only `gitstorage` management method makes this distinction visible
+without turning it into a cleanup operation. It walks one repository under
+bounded budgets and reports physical, live, unreferenced and unknown objects
+by class, SQL reservations and the reservation-to-listed-byte difference. A
+complete report is required, and a changed root, budget exhaustion or backend
+failure returns no partial result. The 60-second per-instance cooldown limits
+repeated scans. Unreferenced bytes remain tenant storage until a future,
+separately authorized collection protocol exists.
 
 Before metadata collection, a complete inventory needs explicit object,
 byte and operation budgets and must refuse an incomplete mark. The host
@@ -240,8 +263,8 @@ readers, unpublished writes, administrative deletion and maintenance.
 Budget exhaustion, missing or corrupt dependencies and changed roots must
 prevent a deletion decision. Stable before/after roots alone are insufficient:
 a reader may hold an older root, or a publisher may have uploaded objects
-without publishing its new root yet. This remains a collection blocker;
-the tests introduce no collector or runtime coordination change.
+without publishing its new root yet. This remains a collection blocker; the
+tests exercise the runtime admission seam but introduce no collector.
 
 `npm test -- test/object/grasp-coordination.test.ts` reproduces the paused
 HTTP/alarm checks. The checkpoint inventory above remains an isolated,
@@ -325,10 +348,10 @@ These are proposed operating boundaries, not new allowances or charges.
 
 ## Proposed maintenance contract
 
-ntig 0.2.1 has no resumable optimization runner. No maintenance job, budget
-setting, wake schedule, format migration or garbage collection is enabled by
-this contract. Existing ref cleanup, retention and alarms keep their current
-roles. An eventual integration has these boundaries:
+The current ntig 0.3.0 package has no resumable optimization runner. No
+maintenance job, budget setting, wake schedule, format migration or garbage
+collection is enabled by this contract. Existing ref cleanup, retention and
+alarms keep their current roles. An eventual integration has these boundaries:
 
 | Stage | Host and backend contract |
 |---|---|
