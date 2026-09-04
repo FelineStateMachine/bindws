@@ -74,7 +74,15 @@
             "names": { "type": "boolean" },
             "files": { "type": "boolean" },
             "pages": { "type": "boolean" },
-            "signer": { "type": "boolean" }
+            "signer": { "type": "boolean" },
+            "sites": {
+              "oneOf": [
+                { "type": "boolean" },
+                { "type": "object", "additionalProperties": false, "properties": {
+                  "enabled": { "type": "boolean" }, "mirror": { "type": "boolean" }
+                } }
+              ]
+            }
           }
         }
       }

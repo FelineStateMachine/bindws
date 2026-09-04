@@ -122,3 +122,74 @@ export async function forgetSites(relay: Relay): Promise<void> {
   relay.sql.exec(`INSERT INTO site_outbox(raw,removed) SELECT raw,1 FROM events WHERE kind IN (15128,35128,5128)`);
   while (await relay.syncSites()) { /* bounded batches */ }
 }
+
+// Site origins have only this door. No relay handlers, websocket, NIP-11
+// negotiation or management API is reachable here, even at the same path.
+import { whoAsks, denyStatus } from "./auth.ts";
+import { featureOn } from "./settings.ts";
+import { blobBlocked, type Blob } from "./blossom.ts";
+
+const SITE_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
+  json: "application/json", svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", ico: "image/x-icon",
+  txt: "text/plain; charset=utf-8", xml: "application/xml", wasm: "application/wasm", woff: "font/woff", woff2: "font/woff2", pdf: "application/pdf",
+};
+export const siteType = (path: string) => SITE_TYPES[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
+const siteError = (req: Request, status: number, message: string) => new Response(req.method === "HEAD" ? null : message, { status, headers: { "cache-control": "private, no-store", "content-type": "text/plain; charset=utf-8" } });
+
+export async function serveSite(relay: Relay, req: Request, label: string): Promise<Response> {
+  const site = parseSite(label);
+  if (!site || !featureOn(relay.settings.policy, "sites") || relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return siteError(req, 404, "Not found");
+  if (req.headers.get("upgrade") || !["GET", "HEAD"].includes(req.method)) return siteError(req, 405, "Method not allowed");
+  const who = whoAsks(req, "", null);
+  if (typeof who === "string") return siteError(req, 401, who);
+  const gate = relay.settings.mayRead(who.pubkeys);
+  if (gate) return siteError(req, denyStatus(gate), gate);
+  const e = manifest(relay, site);
+  if (!e) return siteError(req, 404, "Not found");
+  const url = new URL(req.url);
+  let path: string;
+  try { path = decodeURIComponent(url.pathname); } catch { return siteError(req, 404, "Not found"); }
+  const directory = !/[^/]+\.[^/.]+$/.test(path);
+  if (directory && !path.endsWith("/")) {
+    url.pathname += "/";
+    return new Response(null, { status: 308, headers: { location: url.href, "cache-control": "private, no-store" } });
+  }
+  if (directory) path += "index.html";
+  const paths = sitePaths(e);
+  let mapping = paths.find((t) => t[1] === path);
+  let status = 200;
+  if (!mapping) { mapping = paths.find((t) => t[1] === "/404.html"); status = 404; }
+  if (!mapping || blobBlocked(relay, mapping[2])) return siteError(req, 404, "Not found");
+  const sha = mapping[2];
+  const blob = relay.sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
+  if (!blob) return siteError(req, 404, "Not found");
+  const obj = await relay.media.get(`${relay.slug}/${sha}`);
+  if (!obj) return siteError(req, 404, "Not found");
+  // Verify in a streaming pass, then serve the same immutable R2 version.
+  // This avoids buffering even a relay's largest allowed file in memory.
+  const hash = sha256.create();
+  const reader = obj.body.getReader();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    hash.update(value);
+  }
+  if (bytesToHex(hash.digest()) !== sha) return siteError(req, 404, "Not found");
+  const headers = new Headers({
+    "content-type": blob.type || siteType(mapping[1]), "content-length": String(obj.size), etag: `"${sha}"`,
+    // Revalidate every request so policy changes and expiry cannot be
+    // bypassed by a fresh cache entry, including on snapshot URLs.
+    "cache-control": relay.settings.policy.reads === "open" ? "public, no-cache, must-revalidate" : "private, no-store",
+    "x-content-type-options": "nosniff", "referrer-policy": "same-origin",
+  });
+  if (status === 200 && req.headers.get("if-none-match")?.split(",").some((v) => v.trim().replace(/^W\//, "") === headers.get("etag") || v.trim() === "*")) {
+    headers.delete("content-length");
+    return new Response(null, { status: 304, headers });
+  }
+  if (req.method === "HEAD") return new Response(null, { status, headers });
+  const verified = await relay.media.get(`${relay.slug}/${sha}`, { onlyIf: { etagMatches: obj.etag } });
+  if (!verified || !("body" in verified) || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
+  relay.meterBytes(0, verified.size);
+  return new Response(verified.body, { status, headers });
+}

@@ -246,7 +246,8 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
           "names": false,
           "files": false,
           "pages": false,
-          "signer": false
+          "signer": false,
+          "sites": false
         }
       },
       "kinds": {

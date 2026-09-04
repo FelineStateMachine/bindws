@@ -1,8 +1,9 @@
-import { env, runInDurableObject } from "cloudflare:test";
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { aggregate, base36, checkSite, parseSite, siteKey, siteLabel, unbase36 } from "../../src/sites.ts";
-import { ev, pk, rpc, now } from "../helpers/relay.ts";
+import { upload } from "../helpers/media.ts";
+import { ev, pk, rpc, now, nip98, info } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 const paths = [["path", "/index.html", "ab".repeat(32)]];
@@ -60,4 +61,55 @@ describe("sites", () => {
     expect(await env.HOSTS.get(siteKey(siteLabel(expires)))).toBeNull();
     c.ws.close();
   });
+  it("serves all hostname forms, directories, fallback pages and verified metadata", async () => {
+    const name = "sites-serve", host = name + ".bind.ws", sk = generateSecretKey();
+    await rpc(host, sk, "claim");
+    const file = await upload(host, sk, "hello site"), missing = await upload(host, sk, "custom missing");
+    const tags = [["path", "/index.html", file.sha], ["path", "/blog/index.html", file.sha], ["path", "/404.html", missing.sha]];
+    const c = await WS.connect(host);
+    const events = [ev(sk, 15128, "", tags), ev(sk, 35128, "", [...tags, ["d", "blog"]]), ev(sk, 5128, "", [...tags, ["a", `15128:${pk(sk)}:`], ["x", aggregate({ tags }), "aggregate"]])];
+    for (const e of events) expect((await c.ok(e)).ok).toBe(true);
+    await runInDurableObject(env.RELAY.getByName(name), (r) => r.syncSites());
+    for (const e of events) {
+      const url = "http://" + siteLabel(e) + ".bind.ws";
+      const res = await SELF.fetch(url + "/");
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("hello site");
+      expect(res.headers.get("content-type")).toBe("text/plain");
+      expect(res.headers.get("content-length")).toBe("10");
+      expect(res.headers.get("etag")).toBe('"' + file.sha + '"');
+      const head = await SELF.fetch(url + "/", { method: "HEAD" });
+      expect(head.status).toBe(200); expect(await head.text()).toBe("");
+      expect((await SELF.fetch(url + "/", { headers: { "if-none-match": res.headers.get("etag")! } })).status).toBe(304);
+      expect((await SELF.fetch(url + "/blog", { redirect: "manual" })).headers.get("location")).toBe(url + "/blog/");
+      expect(await (await SELF.fetch(url + "/blog/")).text()).toBe("hello site");
+      const no = await SELF.fetch(url + "/absent.html"); expect(no.status).toBe(404); expect(await no.text()).toBe("custom missing");
+      // Content negotiation and relay paths cannot escape the site door.
+      expect(await (await SELF.fetch(url + "/", { headers: { accept: "application/nostr+json" } })).text()).toBe("hello site");
+      expect((await SELF.fetch(url + "/", { method: "POST", headers: { "content-type": "application/nostr+json+rpc" }, body: '{"method":"claim"}' })).status).toBe(405);
+      expect((await SELF.fetch(url + "/", { headers: { upgrade: "websocket" } })).status).toBe(405);
+    }
+    const url = "http://" + siteLabel(events[0]) + ".bind.ws/";
+    await rpc(host, sk, "setpolicy", { reads: "members" });
+    expect((await SELF.fetch(url)).status).toBe(401);
+    expect((await SELF.fetch(url, { headers: { authorization: await nip98(generateSecretKey(), url) } })).status).toBe(403);
+    const member = await SELF.fetch(url, { headers: { authorization: await nip98(sk, url) } });
+    expect(member.status).toBe(200); expect(member.headers.get("cache-control")).toContain("no-store");
+    await rpc(host, sk, "setpolicy", { reads: "open", features: { sites: false } });
+    expect((await SELF.fetch(url)).status).toBe(404); expect((await info(host)).nsites).toBeUndefined();
+    await rpc(host, sk, "setpolicy", { features: { sites: true } });
+    expect((await info(host)).nsites.host).toBe("bind.ws");
+    await env.MEDIA.put(name + "/" + file.sha, "corrupt");
+    expect((await SELF.fetch(url)).status).toBe(404);
+    c.ws.close();
+  });
+
+  it("rejects invalid and unknown site labels and ignores a forged routing header", async () => {
+    expect((await SELF.fetch("http://" + "z".repeat(55) + ".bind.ws/", { redirect: "manual" })).status).toBe(404);
+    const unknown = siteLabel(ev(generateSecretKey(), 15128, "", paths));
+    expect((await SELF.fetch("http://" + unknown + ".bind.ws/", { redirect: "manual" })).status).toBe(404);
+    const res = await SELF.fetch("http://sites-normal.bind.ws/", { headers: { "x-relay-site": unknown, accept: "application/nostr+json" } });
+    expect((await res.json<any>()).name).toBe("sites-normal");
+  });
+
 });

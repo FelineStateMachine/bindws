@@ -403,19 +403,20 @@
     ["names", "Names", "NIP-05 addresses under this relay's domain."],
     ["files", "Files", "Blossom and NIP-96: uploads, downloads and listings."],
     ["pages", "Pages and feed", "Notes and articles as pages, and the Atom feed."],
+    ["sites", "Static websites", "NIP-5A sites on their own hostnames. Mirroring copies missing files into this relay and costs fuel.", ["mirror:on, mirror files", "proxy:on, fetch as needed", "off:off"]],
     ["signer", "Signer traffic", "NIP-46 remote signing carried for anyone, never stored."],
   ];
   function renderFeatures(f) {
     $("#features").innerHTML = FEATURES.map(([k, title, about, modes]) => {
-      const cur = modes ? String(f[k] || "prose") : String(f[k] !== false);
+      const cur = k === "sites" ? (f.sites?.enabled === false ? "off" : f.sites?.mirror === false ? "proxy" : "mirror") : modes ? String(f[k] || "prose") : String(f[k] !== false);
       const opts = (modes || ["true:on", "false:off"]).map((m) => { const [v, l] = m.split(":"); return '<option value="' + v + '"' + (cur === v ? " selected" : "") + ">" + l + "</option>"; }).join("");
       return "<label><span>" + esc(title) + " <small>" + esc(about) + "</small></span><select class=\"txt\" data-feature=\"" + k + "\">" + opts + "</select></label>";
     }).join("");
   }
   $("#features").addEventListener("change", guard(async (ev) => {
     const sel = ev.target.closest("select[data-feature]"); if (!sel) return;
-    const k = sel.dataset.feature, v = k === "search" ? sel.value : sel.value === "true";
-    policy = await rpc("setpolicy", { features: { [k]: v } });
+    const k = sel.dataset.feature, v = k === "search" || k === "sites" ? sel.value : sel.value === "true";
+    policy = await rpc("setpolicy", { features: { [k]: k === "sites" ? { enabled: v !== "off", mirror: v === "mirror" } : v } });
     toast(k === "search" ? "Search: " + v : (v ? "Switched on " : "Switched off ") + k); await loadInfo();
   }));
 

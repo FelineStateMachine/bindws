@@ -1,7 +1,7 @@
 // The relay: one Durable Object per name, holding its SQLite database and
 // its live websockets (hibernating while idle). Protocol handling mirrors
 // relay.go; policy is per relay and owner-managed (see manage.ts).
-import { syncSiteIndex, forgetSites } from "./sites.ts";
+import { syncSiteIndex, forgetSites, serveSite } from "./sites.ts";
 import { DurableObject } from "cloudflare:workers";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { difficulty, expiration, hasTag, isPrivate, now, tagValues, validate, canonical, type Event } from "./event.ts";
@@ -766,10 +766,11 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
     // A blocked address gets no socket and no gated door (routes.ts).
     const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
-    if ((upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
+    if ((req.headers.has("x-relay-site") || upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
       const msg = "blocked: this address is blocked from this relay";
       return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
     }
+    if (req.headers.has("x-relay-site")) return serveSite(this, req, req.headers.get("x-relay-site")!);
     if (upgrade) return this.acceptWebSocket(req);
     return route(this, req, url);
   }
