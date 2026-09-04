@@ -8,15 +8,22 @@ import { checkSite } from "./sites.ts";
 import type { Relay, ConnState } from "./relay.ts";
 import { expiration, hasTag, isPrivate, tagValues, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
-import { KIND_AUTH, KIND_NOSTR_CONNECT } from "./kinds.ts";
+import { KIND_AUTH, KIND_MARMOT_GROUP, KIND_MARMOT_KEY_PACKAGE, KIND_NOSTR_CONNECT } from "./kinds.ts";
 import { isGroupState } from "./groups.ts";
 import { featureOn } from "./settings.ts";
+import { marmotPrincipal, marmotShape } from "./marmot.ts";
 
 // writeGate is what every write must pass, whoever sends it: shape, bans, the
 // relay's state, fuel, and the one-group rule. "" lets it through.
 export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: number): string {
   const siteError = checkSite(e);
   if (siteError) return siteError;
+  if (e.kind === KIND_MARMOT_GROUP || e.kind === KIND_MARMOT_KEY_PACKAGE) {
+    if (!featureOn(relay.settings.policy, "marmot")) return "restricted: Marmot transport is switched off on this relay";
+    const shape = marmotShape(e);
+    if (shape) return shape;
+    if (e.kind === KIND_MARMOT_GROUP && relay.settings.policy.writes !== "open" && !marmotPrincipal(relay, e, conn)) return "auth-required: Marmot group envelopes need an authenticated account allowed to write here";
+  }
   const p = relay.settings.policy;
   if (e.kind === KIND_AUTH) return "blocked: kind 22242 is only accepted inside an AUTH message";
   if (p.maxFuture > 0 && e.created_at > t + p.maxFuture) return "invalid: event creation date is too far off from the current time";
@@ -37,7 +44,7 @@ export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: num
   // and the per-connection rate limit still apply.
   if (e.kind === KIND_NOSTR_CONNECT && featureOn(p, "signer")) return "";
   const h = tagValues(e, "h")[0];
-  if (h !== undefined && h !== relay.slug) return "blocked: this relay hosts one group: " + relay.slug;
+  if (e.kind !== KIND_MARMOT_GROUP && h !== undefined && h !== relay.slug) return "blocked: this relay hosts one group: " + relay.slug;
   if (conn) {
     if (isGroupState(e.kind)) return "blocked: group metadata is written by the relay";
     if (relay.settings.isUnclaimed()) return "restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it";
@@ -74,6 +81,7 @@ export function readGate(relay: Relay, s: ConnState, filters: Filter[]): { reaso
   // delivered only to its parties (canSee).
   const p = relay.settings.policy;
   if (!featureOn(p, "search") && filters.some((f) => f.search !== undefined)) return { reason: "unsupported: search is switched off on this relay", authHint: false };
+  if (filters.some((f) => f.kinds?.some((k) => k === KIND_MARMOT_GROUP || k === KIND_MARMOT_KEY_PACKAGE)) && !featureOn(p, "marmot")) return { reason: "unsupported: Marmot transport is switched off on this relay", authHint: false };
   if (featureOn(p, "signer") && filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
   const authed = s.authed.length > 0;
   const gate = relay.settings.mayRead(s.authed);

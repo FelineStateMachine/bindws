@@ -58,3 +58,7 @@ export const KIND_RELAY_DISCOVERY = 30166;
 export const KIND_SITE = 15128;
 export const KIND_NAMED_SITE = 35128;
 export const KIND_SITE_SNAPSHOT = 5128;
+
+// Marmot Nostr transport: account KeyPackages and opaque MLS group messages.
+export const KIND_MARMOT_GROUP = 445;
+export const KIND_MARMOT_KEY_PACKAGE = 30443;

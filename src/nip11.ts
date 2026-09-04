@@ -15,7 +15,7 @@ import { nip11Views } from "./views.ts";
 // (publishDiscovery); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
 // The numbers a switched-off feature takes with it (settings.ts, features).
-export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [] };
+export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [] };
 
 // supportedNips is the list as it stands with the features that are on.
 export function supportedNips(relay: Relay): number[] {

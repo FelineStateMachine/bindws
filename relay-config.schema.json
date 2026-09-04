@@ -75,6 +75,7 @@
             "files": { "type": "boolean" },
             "pages": { "type": "boolean" },
             "signer": { "type": "boolean" },
+            "marmot": { "type": "boolean" },
             "sites": {
               "oneOf": [
                 { "type": "boolean" },

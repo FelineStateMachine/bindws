@@ -31,7 +31,8 @@ import { Hostnames, forgetDomains } from "./domains.ts";
 import { hostOf } from "./edge.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
 import { markView, notePresence, viewsTick } from "./views.ts";
-import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY } from "./kinds.ts";
+import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY, KIND_MARMOT_GROUP } from "./kinds.ts";
+import { marmotPrincipal } from "./marmot.ts";
 
 export interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -1027,12 +1028,13 @@ export class Relay extends DurableObject<Env> {
       if (keep > 0 && e.created_at < t - keep * 86400) return no(`blocked: this relay keeps kind ${e.kind} for ${keep} days and this event is older`);
       // The owner's per-member rules: a keep-for window on top of the kind
       // rules, and a cap on stored bytes. Neither touches the owner.
-      const lim = this.settings.limitsOf(e.pubkey);
+      const principal = e.kind === KIND_MARMOT_GROUP ? marmotPrincipal(this, e, conn) : e.pubkey;
+      const lim = this.settings.limitsOf(principal);
       if (lim) {
         if (lim.keep > 0 && !isProtected(e.kind) && !isReplaceable(e.kind) && e.created_at < t - lim.keep * 86400) return no(`blocked: this relay keeps your events for ${lim.keep} days and this event is older`);
-        if (lim.cap > 0 && this.store.authorBytes(e.pubkey) + canonical(e).length > lim.cap) return no(`restricted: you have reached your storage cap of ${Math.max(1, Math.round(lim.cap / 1024))} KB on this relay`);
+        if (lim.cap > 0 && this.store.authorBytes(principal) + canonical(e).length > lim.cap) return no(`restricted: you have reached your storage cap of ${Math.max(1, Math.round(lim.cap / 1024))} KB on this relay`);
       }
-      const why = this.settings.mayWrite(e.pubkey);
+      const why = this.settings.mayWrite(principal);
       if (why && !guestPass(this, e)) return no(why);
       if (p.minPow > 0) {
         const d = difficulty(e);
