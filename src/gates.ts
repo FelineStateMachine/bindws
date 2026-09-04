@@ -22,7 +22,15 @@ export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: num
     if (!featureOn(relay.settings.policy, "marmot")) return "restricted: Marmot transport is switched off on this relay";
     const shape = marmotShape(e);
     if (shape) return shape;
-    if (e.kind === KIND_MARMOT_GROUP && relay.settings.policy.writes !== "open" && !marmotPrincipal(relay, e, conn)) return "auth-required: Marmot group envelopes need an authenticated account allowed to write here";
+    if (e.kind === KIND_MARMOT_GROUP) {
+      // A group envelope's transport key is one-use and must not double as
+      // the authenticated account identity.
+      if (conn?.authed.includes(e.pubkey)) return "invalid: kind 445 must use a fresh ephemeral author";
+      if (relay.sql.exec(`SELECT 1 FROM events WHERE kind=? AND pubkey=? LIMIT 1`, KIND_MARMOT_GROUP, e.pubkey).toArray().length) return "invalid: kind 445 ephemeral author was already used";
+      const principal = marmotPrincipal(relay, e, conn);
+      if (principal && relay.settings.isBanned(principal)) return "blocked: this Marmot account is banned from this relay";
+      if (relay.settings.policy.writes !== "open" && !principal) return "auth-required: Marmot group envelopes need an authenticated account allowed to write here";
+    }
   }
   const p = relay.settings.policy;
   if (e.kind === KIND_AUTH) return "blocked: kind 22242 is only accepted inside an AUTH message";

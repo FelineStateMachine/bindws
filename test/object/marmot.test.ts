@@ -14,15 +14,17 @@ const tags = [
   ["mls_proposals", "0x0001"],
   ["app_components", "0x8009"],
 ];
+const GROUP_CONTENT = "A".repeat(40); // 30 decoded bytes: nonce plus AEAD tag minimum.
 
 describe("marmot", () => {
   it("checks the exact KeyPackage and group envelope shapes", () => {
     const sk = generateSecretKey();
     expect(marmotShape(ev(sk, KIND_MARMOT_KEY_PACKAGE, "AQ==", tags))).toBe("");
     expect(marmotShape(ev(sk, KIND_MARMOT_KEY_PACKAGE, "AQ==", [...tags, ["d", "11".repeat(32)]]))).toMatch(/^invalid:/);
-    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, "AQ==", [["h", "ab".repeat(32)]]))).toBe("");
-    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, "AQ==", [["h", "AB".repeat(32)]]))).toMatch(/^invalid:/);
-    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, "AQ==", [["h", "ab".repeat(32)], ["x", "no"]]))).toMatch(/^invalid:/);
+    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ab".repeat(32)]]))).toBe("");
+    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, "AQ==", [["h", "ab".repeat(32)]]))).toMatch(/^invalid:/);
+    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "AB".repeat(32)]]))).toMatch(/^invalid:/);
+    expect(marmotShape(ev(sk, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ab".repeat(32)], ["x", "no"]]))).toMatch(/^invalid:/);
   });
 
   it("keeps Marmot off until the owner enables it and preserves NIP-29 h checks", async () => {
@@ -31,7 +33,7 @@ describe("marmot", () => {
     const stranger = generateSecretKey();
     await rpc(host, owner, "claim");
     const c = await WS.connect(host);
-    const group = ev(stranger, KIND_MARMOT_GROUP, "AQ==", [["h", "ab".repeat(32)]]);
+    const group = ev(stranger, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ab".repeat(32)]]);
     expect((await c.ok(group)).msg).toMatch(/^restricted:/);
     expect((await c.open("m", { kinds: [KIND_MARMOT_GROUP] })).closed).toMatch(/^unsupported:/);
     await rpc(host, owner, "setpolicy", { features: { marmot: true } });
@@ -51,10 +53,28 @@ describe("marmot", () => {
     await rpc(host, owner, "setmember", pk(member));
     await rpc(host, owner, "setpolicy", { features: { marmot: true }, writes: "allowlist" });
     const c = await WS.connect(host);
-    const group = () => ev(ephemeral, KIND_MARMOT_GROUP, "AQ==", [["h", "cd".repeat(32)]]);
+    const group = () => ev(ephemeral, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "cd".repeat(32)]]);
     expect((await c.ok(group())).msg).toMatch(/^auth-required:/);
     await c.auth(member, host);
     expect((await c.ok(group())).ok).toBe(true);
+    const reused = ev(ephemeral, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "de".repeat(32)]]);
+    expect((await c.ok(reused)).msg).toMatch(/fresh ephemeral author|already used/);
+    c.ws.close();
+  });
+
+  it("counts opaque group bytes against the authenticated account cap", async () => {
+    const host = "marmot-cap.bind.ws";
+    const owner = generateSecretKey();
+    const member = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setmember", pk(member), { maxBytes: 700 });
+    await rpc(host, owner, "setpolicy", { features: { marmot: true }, writes: "allowlist" });
+    const c = await WS.connect(host);
+    await c.auth(member, host);
+    const first = ev(generateSecretKey(), KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ef".repeat(32)]]);
+    expect((await c.ok(first)).ok).toBe(true);
+    const second = ev(generateSecretKey(), KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "01".repeat(32)]]);
+    expect((await c.ok(second)).msg).toMatch(/^restricted: you have reached your storage cap/);
     c.ws.close();
   });
 });

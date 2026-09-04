@@ -31,13 +31,21 @@ const base64 = (value: string): boolean => {
   }
 };
 
+const decodedBytes = (value: string): number => {
+  try {
+    return atob(value).length;
+  } catch {
+    return 0;
+  }
+};
+
 // marmotShape checks only the signed envelope and transport tags. MLS bytes
 // stay opaque here, so clients remain responsible for decoding and verifying
 // the KeyPackage or group message inside the base64 content.
 export const marmotShape = (e: Event): string => {
   if (e.kind === KIND_MARMOT_GROUP) {
     if (!singleton(e, "h", (v) => HEX64.test(v))) return "invalid: kind 445 needs one lowercase 32-byte h tag";
-    if (!base64(e.content)) return "invalid: kind 445 content must be padded base64";
+    if (!base64(e.content) || decodedBytes(e.content) < 28) return "invalid: kind 445 content must be base64 containing a nonce and authentication tag";
     if (e.tags.some((t) => t[0] !== "h" && !(t[0] === "expiration" && t.length === 2 && /^\d+$/.test(t[1])))) return "invalid: kind 445 has an unsupported tag";
     if (e.tags.filter((t) => t[0] === "expiration").length > 1) return "invalid: kind 445 has repeated expiration";
     return "";

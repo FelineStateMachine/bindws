@@ -1053,6 +1053,10 @@ export class Relay extends DurableObject<Env> {
     if (err === ERR_DUPLICATE) return { ok: true, msg: err, stored: false };
     if (err) return no(err);
     if (e.kind === 3) this.settings.noteContacts(e.pubkey);
+    if (e.kind === KIND_MARMOT_GROUP && conn) {
+      const principal = marmotPrincipal(this, e, conn);
+      if (principal && principal !== e.pubkey) this.store.notePrincipal(e.id, principal);
+    }
     this.store.noteSaved(e.pubkey, canonical(e).length, isReplaceable(e.kind));
     if (exp > 0) this.scheduleSweep(exp);
     else this.ensureAlarm();
