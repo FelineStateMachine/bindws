@@ -10,13 +10,14 @@ import { now } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { badBlockedWord, blockedWords, featureFields, gateFields, isWriteRule, limitFields, viewFields, type Policy, type Settings } from "./settings.ts";
-import { isReplaceable, isProtected, publicFields, dumpFields, validIP } from "./settings.ts";
+import { badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
+import { applyConfig, exportConfig, parseConfig, planConfig } from "./config.ts";
+import { isReplaceable, isProtected, validIP } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, publishView, viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
 import { relaysFromList } from "./jobs.ts";
-import { notify, notifySettings } from "./notify.ts";
+import { notify } from "./notify.ts";
 import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
 import { can, type Action, type Role } from "./roles.ts";
 import { detailOf } from "./audit.ts";
@@ -161,16 +162,7 @@ export const METHODS: Record<string, Method> = {
     action: "rules",
     run: async ({ relay, s, p, params, reply }) => {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
-      const clean: Record<string, unknown> = {};
-      for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
-      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, p.views), featureFields(patch, p.features));
-      if (isWriteRule(patch.writes)) clean.writes = patch.writes;
-      if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
-      if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
-      if (typeof patch.directoryPublic === "boolean") clean.directoryPublic = patch.directoryPublic;
-      const notifyPatch = notifySettings(patch.notify, p.notify);
-      if (notifyPatch) clean.notify = notifyPatch;
-      Object.assign(clean, limitFields(patch));
+      const clean = policyPatch(patch, p);
       s.update(clean);
       // A read rule that tightened ends the subscriptions it no longer admits.
       relay.enforceReads();
@@ -350,15 +342,21 @@ export const METHODS: Record<string, Method> = {
       return reply({ result: true });
     },
   },
-  exportconfig: { action: "config", reads: true, run: ({ relay, s, reply }) => reply({ result: s.exportConfig(relay.slug) }) },
+  exportconfig: { action: "config", reads: true, run: ({ relay, s, reply }) => reply({ result: exportConfig(s, relay.slug) }) },
   importconfig: {
     action: "config",
-    run: async ({ relay, s, t, role, params, reply }) => {
-      // The import replaces the member list wholesale; the records say who
-      // came, who went and who changed role, one delta each.
+    run: async ({ relay, s, p, t, params, reply }) => {
+      // (document, {dryRun?}): a dry run answers with what applying would
+      // change and touches nothing. Applied, the import replaces each
+      // section the document has; the membership records say who came, who
+      // went and who changed role, one delta each.
+      const cfg = parseConfig(params[0], p);
+      if (typeof cfg === "string") return reply({ error: cfg }, 400);
+      const plan = planConfig(s, cfg);
+      const opts = params[1] && typeof params[1] === "object" ? (params[1] as { dryRun?: unknown }) : {};
+      if (opts.dryRun === true) return reply({ result: { dryRun: true, changes: plan, warnings: cfg.warnings } });
       const before = new Map(s.members().map((x) => [x.pubkey, x.role]));
-      const err = s.importConfig(params[0], t);
-      if (err) return reply({ error: err }, 400);
+      applyConfig(s, cfg, t);
       // Imported address blocks drop the sockets they now refuse.
       for (const b of s.listIPBlocks()) relay.blockIP(b.ip, b.reason);
       const after = new Map(s.members().map((x) => [x.pubkey, x.role]));
@@ -369,7 +367,7 @@ export const METHODS: Record<string, Method> = {
       }
       for (const pk of before.keys()) if (!after.has(pk)) changes.push({ pubkey: pk, added: false });
       await relay.publishMembership(...changes);
-      return reply({ result: s.exportConfig(relay.slug) });
+      return reply({ result: exportConfig(s, relay.slug) });
     },
   },
   deleterelay: {
@@ -729,7 +727,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
   // moderation log with who called it (audit.ts). deleterelay took the
   // table with it.
   const resp = await m.run(call);
-  if (resp.status === 200 && !m.reads && method !== "deleterelay") {
+  const dryRun = method === "importconfig" && (params[1] as { dryRun?: unknown } | undefined)?.dryRun === true;
+  if (resp.status === 200 && !m.reads && !dryRun && method !== "deleterelay") {
     const { target, detail } = detailOf(method, params);
     relay.audit.record(t, caller, method, target, detail);
   }

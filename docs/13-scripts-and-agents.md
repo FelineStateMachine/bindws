@@ -142,7 +142,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 **Config**
 
-- `exportconfig`, `importconfig document`: rules, identity, members, bans, address blocks, kind rules and retention as one document.
+- `exportconfig`, `importconfig document [{dryRun: true}]`: rules, identity, members, bans, address blocks, kind rules and retention as one document (format `bind.ws/relay-config/2`). A section the document leaves out is left alone. With `dryRun`, the answer is `{ changes, warnings }`: what applying would change, section by section with a `summary` line each, and the entries the relay would not take; nothing is applied or logged.
 
 **Jobs**
 

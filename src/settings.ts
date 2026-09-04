@@ -110,6 +110,22 @@ export function featureFields(patch: Record<string, unknown>, cur: Features): Pa
   return { features: out };
 }
 
+// policyPatch is what setpolicy and a configuration document accept: every
+// field checked, the rest dropped.
+export function policyPatch(patch: Record<string, unknown>, cur: Policy): Partial<Policy> {
+  const clean: Record<string, unknown> = {};
+  for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
+  Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, cur.views), featureFields(patch, cur.features));
+  if (isWriteRule(patch.writes)) clean.writes = patch.writes;
+  if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
+  if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
+  if (typeof patch.directoryPublic === "boolean") clean.directoryPublic = patch.directoryPublic;
+  const notifyPatch = notifySettings(patch.notify, cur.notify);
+  if (notifyPatch) clean.notify = notifyPatch;
+  Object.assign(clean, limitFields(patch));
+  return clean as Partial<Policy>;
+}
+
 export function viewFields(patch: Record<string, unknown>, cur: Record<string, boolean>): Partial<Policy> {
   if (!patch.views || typeof patch.views !== "object") return {};
   const out: Record<string, boolean> = { ...cur };
@@ -718,74 +734,6 @@ export class Settings {
   // exportConfig is everything that makes this relay itself, minus its
   // data: policy, people, bans, address blocks and kind rules. Enough to
   // rebuild it.
-  exportConfig(name: string) {
-    return {
-      format: "bind.ws/relay-config/1",
-      exported_at: Math.floor(Date.now() / 1000),
-      name,
-      policy: { ...this.policy, owner: undefined, lease: undefined, succession: undefined, customHosts: undefined },
-      members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}), ...(m.keep_days ? { keepDays: m.keep_days } : {}), ...(m.max_bytes ? { maxBytes: m.max_bytes } : {}) })),
-      bans: this.listBans(),
-      banned_events: this.listEvents("ban"),
-      addresses: this.listIPBlocks(),
-      kinds: { allow: this.listKinds("allow"), block: this.listKinds("block") },
-      retention: this.listRetention(),
-    };
-  }
-
-  // importConfig applies an export. Replaces the lists; the owner is never
-  // touched. Returns a reason on a malformed document.
-  importConfig(raw: unknown, now: number): string {
-    const c = raw as Record<string, unknown>;
-    if (!c || typeof c !== "object" || c.format !== "bind.ws/relay-config/1") return "invalid: not a bind.ws relay configuration";
-    const hex64 = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
-    const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
-    const clean: Partial<Policy> = {};
-    for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
-    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy), viewFields(policy, this.policy.views), featureFields(policy, this.policy.features));
-    if (isWriteRule(policy.writes)) clean.writes = policy.writes;
-    if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
-    if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
-    const notify = notifySettings(policy.notify, this.policy.notify);
-    if (notify) clean.notify = notify;
-    Object.assign(clean, limitFields(policy));
-    this.update(clean);
-    for (const m of this.members()) if (m.role !== "owner") this.removeMember(m.pubkey);
-    for (const m of Array.isArray(c.members) ? c.members : []) {
-      const r = m as Record<string, unknown>;
-      if (!hex64(r.pubkey)) continue;
-      this.upsertMember(r.pubkey, { name: typeof r.name === "string" ? r.name : null, note: typeof r.note === "string" ? r.note : "", via: "import", keepDays: Number.isInteger(r.keepDays) ? (r.keepDays as number) : 0, maxBytes: Number.isInteger(r.maxBytes) ? (r.maxBytes as number) : 0 }, now, true);
-      if (r.role === "moderator") this.setRole(r.pubkey, "moderator");
-    }
-    for (const b of this.listBans()) this.setBan(b.pubkey, false);
-    for (const b of Array.isArray(c.bans) ? c.bans : []) {
-      const r = b as Record<string, unknown>;
-      if (hex64(r.pubkey) && !this.isOwner(r.pubkey)) this.setBan(r.pubkey, true, typeof r.reason === "string" ? r.reason : "", now);
-    }
-    for (const b of this.listIPBlocks()) this.setIPBlock(b.ip, false);
-    for (const a of Array.isArray(c.addresses) ? c.addresses : []) {
-      const r = a as Record<string, unknown>;
-      const ip = typeof r.ip === "string" ? r.ip.trim().toLowerCase() : "";
-      if (validIP(ip)) this.setIPBlock(ip, true, typeof r.reason === "string" ? r.reason.slice(0, 200) : "", now);
-    }
-    for (const e of this.listEvents("ban")) this.setEvent(e.id, null);
-    for (const e of Array.isArray(c.banned_events) ? c.banned_events : []) {
-      const r = e as Record<string, unknown>;
-      if (hex64(r.id)) this.setEvent(r.id, "ban", typeof r.reason === "string" ? r.reason : "", now);
-    }
-    for (const k of [...this.listKinds("allow"), ...this.listKinds("block")]) this.setKind(k, null);
-    const kinds = (c.kinds && typeof c.kinds === "object" ? c.kinds : {}) as Record<string, unknown>;
-    for (const k of Array.isArray(kinds.allow) ? kinds.allow : []) if (Number.isInteger(k) && (k as number) >= 0 && (k as number) <= 65535) this.setKind(k as number, "allow");
-    for (const k of Array.isArray(kinds.block) ? kinds.block : []) if (Number.isInteger(k) && (k as number) >= 0 && (k as number) <= 65535) this.setKind(k as number, "block");
-    for (const r of this.listRetention()) this.setRetention(r.kind, 0);
-    for (const r of Array.isArray(c.retention) ? c.retention : []) {
-      const x = r as Record<string, unknown>;
-      const kind = x.kind === null ? null : x.kind;
-      if ((kind === null || (Number.isInteger(kind) && (kind as number) >= 0 && (kind as number) <= 65535)) && Number.isInteger(x.days) && (x.days as number) > 0) this.setRetention(kind as number | null, x.days as number);
-    }
-    return "";
-  }
-
   // ---- bans ----
 
   setBan(pubkey: string, banned: boolean, reason = "", now = 0) {

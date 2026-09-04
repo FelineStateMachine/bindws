@@ -21,9 +21,9 @@ describe("configuration export and import", () => {
     await rpc(a, ownerA, "allowkind", 1);
     await rpc(a, ownerA, "disallowkind", 7);
     const cfg = (await rpc(a, ownerA, "exportconfig")).result;
-    expect(cfg.format).toBe("bind.ws/relay-config/1");
+    expect(cfg.format).toBe("bind.ws/relay-config/2");
     expect(cfg.policy.owner).toBeUndefined();
-    expect(cfg.members).toEqual([{ pubkey: m1, name: "alice", note: "friend" }]);
+    expect(cfg.members).toEqual([{ pubkey: m1, name: "alice", note: "friend", role: "member" }]);
     expect(cfg.bans).toEqual([{ pubkey: bad, reason: "spam" }]);
     expect(cfg.kinds).toEqual({ allow: [1], block: [7] });
 
@@ -45,6 +45,45 @@ describe("configuration export and import", () => {
     await rc.auth(ownerB, b);
     const r = await rc.req({ kinds: [13534] });
     expect(r[0].tags).toContainEqual(["member", m1]);
+  });
+
+  it("dry-runs a document into a summary of changes and applies nothing; a section left out is left alone", async () => {
+    const host = "cfg-dry.bind.ws";
+    const owner = generateSecretKey();
+    const m1 = getPublicKey(generateSecretKey()), m2 = getPublicKey(generateSecretKey());
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setmember", m1, { name: "alice" });
+    await rpc(host, owner, "allowkind", 1);
+    const doc = {
+      format: "bind.ws/relay-config/2",
+      policy: { writes: "owner", minPow: 2, reads: "sideways", nonsense: 1, owner: "ab".repeat(32) },
+      members: [{ pubkey: m1, name: "alice", note: "", role: "moderator" }, { pubkey: m2, name: "bob", note: "", role: "member" }, { pubkey: "nope" }],
+      kinds: { allow: [1, 7], block: [99999] },
+      retention: [{ kind: null, days: 30 }],
+    };
+    const dry = (await rpc(host, owner, "importconfig", doc, { dryRun: true })).result;
+    expect(dry.dryRun).toBe(true);
+    expect(dry.changes.policy.map((c: any) => c.field).sort()).toEqual(["minPow", "writes"]);
+    expect(dry.changes.members.add.map((m: any) => m.pubkey)).toEqual([m2]);
+    expect(dry.changes.members.change.map((m: any) => m.pubkey)).toEqual([m1]);
+    expect(dry.changes.kinds.allow.add).toEqual([7]);
+    expect(dry.changes.retention.add).toEqual([{ kind: null, days: 30 }]);
+    expect(dry.changes.summary.length).toBeGreaterThanOrEqual(4);
+    expect(dry.warnings).toEqual(["policy.reads: value not accepted", "policy.nonsense: not a setting", "policy.owner: not carried by a configuration", "members[2]: pubkey must be 64 hex chars", "kinds.block[0]: kind out of range"]);
+    // Nothing moved.
+    expect((await rpc(host, owner, "getpolicy")).result.writes).toBe("open");
+    expect((await rpc(host, owner, "listmembers")).result.members.map((m: any) => m.pubkey)).toEqual([getPublicKey(owner), m1]);
+    expect((await rpc(host, owner, "listaudit")).result.some((r: any) => r.action === "importconfig")).toBe(false);
+    // Applied, and then a rules-only document leaves the people alone.
+    expect((await rpc(host, owner, "importconfig", doc)).status).toBe(200);
+    expect((await rpc(host, owner, "listmembers")).result.members.length).toBe(3);
+    expect((await rpc(host, owner, "importconfig", { format: "bind.ws/relay-config/2", policy: { writes: "open" }, kinds: { allow: [], block: [] } })).status).toBe(200);
+    expect((await rpc(host, owner, "getpolicy")).result.writes).toBe("open");
+    expect((await rpc(host, owner, "listmembers")).result.members.length).toBe(3);
+    expect((await rpc(host, owner, "listallowedkinds")).result).toEqual([]);
+    expect((await rpc(host, owner, "listretention")).result).toEqual([{ kind: null, days: 30 }]);
+    const again = (await rpc(host, owner, "importconfig", doc, { dryRun: true })).result;
+    expect(again.changes.summary.filter((l: string) => !l.startsWith("writes")).length).toBe(1);
   });
 });
 
@@ -95,8 +134,11 @@ describe("address blocks in the configuration", () => {
     expect(open.closed?.code).toBe(4403);
     expect(await WS.tryConnect(b, bad)).toBeNull();
     expect(await WS.tryConnect(b, "198.51.100.200")).not.toBeNull();
-    // A document without the list clears the blocks, like the other lists.
+    // A document without the list leaves the blocks alone; an empty list clears them.
     delete cfg.addresses;
+    await rpc(b, owner, "importconfig", cfg);
+    expect((await rpc(b, owner, "listblockedips")).result.length).toBe(2);
+    cfg.addresses = [];
     await rpc(b, owner, "importconfig", cfg);
     expect((await rpc(b, owner, "listblockedips")).result).toEqual([]);
     expect(await WS.tryConnect(b, bad)).not.toBeNull();

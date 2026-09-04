@@ -842,7 +842,10 @@
   $("#cfgfile").onchange = guard(async (ev) => {
     const file = ev.target.files[0]; if (!file) return;
     const cfg = JSON.parse(await file.text());
-    if (!confirm("Replace this relay's rules, identity, members, bans and kind rules with " + file.name + "?")) { ev.target.value = ""; return; }
+    const check = await rpc("importconfig", cfg, { dryRun: true });
+    const lines = check.changes.summary.length ? check.changes.summary.join("\n") : "Nothing would change.";
+    const dropped = check.warnings.length ? "\n\nNot taken:\n" + check.warnings.join("\n") : "";
+    if (!confirm("Apply " + file.name + " to this relay?\n\n" + lines + dropped)) { ev.target.value = ""; return; }
     await rpc("importconfig", cfg); ev.target.value = ""; toast("Configuration imported"); await loadInfo(); await loadAdmin(); await loadPeople();
   });
   // Succession: the status line under the heir form, from successionstatus.
