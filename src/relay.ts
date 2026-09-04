@@ -35,6 +35,7 @@ import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from 
 import { markView, notePresence, viewsTick } from "./views.ts";
 import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY, KIND_MARMOT_GROUP } from "./kinds.ts";
 import { marmotPrincipal } from "./marmot.ts";
+import { RepositoryAccess } from "./repository-access.ts";
 
 export interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -127,8 +128,7 @@ export class Relay extends DurableObject<Env> {
   succession = new Succession(this);
   // A job round in flight, so overlapping alarms do not run two.
   private working = false;
-  graspBusy = false;
-  graspControls = 0;
+  readonly repositoryAccess = new RepositoryAccess();
   // Presence (views.ts): who wrote lately, in memory; the sockets are asked
   // directly. A broadcast is at most one per PRESENCE_THROTTLE_S.
   presenceActive = new Map<string, number>();
@@ -449,7 +449,8 @@ export class Relay extends DurableObject<Env> {
 
   // teardown deletes everything this relay holds and returns the name to
   // unclaimed. Every socket is closed. Nothing is recoverable afterwards.
-  async teardown() {
+  async teardown(): Promise<void> {
+    if (!this.repositoryAccess.owned) return this.repositoryAccess.run("teardown", () => this.teardown(), () => { throw new Error("relay operation in progress; retry teardown"); });
     await forgetSites(this);
     await forgetDomains(this);
     for (const ws of this.ctx.getWebSockets()) {
@@ -528,22 +529,24 @@ export class Relay extends DurableObject<Env> {
   // holder "" lets anyone claim; a pubkey reserves the claim. Returns "" or
   // a reason.
   async lease(name: string, host: string, until: number, holder: string): Promise<string> {
-    if (!this.settings.isUnclaimed()) return "taken";
-    if (this.slug !== name) {
-      this.slug = name;
-      await this.ctx.storage.put("slug", name);
-    }
-    const day = new Date(until * 1000).toISOString().slice(0, 10);
-    this.settings.update({
-      lease: { until, holder },
-      writes: "open",
-      reads: "open",
-      name: "",
-      description: `Temporary relay. Anyone can read and write here until ${day}; then everything on it is deleted. To keep it, claim it at https://${host}/ (sign once). Or claim a new name and pull from this one.`,
-    });
-    this.settings.setRetention(null, LEASE_RETENTION_DAYS);
-    await this.ensureAlarm(until);
-    return "";
+    return this.repositoryAccess.run("control", async () => {
+      if (!this.settings.isUnclaimed()) return "taken";
+      if (this.slug !== name) {
+        this.slug = name;
+        await this.ctx.storage.put("slug", name);
+      }
+      const day = new Date(until * 1000).toISOString().slice(0, 10);
+      this.settings.update({
+        lease: { until, holder },
+        writes: "open",
+        reads: "open",
+        name: "",
+        description: `Temporary relay. Anyone can read and write here until ${day}; then everything on it is deleted. To keep it, claim it at https://${host}/ (sign once). Or claim a new name and pull from this one.`,
+      });
+      this.settings.setRetention(null, LEASE_RETENTION_DAYS);
+      await this.ensureAlarm(until);
+      return "";
+    }, () => "restricted: relay operation in progress; retry");
   }
 
   // ---- forking: a new name, this relay's events pulled into it ----
@@ -580,14 +583,16 @@ export class Relay extends DurableObject<Env> {
   // adoptFrom is the forked side, reached over RPC only: a fresh lease
   // takes the people and starts pulling from the source.
   async adoptFrom(sourceURL: string, filter: PullFilter, people: { pubkey: string; name: string | null; note: string }[], sourceHost: string): Promise<string> {
-    if (!this.settings.isLeased()) return "restricted: only a fresh lease can adopt";
-    if (this.store.stats().events > 0) return "restricted: this lease already holds events";
-    const day = new Date((this.settings.policy.lease?.until ?? 0) * 1000).toISOString().slice(0, 10);
-    this.settings.update({ description: `Forked from ${sourceHost}. Temporary until ${day} unless claimed; then everything on it is deleted. Claim it to keep it.` });
-    const t = now();
-    for (const m of people) this.settings.upsertMember(m.pubkey, { name: m.name, note: m.note, via: "forked" }, t, true);
-    const r = await this.addChecked({ kind: "pull", label: "pull", relays: [sourceURL], filter, every: 0, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null });
-    return typeof r === "string" ? r : "";
+    return this.repositoryAccess.run("control", async () => {
+      if (!this.settings.isLeased()) return "restricted: only a fresh lease can adopt";
+      if (this.store.stats().events > 0) return "restricted: this lease already holds events";
+      const day = new Date((this.settings.policy.lease?.until ?? 0) * 1000).toISOString().slice(0, 10);
+      this.settings.update({ description: `Forked from ${sourceHost}. Temporary until ${day} unless claimed; then everything on it is deleted. Claim it to keep it.` });
+      const t = now();
+      for (const m of people) this.settings.upsertMember(m.pubkey, { name: m.name, note: m.note, via: "forked" }, t, true);
+      const r = await this.addChecked({ kind: "pull", label: "pull", relays: [sourceURL], filter, every: 0, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null });
+      return typeof r === "string" ? r : "";
+    }, () => "restricted: relay operation in progress; retry");
   }
 
   // ---- jobs: pulls, backfills, rebroadcasts, once or standing ----
@@ -760,16 +765,23 @@ export class Relay extends DurableObject<Env> {
   }
 
   async fetch(req: Request): Promise<Response> {
-    this.touch();
-    const name = req.headers.get("x-relay-name");
-    if (name && name !== this.slug) {
-      this.slug = name;
-      await this.ctx.storage.put("slug", name);
-    }
     const url = new URL(req.url);
     const completed = (response: Response) => featureOn(this.settings.policy, "grasp") ? graspCORS(response, req.method === "OPTIONS") : response;
-    // Relays claimed before identities existed get theirs on first contact.
-    if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
+    const name = req.headers.get("x-relay-name");
+    const initializes = Boolean(name && name !== this.slug) || Boolean(this.settings.policy.owner && !this.identity.pubkey);
+    this.touch();
+    if (initializes) {
+      const initialized = await this.repositoryAccess.run("control", async () => {
+        if (name && name !== this.slug) {
+          this.slug = name;
+          await this.ctx.storage.put("slug", name);
+        }
+        // Relays claimed before identities existed get theirs on first contact.
+        if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
+        return true;
+      }, () => false);
+      if (!initialized) return completed(new Response(JSON.stringify({ error: "restricted: relay operation in progress; retry" }), { status: 429, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "retry-after": "1" } }));
+    }
     // The local custom-domain record wins over a cached edge mapping, so
     // changing a relay domain into a site never exposes the old relay door.
     const domainSite = this.settings.policy.customHosts?.find((h) => h.host === url.hostname)?.site;
@@ -784,9 +796,7 @@ export class Relay extends DurableObject<Env> {
     if (upgrade) return this.acceptWebSocket(req);
     if (isGitPath(url)) return route(this, req, url);
     if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
-      if (this.graspBusy) return completed(new Response("restricted: Git transaction in progress; retry", { status: 429, headers: { "access-control-allow-origin": "*", "retry-after": "1" } }));
-      this.graspControls++;
-      try { return completed(await route(this, req, url)); } finally { this.graspControls--; }
+      return completed(await this.repositoryAccess.run("control", () => route(this, req, url), () => new Response(JSON.stringify({ error: "restricted: relay operation in progress; retry" }), { status: 429, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "retry-after": "1" } })));
     }
     return completed(await route(this, req, url));
   }
@@ -970,14 +980,15 @@ export class Relay extends DurableObject<Env> {
   // acceptAny routes the special kinds (zap receipts, NIP-56 reports) and
   // falls back to the ordinary write path. Callers broadcast when stored.
   async acceptAny(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
-    if (this.graspBusy) return { ok: false, msg: "restricted: Git transaction in progress; retry the event", stored: false };
-    if (e.kind === 9735) {
-      const r = await acceptReceipt(this, e, conn.host);
-      if (r) return r;
-    }
-    if (e.kind === KIND_REPORT) return this.acceptReport(e, conn.host);
-    if (isGroupManagement(e.kind) && (hasTag(e, "h") || isNIP43Request(e.kind))) return this.acceptGroup(e, conn);
-    return this.accept(e, conn);
+    return this.repositoryAccess.run("event", async () => {
+      if (e.kind === 9735) {
+        const r = await acceptReceipt(this, e, conn.host);
+        if (r) return r;
+      }
+      if (e.kind === KIND_REPORT) return this.acceptReport(e, conn.host);
+      if (isGroupManagement(e.kind) && (hasTag(e, "h") || isNIP43Request(e.kind))) return this.acceptGroup(e, conn);
+      return this.accept(e, conn);
+    }, () => ({ ok: false, msg: "restricted: relay operation in progress; retry the event", stored: false }));
   }
 
   // acceptGroup handles NIP-29 joins, leaves and moderation: the common gate,
@@ -1023,6 +1034,7 @@ export class Relay extends DurableObject<Env> {
   // accept runs the write-side rules and stores the event. conn is null for
   // host-side publishes (the dashboard), which skip client policy.
   accept(e: Event, conn: ConnState | null): { ok: boolean; msg: string; stored: boolean } {
+    if (!this.repositoryAccess.owned) return this.repositoryAccess.sync("event", () => this.accept(e, conn), () => ({ ok: false, msg: "restricted: relay operation in progress; retry the event", stored: false }));
     const p = this.settings.policy;
     const t = now();
     const no = (msg: string) => ({ ok: false, msg, stored: false });
@@ -1087,74 +1099,72 @@ export class Relay extends DurableObject<Env> {
   }
 
   async alarm() {
-    if (this.graspBusy) { await this.ctx.storage.setAlarm(Date.now() + 1000); return; }
-    this.graspControls++;
-    try {
-    this.touch();
-    const t = now();
-    // A lease that has run out is wiped whole: the name is free again.
-    if (this.settings.leaseExpired(t)) {
-      await this.teardown();
-      return;
-    }
-    const graspAt = await graspTick(this);
-    await this.syncSites();
-    await queueMirrors(this);
-    if (await this.jobsTick()) {
-      await this.ctx.storage.setAlarm(Date.now() + 250);
-      return;
-    }
-    this.flushUsage();
-    this.fuel.chargeStorage(t, this.eventBytes(), this.mediaBytes());
-    this.store.drain();
-    this.sweepRetention(t);
-    await viewsTick(this, t);
-    await this.publishDiscovery();
-    // Fuel notice: once when it turns low, then once a day while it stays low.
-    if (this.settings.policy.notify.fuel) {
-      const low = fuelLow(this.fuelStatus());
-      const last = (await this.ctx.storage.get<number>("fuel-low-at")) ?? 0;
-      if (low && t - last >= 86400) {
-        await this.ctx.storage.put("fuel-low-at", t);
-        await notify(this, "fuel", fuelText(this, this.fuelStatus()), "fuel on " + this.slug);
-      } else if (!low && last) await this.ctx.storage.delete("fuel-low-at");
-    }
-    // Succession: the dead-man's switch, checked once a day.
-    await this.succession.tick(t);
-    // ---- digest: one message a week on how the relay is doing ----
-    if (this.settings.policy.notify.digest && this.settings.policy.owner !== "") {
-      const last = (await this.ctx.storage.get<number>("lastDigest")) ?? 0;
-      if (last === 0) await this.ctx.storage.put("lastDigest", t);
-      else if (t - last >= DIGEST_DAYS * 86400 - 3600) {
-        await this.ctx.storage.put("lastDigest", t);
-        await notify(this, "digest", await digestText(this, last, t), "the week on " + this.slug);
+    return this.repositoryAccess.run("alarm", async () => {
+      this.touch();
+      const t = now();
+      // A lease that has run out is wiped whole: the name is free again.
+      if (this.settings.leaseExpired(t)) {
+        await this.teardown();
+        return;
       }
-    }
-    // ---- end digest ----
-    const next = this.store.sweepExpired(t);
-    if (await this.syncSites()) {
-      await this.ctx.storage.setAlarm(Date.now() + 250);
-      return;
-    }
-    // ---- dumps: a scheduled JSONL of everything, into R2 (dumps.ts) ----
-    if (dumpDue(this, t)) {
-      try {
-        await writeDump(this, t);
-      } catch (err) {
-        console.log("dump failed: " + (err instanceof Error ? err.message : String(err)));
+      const graspAt = await graspTick(this);
+      await this.syncSites();
+      await queueMirrors(this);
+      if (await this.jobsTick()) {
+        await this.ctx.storage.setAlarm(Date.now() + 250);
+        return;
       }
-    }
-    // ---- end dumps ----
-    let at = t + 86400;
-    if (this.sql.exec(`SELECT 1 FROM site_mirror_queue LIMIT 1`).toArray().length) at = Math.min(at, t + 60);
-    if (next > 0 && next < at) at = next;
-    const lease = this.settings.policy.lease;
-    if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
-    const run = await this.nextJobRun();
-    if (run > 0 && run < at) at = Math.max(run, t + 1);
-    if (graspAt && graspAt < at) at = graspAt;
-    await this.ctx.storage.setAlarm(at * 1000 + 500);
-    } finally { this.graspControls--; }
+      this.flushUsage();
+      this.fuel.chargeStorage(t, this.eventBytes(), this.mediaBytes());
+      this.store.drain();
+      this.sweepRetention(t);
+      await viewsTick(this, t);
+      await this.publishDiscovery();
+      // Fuel notice: once when it turns low, then once a day while it stays low.
+      if (this.settings.policy.notify.fuel) {
+        const low = fuelLow(this.fuelStatus());
+        const last = (await this.ctx.storage.get<number>("fuel-low-at")) ?? 0;
+        if (low && t - last >= 86400) {
+          await this.ctx.storage.put("fuel-low-at", t);
+          await notify(this, "fuel", fuelText(this, this.fuelStatus()), "fuel on " + this.slug);
+        } else if (!low && last) await this.ctx.storage.delete("fuel-low-at");
+      }
+      // Succession: the dead-man's switch, checked once a day.
+      await this.succession.tick(t);
+      // ---- digest: one message a week on how the relay is doing ----
+      if (this.settings.policy.notify.digest && this.settings.policy.owner !== "") {
+        const last = (await this.ctx.storage.get<number>("lastDigest")) ?? 0;
+        if (last === 0) await this.ctx.storage.put("lastDigest", t);
+        else if (t - last >= DIGEST_DAYS * 86400 - 3600) {
+          await this.ctx.storage.put("lastDigest", t);
+          await notify(this, "digest", await digestText(this, last, t), "the week on " + this.slug);
+        }
+      }
+      // ---- end digest ----
+      const next = this.store.sweepExpired(t);
+      if (await this.syncSites()) {
+        await this.ctx.storage.setAlarm(Date.now() + 250);
+        return;
+      }
+      // ---- dumps: a scheduled JSONL of everything, into R2 (dumps.ts) ----
+      if (dumpDue(this, t)) {
+        try {
+          await writeDump(this, t);
+        } catch (err) {
+          console.log("dump failed: " + (err instanceof Error ? err.message : String(err)));
+        }
+      }
+      // ---- end dumps ----
+      let at = t + 86400;
+      if (this.sql.exec(`SELECT 1 FROM site_mirror_queue LIMIT 1`).toArray().length) at = Math.min(at, t + 60);
+      if (next > 0 && next < at) at = next;
+      const lease = this.settings.policy.lease;
+      if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
+      const run = await this.nextJobRun();
+      if (run > 0 && run < at) at = Math.max(run, t + 1);
+      if (graspAt && graspAt < at) at = graspAt;
+      await this.ctx.storage.setAlarm(at * 1000 + 500);
+    }, async () => { await this.ctx.storage.setAlarm(Date.now() + 1000); });
   }
 
   // sweepRetention applies the owner's keep-for rules. Returns how many

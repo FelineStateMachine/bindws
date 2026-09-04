@@ -58,8 +58,8 @@ describe("GRASP coordination", () => {
       const active = mode === "http" ? relay.fetch(request()) : relay.alarm();
       try {
         await atRead;
-        expect(relay.graspBusy).toBe(mode === "http");
-        expect(relay.graspControls).toBe(mode === "alarm" ? 1 : 0);
+        expect(relay.repositoryAccess.busy).toBe(true);
+        expect(relay.repositoryAccess.kind).toBe(mode === "http" ? "git" : "alarm");
         const before = gets;
         const otherBefore = otherOperations;
         const refused = await relay.fetch(request());
@@ -69,27 +69,18 @@ describe("GRASP coordination", () => {
         const admission = await relay.acceptAny(state, relay.virtualConn(host, pk(owner)));
         expect(gets).toBe(before);
         expect(otherOperations).toBe(otherBefore);
-        if (mode === "http") {
-          expect(admission.ok).toBe(false);
-          expect(admission.msg).toContain("Git transaction in progress");
-          const management = await relay.fetch(new Request(`http://${host}/`, { method: "POST", body: "{}" }));
-          expect(management.status).toBe(429);
-          await management.arrayBuffer();
-          await relay.alarm();
-          expect(gets).toBe(before);
-          expect(relay.graspBusy).toBe(true);
-          expect(relay.graspControls).toBe(0);
-        } else {
-          // Controls blocks Git admission, but event writes can still alter
-          // authority while alarm work awaits R2. It is not a general lock.
-          expect(admission.ok).toBe(true);
-          expect(relay.sql.exec("SELECT id FROM events WHERE id=?", state.id).toArray()).toHaveLength(1);
-          expect(relay.graspControls).toBe(1);
-        }
+        expect(admission.ok).toBe(false);
+        expect(admission.msg).toContain("relay operation in progress");
+        const management = await relay.fetch(new Request(`http://${host}/`, { method: "POST", body: "{}" }));
+        expect(management.status).toBe(429);
+        await management.arrayBuffer();
+        if (mode === "http") await relay.alarm();
+        expect(gets).toBe(before);
+        expect(relay.repositoryAccess.busy).toBe(true);
+        expect(relay.repositoryAccess.kind).toBe(mode === "http" ? "git" : "alarm");
         release();
         const response = await active;
-        expect(relay.graspBusy).toBe(false);
-        expect(relay.graspControls).toBe(0);
+        expect(relay.repositoryAccess.busy).toBe(false);
         const completedGets = gets;
         if (response) {
           expect(response.status).toBe(outcome === "failure" ? 503 : 200);

@@ -276,11 +276,10 @@ describe("GRASP", () => {
 
     const stub = env.RELAY.getByName("grasp-pr-checkpoint");
     await runInDurableObject(stub, async (relay) => {
-      relay.graspBusy = true;
-      try {
+      await relay.repositoryAccess.run("git", async () => {
         const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
         expect((await wal.checkpoint()).changed).toBe(true);
-      } finally { relay.graspBusy = false; }
+      }, () => { throw new Error("Git scope unexpectedly refused"); });
     });
     const metadata = await runInDurableObject(stub, async (relay) => {
       const bucket = relay.media;
@@ -305,15 +304,14 @@ describe("GRASP", () => {
     const requestId = "hidden-pr-correction";
     expect(await (await receiveSettled(path, host, null, next.commitID, ref, next.pack, requestId)).text()).toContain(`ok ${ref}`);
     const sequence = await runInDurableObject(stub, async (relay) => {
-      relay.graspBusy = true;
-      try {
+      return relay.repositoryAccess.run("git", async () => {
         const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
         for (let i = 0; i < 130; i++) await wal.commit({ id: `later-${i}`, updates: [{ name: `refs/tags/later-${i}`, old: null, new: first.commitID }] });
         const snapshot = await wal.load();
         expect(snapshot.records).toHaveLength(1);
         expect(snapshot.records[0].id).not.toBe(requestId);
         return snapshot.sequence;
-      } finally { relay.graspBusy = false; }
+      }, () => { throw new Error("Git scope unexpectedly refused"); });
     });
     // Pending work for another repository does not reload this one's packs.
     const other = await WS.connect(host);
@@ -493,16 +491,30 @@ describe("GRASP", () => {
     await rpc(host, owner, "setpolicy", { features: { grasp: true } });
     const event = repository(owner, host, "fenced");
     await runInDurableObject(env.RELAY.getByName("grasp-fence"), async (relay) => {
-      relay.graspBusy = true;
+      let entered!: () => void;
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => { entered = resolve; });
+      const hold = new Promise<void>((resolve) => { release = resolve; });
+      const active = relay.repositoryAccess.run("git", async () => {
+        entered();
+        await hold;
+      }, () => { throw new Error("Git scope unexpectedly refused"); });
       try {
+        await ready;
+        expect(relay.repositoryAccess.busy).toBe(true);
+        expect(relay.repositoryAccess.kind).toBe("git");
         const result = await relay.acceptAny(event, relay.virtualConn(host, pk(owner)));
         expect(result.ok).toBe(false);
-        expect(result.msg).toContain("Git transaction in progress");
+        expect(result.msg).toContain("relay operation in progress");
         const response = await relay.fetch(new Request(`http://${host}/`, { method: "POST", body: "{}" }));
         expect(response.status).toBe(429);
         await response.text();
         expect(relay.sql.exec("SELECT 1 FROM events WHERE id=?", event.id).toArray()).toEqual([]);
-      } finally { relay.graspBusy = false; }
+      } finally {
+        release();
+        await active;
+        expect(relay.repositoryAccess.busy).toBe(false);
+      }
     });
   });
 

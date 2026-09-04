@@ -17,7 +17,7 @@ import { marmotPrincipal, marmotShape } from "./marmot.ts";
 // writeGate is what every write must pass, whoever sends it: shape, bans, the
 // relay's state, fuel, and the one-group rule. "" lets it through.
 export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: number): string {
-  if (relay.graspBusy) return "restricted: Git transaction in progress; retry the event";
+  if (relay.repositoryAccess.blocked) return "restricted: relay operation in progress; retry the event";
   const graspError = graspGate(relay, e, conn?.host ?? "");
   if (graspError) return graspError;
   const siteError = checkSite(e);

@@ -21,8 +21,14 @@ export async function rpc(host: string, sk: Uint8Array | null, method: string, .
   const payload = { method, params };
   const headers: Record<string, string> = { "content-type": "application/nostr+json+rpc" };
   if (sk) headers.authorization = await nip98(sk, url, "POST", payload);
-  const resp = await SELF.fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
-  return { status: resp.status, ...(await resp.json<any>()) };
+  // Background alarms may own admission between management calls. Retry only
+  // this transient refusal; quota, rate and inventory cooldown errors surface.
+  for (let attempt = 0; ; attempt++) {
+    const resp = await SELF.fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+    const result = { status: resp.status, ...(await resp.json<any>()) };
+    if (result.status !== 429 || result.error !== "restricted: relay operation in progress; retry" || attempt >= 20) return result;
+    await sleep(50);
+  }
 }
 
 // info reads the NIP-11 document.

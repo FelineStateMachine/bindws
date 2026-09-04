@@ -21,10 +21,12 @@ const answer = (reason: string, status: number) => new Response(reason, { status
 // isGitPath reserves malformed Git paths too, so every failure has CORS.
 export const isGitPath = (url: URL) => /^\/(?:npub|prs\/)/.test(url.pathname) || /\.git(?:\/|$)/.test(url.pathname);
 
+export const gitStoragePrefix = async (relay: Relay, repo: RepositoryAnnouncement) => `${relay.slug}/git/${await repositoryStoragePrefix(repositoryAddress(npubEncode(repo.owner), repo.identifier))}`;
+
 // gitRepository records each R2 key's retained size, including orphan writes.
 // Reservations precede PUT: an ambiguous response never makes bytes free.
 export async function gitRepository(relay: Relay, repo: RepositoryAnnouncement): Promise<WalRepository> {
-  const prefix = `${relay.slug}/git/${await repositoryStoragePrefix(repositoryAddress(npubEncode(repo.owner), repo.identifier))}`;
+  const prefix = await gitStoragePrefix(relay, repo);
   const r2 = new R2ObjectStore(relay.media, { prefix, maxObjectBytes: 4 * 1024 * 1024 });
   const store: ObjectStore = {
     get: async (key) => r2.get(key),
@@ -127,29 +129,28 @@ export async function grasp(relay: Relay, req: Request, url: URL): Promise<Respo
   const limited = relay.ipLimit(req.headers.get("x-relay-ip") || "unknown", req.method === "POST" ? "events" : "reqs");
   if (limited) return answer(limited, 429);
   if (relay.fuelStatus().outOfFuel) return answer("restricted: relay storage or fuel limit reached", 403);
-  if (relay.graspBusy || relay.graspControls) return answer("restricted: Git transaction in progress; retry", 429);
-  relay.graspBusy = true;
-  try {
-    if (parsed.endpoint === "root") {
-      if (req.method !== "GET" && req.method !== "HEAD") return answer("invalid: method not allowed", 405);
-      const coordinate = naddrEncode({ kind: KIND_REPO, pubkey: repo.owner, identifier: repo.identifier });
-      const html = page(repo.identifier, `<h1>${esc(repo.identifier)}</h1><p>Git storage follows signed Nostr repository state.</p><p><a href="nostr:${coordinate}">Open in a Nostr Git client</a></p><pre>git clone ${esc(relay.webURL(url.host) + parsed.prefix)}</pre>`);
-      return new Response(req.method === "HEAD" ? null : html, { headers: { ...CORS, "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  return relay.repositoryAccess.run("git", async () => {
+    try {
+      if (parsed.endpoint === "root") {
+        if (req.method !== "GET" && req.method !== "HEAD") return answer("invalid: method not allowed", 405);
+        const coordinate = naddrEncode({ kind: KIND_REPO, pubkey: repo.owner, identifier: repo.identifier });
+        const html = page(repo.identifier, `<h1>${esc(repo.identifier)}</h1><p>Git storage follows signed Nostr repository state.</p><p><a href="nostr:${coordinate}">Open in a Nostr Git client</a></p><pre>git clone ${esc(relay.webURL(url.host) + parsed.prefix)}</pre>`);
+        return new Response(req.method === "HEAD" ? null : html, { headers: { ...CORS, "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+      }
+      const wal = await gitRepository(relay, repo);
+      const response = await wal.withReadSession(async (scopedWal) => {
+        const handler = createGitHandler(authorizedRepository(relay, repo, scopedWal), { prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
+        return await handler(req);
+      });
+      const headers = new Headers(response.headers);
+      for (const [key, value] of Object.entries(CORS)) headers.set(key, value);
+      return new Response(response.body, { status: response.status, headers });
+    } catch (error) {
+      return answer(error instanceof LimitError ? "restricted: Git repository limit reached" : "error: Git repository unavailable", error instanceof LimitError ? 413 : 503);
+    } finally {
+      await relay.ensureAlarm(now() + 60);
     }
-    const wal = await gitRepository(relay, repo);
-    const response = await wal.withReadSession(async (scopedWal) => {
-      const handler = createGitHandler(authorizedRepository(relay, repo, scopedWal), { prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
-      return await handler(req);
-    });
-    const headers = new Headers(response.headers);
-    for (const [key, value] of Object.entries(CORS)) headers.set(key, value);
-    return new Response(response.body, { status: response.status, headers });
-  } catch (error) {
-    return answer(error instanceof LimitError ? "restricted: Git repository limit reached" : "error: Git repository unavailable", error instanceof LimitError ? 413 : 503);
-  } finally {
-    relay.graspBusy = false;
-    await relay.ensureAlarm(now() + 60);
-  }
+  }, () => answer("restricted: relay operation in progress; retry", 429));
 }
 
 // graspTick expires purgatory and cleans one repository per alarm. Event
