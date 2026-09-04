@@ -18,6 +18,7 @@ src/
   settings.ts   policy, members, bans, kind rules, retention, export/import
   roles.ts      who may do what: owner, moderator; one table for NIP-86 and NIP-29
   groups.ts     NIP-29, one group per relay: joins, leaves, moderation events
+  audit.ts      the moderation log: one row per change from manage.ts or groups.ts
   presets.ts    rule bundles, one click each, some with a standing pull
   manage.ts     NIP-86 methods over NIP-98
   domains.ts    custom hostnames: the Cloudflare client and the KV mapping
@@ -28,6 +29,7 @@ src/
   qr.ts         a QR encoder for the card and the console
   fuel.ts       meters, prices, receipts, LNURL
   identity.ts   relay keypair and NIP-43 roster
+  nip66.ts      the relay's NIP-66 discovery record about itself
   blossom.ts    BUD-01/02/04/06/08/09 on R2
   nip96.ts      NIP-96 door to the same bucket and table
   bridge.ts     HTTP bridge
@@ -79,6 +81,7 @@ Most NIPs land as their own module, wired in from `relay.ts` with one import and
 |---|---|---|
 | 29 groups | `groups.ts` | the write gate in `relay.ts`, before the client policy |
 | 43 roster | `identity.ts` | `publishMembership` in `relay.ts` |
+| 66 discovery | `nip66.ts` | `publishDiscovery` in `relay.ts`, from `publishMembership` and the alarm |
 | 46 transport | one kind in the write gate and the read gate | `relay.ts` |
 | 86 methods | `manage.ts` with `roles.ts` | the RPC route |
 | 96 files | `nip96.ts` over `blossom.ts` | one path line in `fetch` |

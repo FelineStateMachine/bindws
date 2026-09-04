@@ -15,11 +15,11 @@ That answers with a relay at a memorable name, open to anyone for 14 days. Claim
 
 ## What a name gives you
 
-- **A relay.** The standard protocol plus search, counts, sync, expiry, deletion, proof of work and an HTTP door for scripts. Works with every client.
-- **A community.** Members, invite links, an invite tree, moderators, a signed roster and one NIP-29 group per relay, so group-aware clients show it as a place.
+- **A relay.** The standard protocol plus search, counts, sync, expiry, deletion, proof of work, a discovery record for relay directories and an HTTP door for scripts. Works with every client.
+- **A community.** Members, invite links, an invite tree, moderators with a log of what they did, a signed roster and one NIP-29 group per relay, so group-aware clients show it as a place.
 - **A site.** Notes and articles as pages with link previews, an Atom feed, and a card with a QR of the group address.
 - **A file host.** Blossom and NIP-96 on the same bucket, with mirroring, pre-flight checks and file reports.
-- **A console.** Seven tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica or a media host in one click.
+- **A console.** Nine tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica or a media host in one click.
 - **Jobs.** Pull another relay in, keep a standing mirror, fetch your own history from your relay list, rebroadcast to other relays, and dump everything to a file on a schedule.
 - **Your own domain.** `wss://relay.example.com` onto your relay with one CNAME.
 - **Succession.** Name an heir. If your key goes silent, the relay warns you for a month and then hands itself over.
@@ -47,7 +47,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 **For developers**
 
 - [Architecture](docs/10-architecture.md): routing, the object, storage, alarm, jobs, identity, groups.
-- [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain.
+- [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console.
 - [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
 

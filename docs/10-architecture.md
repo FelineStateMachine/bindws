@@ -49,7 +49,7 @@ The read path is one gate too, `Settings.mayRead`, given the pubkeys a caller ha
 
 ## Storage and media
 
-SQLite tables: `events`, `tags` (single-letter tags only), an FTS5 `search` table keyed by row id, `vanished` tombstones, plus the settings tables and `jobs`, `dumps` and `usage`. Two platform details shape the SQL:
+SQLite tables: `events`, `tags` (single-letter tags only), an FTS5 `search` table keyed by row id, `vanished` tombstones, plus the settings tables and `jobs`, `dumps`, `usage` and the `audit` log. Two platform details shape the SQL:
 
 - Statements take at most 100 bound parameters, so id and author lists bind as one JSON parameter expanded with `json_each`.
 - There are no PRAGMAs, so cascading deletes are triggers.

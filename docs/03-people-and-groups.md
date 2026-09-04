@@ -43,7 +43,7 @@ A moderator who signs in on the relay's page sees the People and Moderation tabs
 
 ## Keeping order
 
-Three tools for the noise a bigger relay attracts, all on the Rules and Moderation tabs. **Blocked words** refuse any content that contains one, from anyone but you and your moderators. **Ban and erase** removes a person together with everything they wrote and uploaded. **Hide after N reports** takes an event out of view once that many different people have reported it, until a moderator looks. The [configuration guide](01-relay-configuration.md) has the details.
+Three tools for the noise a bigger relay attracts, all on the Rules and Moderation tabs. **Blocked words** refuse any content that contains one, as a plain word or a pattern, in the content and, when you switch it on, in the tags, from anyone but you and your moderators. **Ban and erase** removes a person together with everything they wrote and uploaded. **Hide after N reports** takes an event out of view once that many different people have reported it, until a moderator looks. The [configuration guide](01-relay-configuration.md) has the details.
 
 ## Groups in clients
 
