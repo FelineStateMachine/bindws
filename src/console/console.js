@@ -227,6 +227,7 @@
     const clone = "git clone '" + location.origin + "/<npub>/<repo>.git'";
     $("#git-clone").textContent = clone;
     $("#git-copy").dataset.copytext = clone;
+    renderApps();
   }
 
   async function loadFuel() {
@@ -1025,6 +1026,11 @@
         row("Nostur", "iPhone, Mac", profileNote + " Then Settings, Relays.", [nprofile && app("Open in app", "nostr:" + nprofile), copy("Copy relay URL", wsURL)]),
       ]],
     ];
+    if (info?.supported_grasps?.includes("GRASP-01")) groups.push([
+      "Git repositories", "Use this relay with a Git client.", [
+        row("GitWorkshop", "web", "Browse and collaborate on Git repositories.", [link("Open", "https://gitworkshop.dev/"), copy("Copy relay URL", wsURL)]),
+      ],
+    ]);
     el.innerHTML = groups.map(([h, note, rows]) => '<div class="appgroup"><h4>' + h + '</h4><p class="note">' + note + '</p><div class="appgrid">' + rows.join("") + "</div></div>").join("");
     $("#apps-ws").textContent = wsURL;
     const tile = (label, text) => '<div class="door"><small>' + label + '</small><img src="/qr.svg?text=' + enc(text) + '" alt="QR code: ' + esc(label) + '" width="150" height="150"></div>';

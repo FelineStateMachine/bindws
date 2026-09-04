@@ -103,6 +103,8 @@ the broader archive or sync behavior of later GRASP documents.
 
 Your relay's **Connect** section includes a copyable `git clone` example with
 its own hostname, the repository owner's npub and repository name.
+It also links to [GitWorkshop](https://gitworkshop.dev/) with a copyable relay
+URL. Both Git connections stay hidden when Git hosting is unavailable.
 
 The Git door is unauthenticated when the relay's reads are open. It serves
 Git Smart HTTP at the repository path and returns a repository page or a 404
