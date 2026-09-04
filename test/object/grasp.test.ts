@@ -34,10 +34,12 @@ const receivePack = (path: string, host: string, old: string | null, next: strin
   headers: { "content-type": "application/x-git-receive-pack-request" },
   body: concat(packet(`${old ?? "0".repeat(40)} ${next ?? "0".repeat(40)} ${ref}\0report-status\n`), flush(), ...(pack ? [pack] : [])),
 });
+// receiveSettled waits for transient alarm contention before testing the Git response.
 const receiveSettled = async (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array) => {
   for (let attempt = 0; attempt < 20; attempt++) {
     const response = await receivePack(path, host, old, next, ref, pack);
     if (response.status !== 429) return response;
+    await response.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Git transaction did not become available");
@@ -214,10 +216,10 @@ describe("GRASP", () => {
     expect((await c.ok(state)).ok).toBe(true); c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "pr-refs");
 
-    expect((await receivePack(path, host, null, pack.commitID, "refs/heads/main", pack.pack)).status).toBe(200);
+    expect((await receiveSettled(path, host, null, pack.commitID, "refs/heads/main", pack.pack)).status).toBe(200);
     const realPR = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:pr-refs`], ["c", pack.commitID]]);
     const unknownRef = `refs/nostr/${realPR.id}`;
-    expect((await receivePack(path, host, null, pack.commitID, unknownRef, pack.pack)).status).toBe(200);
+    expect((await receiveSettled(path, host, null, pack.commitID, unknownRef, pack.pack)).status).toBe(200);
     expect(await (await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`)).text()).toContain(`${pack.commitID} ${unknownRef}`);
     const deletion = await receiveSettled(path, host, pack.commitID, null, unknownRef);
     expect(deletion.status).toBe(200);
@@ -225,20 +227,20 @@ describe("GRASP", () => {
 
     const late = await WS.connect(host);
     expect((await late.ok(realPR)).ok).toBe(true);
-    expect((await receivePack(path, host, pack.commitID, pack.commitID, "refs/heads/main")).status).toBe(200);
+    expect((await receiveSettled(path, host, pack.commitID, pack.commitID, "refs/heads/main")).status).toBe(200);
     expect((await late.req({ ids: [realPR.id] })).map((e) => e.id)).toEqual([realPR.id]);
     const listed = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
     expect(await listed.text()).toContain(`refs/nostr/${realPR.id}`);
     const wrongPR = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:pr-refs`], ["c", "b".repeat(40)]]);
     const wrongEvent = await WS.connect(host);
     expect((await wrongEvent.ok(wrongPR)).ok).toBe(true);
-    const mismatch = await receivePack(path, host, null, pack.commitID, `refs/nostr/${wrongPR.id}`);
+    const mismatch = await receiveSettled(path, host, null, pack.commitID, `refs/nostr/${wrongPR.id}`);
     expect(await mismatch.text()).toContain(`ng refs/nostr/${wrongPR.id}`);
     wrongEvent.ws.close();
 
     const expiringID = "c".repeat(64);
     const expiringRef = `refs/nostr/${expiringID}`;
-    expect(await (await receivePack(path, host, null, pack.commitID, expiringRef, pack.pack)).text()).toContain(`ok ${expiringRef}`);
+    expect(await (await receiveSettled(path, host, null, pack.commitID, expiringRef, pack.pack)).text()).toContain(`ok ${expiringRef}`);
     await runInDurableObject(env.RELAY.getByName(host.split(".")[0]), (relay) => {
       relay.sql.exec("UPDATE grasp_pr_refs SET until=0 WHERE repo=? AND ref=?", `30617:${pk(owner)}:pr-refs`, expiringRef);
     });
