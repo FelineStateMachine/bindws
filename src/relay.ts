@@ -1,6 +1,8 @@
 // The relay: one Durable Object per name, holding its SQLite database and
 // its live websockets (hibernating while idle). Protocol handling mirrors
 // relay.go; policy is per relay and owner-managed (see manage.ts).
+import { callbackOrigins } from "./push-policy.ts";
+import { pushTick, queuePush, nextPush, PUSH_SCHEMA } from "./push.ts";
 import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
 import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
 import { queueMirrors } from "./site-mirror.ts";
@@ -33,7 +35,7 @@ import { Hostnames, forgetDomains } from "./domains.ts";
 import { hostOf } from "./edge.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
 import { markView, notePresence, viewsTick } from "./views.ts";
-import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY, KIND_MARMOT_GROUP } from "./kinds.ts";
+import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY, KIND_MARMOT_GROUP, KIND_PUSH_REGISTRATION } from "./kinds.ts";
 import { marmotPrincipal } from "./marmot.ts";
 import { RepositoryAccess } from "./repository-access.ts";
 
@@ -42,6 +44,7 @@ export interface Env {
   MEDIA: R2Bucket;
   DOMAIN: string;
   DEV_RELAY: string;
+  PUSH_CALLBACK_ORIGINS?: string; // JSON array of operator-trusted public HTTPS origins
   LEASE_DAYS?: string; // how long a temporary relay lives; 14 by default
   // Cloudflare's rate limit bindings; without them (celld) edge.ts keeps
   // token buckets in memory instead.
@@ -152,6 +155,7 @@ export class Relay extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.store.init();
       this.settings.load();
+      this.sql.exec(PUSH_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
       this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
@@ -188,6 +192,18 @@ export class Relay extends DurableObject<Env> {
 
   get cnameTarget(): string {
     return this.env.CNAME_TARGET || "customers." + this.env.DOMAIN;
+  }
+
+  get pushCallbackOrigins(): string[] {
+    try { return callbackOrigins(JSON.parse(this.env.PUSH_CALLBACK_ORIGINS || "[]")) ?? []; }
+    catch { return []; }
+  }
+
+  // meterPush accounts for bounded callback work, including failed attempts.
+  meterPush(rowsRead: number, rowsWritten: number, activeMs = 0) {
+    this.meter.rowsRead += rowsRead;
+    this.meter.rowsWritten += rowsWritten;
+    this.meter.activeMs += activeMs;
   }
 
   // relays reaches the other objects on this host, for pulls between them.
@@ -481,6 +497,7 @@ export class Relay extends DurableObject<Env> {
     this.audit = new Audit(this.sql, () => this.slug);
     this.store.init();
     this.settings.load();
+    this.sql.exec(PUSH_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
@@ -1101,6 +1118,7 @@ export class Relay extends DurableObject<Env> {
   }
 
   async alarm() {
+    await pushTick(this);
     return this.repositoryAccess.run("alarm", async () => {
       this.touch();
       const t = now();
@@ -1165,6 +1183,8 @@ export class Relay extends DurableObject<Env> {
       const run = await this.nextJobRun();
       if (run > 0 && run < at) at = Math.max(run, t + 1);
       if (graspAt && graspAt < at) at = graspAt;
+      const pushAt = nextPush(this);
+      if (pushAt) at = Math.min(at, Math.max(pushAt, now() + 1));
       await this.ctx.storage.setAlarm(at * 1000 + 500);
     }, async () => { await this.ctx.storage.setAlarm(Date.now() + 1000); });
   }
@@ -1198,6 +1218,7 @@ export class Relay extends DurableObject<Env> {
   // transport key it never AUTHs with. A bare subscription to the kind
   // still sees nothing.
   private canSee(s: ConnState, e: Event, f: Filter): boolean {
+    if (e.kind === KIND_PUSH_REGISTRATION) return s.authed.includes(e.pubkey);
     if (!isPrivate(e.kind)) return true;
     const parties = [e.pubkey, ...tagValues(e, "p")];
     if (parties.some((p) => s.authed.includes(p))) return true;
@@ -1207,11 +1228,12 @@ export class Relay extends DurableObject<Env> {
 
   broadcast(e: Event) {
     if (!graspVisible(this, e.id)) return;
+    if (queuePush(this, e)) this.ctx.waitUntil(this.ensureAlarm(now() + 1));
     const raw = canonical(e);
     for (const ws of this.ctx.getWebSockets()) {
       const s = this.state(ws);
       for (const [id, filters] of Object.entries(s.subs)) {
-        if (filters.some((f) => match(f, e) && this.canSee(s, e, f))) {
+        if (!readGate(this, s, filters).reason && filters.some((f) => match(f, e) && this.canSee(s, e, f))) {
           this.raw(ws, `["EVENT",${JSON.stringify(id)},${raw}]`);
           break;
         }

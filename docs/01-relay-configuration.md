@@ -139,3 +139,13 @@ The relay as a thing you hold.
 ### If I lose my key
 
 Name a member as your heir and a delay of 90, 180 or 365 days of silence. Past it the relay warns you for 30 days, then hands itself to the heir. See [People and groups](03-people-and-groups.md#if-you-lose-your-key).
+
+## Relay push
+
+Relay push is off by default. Under Features, enable it and enter callback
+origins approved by your host operator. Members register their own callback
+paths using signed kind 30390 events; callback work costs fuel. The
+`features.push`, `pushCallbacks` and `letteredNips` settings travel with relay
+configurations. Push requires mixed numeric and lettered NIP advertisements,
+which some older clients reject. See [NIP-9a relay push](25-nip-9a-relay-push.md)
+and [NIP-11 identifier compatibility](26-nip11-compatibility.md).

@@ -232,6 +232,11 @@
         <h3>Features</h3>
         <p class="note">Each is a door or a cost. Off leaves the NIP-11 list, answers 404 at its door and is refused at the socket.</p>
         <div id="features" class="limits"></div>
+        <form id="push-policy-form" class="limits">
+          <label><span>Push callback origins <small>One HTTPS origin per line, also approved by your host operator. Relay push costs fuel.</small></span><textarea class="txt" name="origins" rows="3" placeholder="https://push.example.com"></textarea></label>
+          <label><span>Lettered NIP advertisements <small>Some older clients reject mixed NIP identifiers. Relay push requires them.</small></span><input type="checkbox" name="lettered"></label>
+          <div class="actions"><button class="btn">Save callback policy</button></div>
+        </form>
       </div>
       <div class="block">
         <h3>Blocked words</h3>

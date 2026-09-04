@@ -12,6 +12,7 @@
   "vars": {
     "DOMAIN": "bind.ws",
     "DEV_RELAY": "dev",
+    "PUSH_CALLBACK_ORIGINS": "[]",
     // The header a trusted proxy puts the client's address in: x-forwarded-for
     // for Caddy, x-real-ip for nginx. Empty means no address is known, so
     // per-address limits are off. Set it only behind a proxy that overwrites
