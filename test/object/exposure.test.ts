@@ -86,6 +86,22 @@ function doors(f: Fixture): { path: string; host?: string; method?: string; gate
 const leaks = (text: string, secrets: string[]) => secrets.filter((s) => text.includes(s));
 
 describe("the read rule at every door", () => {
+  it("keeps membership claim management behind authentication and invitation permission", async () => {
+    const host = "exposure-claims.bind.ws";
+    const owner = generateSecretKey();
+    const outsider = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "createclaim", "private-invite");
+    for (const method of ["listclaims", "createclaim", "deleteclaim"]) {
+      const params = method === "listclaims" ? [] : ["private-invite"];
+      expect((await rpc(host, null, method, ...params)).status).toBe(401);
+      const denied = await rpc(host, outsider, method, ...params);
+      expect(denied.status).toBe(403);
+      expect(JSON.stringify(denied)).not.toContain("private-invite");
+    }
+    expect((await rpc(host, owner, "listclaims")).result).toEqual(["private-invite"]);
+  });
+
   it("keeps Git storage inventory owner-only at the management door", async () => {
     const host = "exposure-git-storage.bind.ws";
     const owner = generateSecretKey();

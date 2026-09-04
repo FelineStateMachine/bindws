@@ -8,7 +8,7 @@
 // the table, so a method is registered in one place.
 import { now } from "./event.ts";
 import type { Relay } from "./relay.ts";
-import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
+import { CODE_RE, inviteCreator, listClaims, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
 import { applyConfig, exportConfig, parseConfig, planConfig } from "./config.ts";
@@ -54,6 +54,8 @@ interface Method {
   action: Action | "open";
   // Changes nothing, so it is not written to the moderation log.
   reads?: true;
+  // Plain members may manage their own invitations when the tree is open.
+  ownInvites?: true;
   run: (c: Call) => Response | Promise<Response>;
 }
 
@@ -221,7 +223,7 @@ export const METHODS: Record<string, Method> = {
   listmembers: { action: "read", reads: true, run: listMembers },
   listpeople: { action: "read", reads: true, run: listMembers },
   createinvite: {
-    action: "invites",
+    action: "invites", ownInvites: true,
     run: ({ relay, s, t, caller, role, str, num, reply }) => {
       if (role === "member") {
         const gate = memberInviteGate(s, relay.sql, caller, t);
@@ -232,17 +234,47 @@ export const METHODS: Record<string, Method> = {
     },
   },
   listinvites: {
-    action: "read", reads: true,
+    action: "read", reads: true, ownInvites: true,
     run: ({ relay, t, caller, role, reply }) => {
       const all = listInvites(relay.sql, t);
       return reply({ result: role === "member" ? all.filter((i) => i.created_by === caller) : all });
     },
   },
   revokeinvite: {
-    action: "invites",
+    action: "invites", ownInvites: true,
     run: ({ relay, caller, role, str, reply }) => {
       if (role === "member" && inviteCreator(relay.sql, str(0)) !== caller) return reply({ error: "restricted: not your invite" }, 403);
       return reply({ result: revokeInvite(relay.sql, str(0)) });
+    },
+  },
+  // NIP-86 proposal #2408, dcf5af03aacd5ca9c70c51448e32f60477f6ac34.
+  // These codes join members; the open claim method above assigns ownership.
+  listclaims: {
+    action: "invites", reads: true, ownInvites: true,
+    run: ({ relay, t, caller, role, params, reply }) => {
+      if (params.length !== 0) return reply({ error: "invalid: listclaims takes no parameters" }, 400);
+      return reply({ result: listClaims(relay.sql, t, role === "member" ? caller : "") });
+    },
+  },
+  createclaim: {
+    action: "invites", ownInvites: true,
+    run: ({ relay, s, t, caller, role, params, str, reply }) => {
+      if (params.length !== 1 || !CODE_RE.test(str(0))) return reply({ error: "invalid: give one invite code of 4 to 64 letters, digits, dash or underscore" }, 400);
+      if (role === "member") {
+        const gate = memberInviteGate(s, relay.sql, caller, t);
+        if (gate) return reply({ error: gate }, 403);
+      }
+      const inv = mintInvite(relay.sql, caller, 0, 0, "", t, str(0));
+      return typeof inv === "string" ? reply({ error: inv }, 400) : reply({ result: true });
+    },
+  },
+  deleteclaim: {
+    action: "invites", ownInvites: true,
+    run: ({ relay, caller, role, params, str, reply }) => {
+      if (params.length !== 1 || !CODE_RE.test(str(0))) return reply({ error: "invalid: give one invite code of 4 to 64 letters, digits, dash or underscore" }, 400);
+      if (role === "member" && inviteCreator(relay.sql, str(0)) !== caller) return reply({ error: "restricted: not your invite" }, 403);
+      revokeInvite(relay.sql, str(0));
+      return reply({ result: true });
     },
   },
   removesubtree: {
@@ -761,7 +793,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.succession.status() });
     // A plain member reaches their own invites when the owner opened the
     // invite tree (memberInvites); the invite methods keep them to their own.
-    const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
+    const ownInvites = role === "member" && p.memberInvites.depth > 0 && m.ownInvites;
     if (role === "owner") void relay.succession.seen(caller);
     if (!ownInvites && !can(role, m.action)) {
       const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";

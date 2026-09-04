@@ -23,7 +23,7 @@ const DAY = 86400;
 export const CODE_RE = /^[a-zA-Z0-9_-]{4,64}$/;
 
 // mintInvite creates an invite. A code may be chosen by the caller (NIP-29
-// create-invite does); it must be unused. Returns the invite or a reason.
+// create-invite and NIP-86 createclaim do); it must be unused. Returns the invite or a reason.
 export function mintInvite(sql: SqlStorage, by: string, ttlSecs: number, maxUses: number, note: string, now: number, chosen = ""): Invite | string {
   if (chosen && !CODE_RE.test(chosen)) return "invalid: an invite code is 4 to 64 letters, digits, dash or underscore";
   if (chosen && sql.exec(`SELECT 1 FROM invites WHERE code=?`, chosen).toArray().length) return "duplicate: that invite code exists";
@@ -37,6 +37,12 @@ export function mintInvite(sql: SqlStorage, by: string, ttlSecs: number, maxUses
 export function listInvites(sql: SqlStorage, now: number): Invite[] {
   sql.exec(`DELETE FROM invites WHERE expires_at < ?`, now - 30 * DAY);
   return sql.exec<Invite>(`SELECT * FROM invites ORDER BY created_at DESC LIMIT 200`).toArray();
+}
+
+// listClaims returns usable NIP-43 codes, scoped before the result cap so
+// another creator's invites and dead codes cannot hide a member's claims.
+export function listClaims(sql: SqlStorage, now: number, by = ""): string[] {
+  return sql.exec<{ code: string }>(`SELECT code FROM invites WHERE expires_at>=? AND (max_uses=0 OR uses<max_uses)${by ? " AND created_by=?" : ""} ORDER BY created_at DESC, code LIMIT 200`, now, ...(by ? [by] : [])).toArray().map((i) => i.code);
 }
 
 export function revokeInvite(sql: SqlStorage, code: string): boolean {

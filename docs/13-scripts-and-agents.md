@@ -87,7 +87,8 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 - `listpresets`: preset names, descriptions and whether one needs a source.
 - `listmembers`, `listpeople`, `listallowedpubkeys`: the member list in three shapes.
 - `listbannedpubkeys`, `listbannedevents`, `listblockedips`: the bans.
-- `listinvites`: live invites; a member under the invite rule sees only their own.
+- `listinvites`: detailed invite records, including expired and exhausted entries; a member under the invite rule sees only their own.
+- `listclaims`: up to 200 usable invite code strings; a member under the invite rule sees only their own. See [NIP-86 membership claims](24-nip86-claims.md) for the pinned proposal and constraints.
 - `listrecentevents [limit]`: the newest events.
 - `listallowedkinds`, `listblockedkinds`, `listretention`: the kind and keep-for rules.
 - `listblobs`, `listreports`: files and the reports queue.
@@ -115,6 +116,8 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 - `createinvite ttlSeconds maxUses note`: mint a code. A member under the invite rule may mint within their quota.
 - `revokeinvite code`.
+- `createclaim code`: mint a chosen code with the default three-day lifetime and unlimited uses; returns `true`. The same member quota and depth apply.
+- `deleteclaim code`: revoke a code from the shared invite store; returns `true`. Members may only delete their own codes.
 
 **Reports**
 
