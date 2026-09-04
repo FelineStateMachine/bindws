@@ -100,6 +100,7 @@ describe("NIP-5A static websites", () => {
         expect(response.headers.get("content-type")).toContain("text/html");
         expect(response.headers.get("etag")).toBe(`"${indexHash}"`);
         expect(response.headers.get("cache-control")).toContain("public");
+        expect(response.headers.get("cache-control")).toContain("no-transform");
         const head = await siteFetch(host, "/index.html", { method: "HEAD" });
         expect(head.status).toBe(200);
         expect(head.headers.get("content-length")).toBe(String(new TextEncoder().encode(index).length));

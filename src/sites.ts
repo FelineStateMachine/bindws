@@ -192,9 +192,9 @@ export async function serveSite(relay: Relay, req: Request, label: string): Prom
   if (!featureOn(relay.settings.policy, "sites") || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
   const headers = new Headers({
     etag: `"${sha}"`,
-    // Revalidate every request so policy changes and expiry cannot be
-    // bypassed by a fresh cache entry, including on snapshot URLs.
-    "cache-control": relay.settings.policy.reads === "open" ? "public, no-cache, must-revalidate" : "private, no-store",
+    // Revalidation respects policy changes and expiry, including snapshots.
+    // Edge transforms must preserve the bytes named by the signed manifest.
+    "cache-control": relay.settings.policy.reads === "open" ? "public, no-cache, must-revalidate, no-transform" : "private, no-store, no-transform",
     "x-content-type-options": "nosniff", "referrer-policy": "same-origin",
   });
   if (obj && blob) {

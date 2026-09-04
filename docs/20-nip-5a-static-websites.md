@@ -37,7 +37,8 @@ selects `/blog/index.html`. A missing path selects the site's `/404.html` when
 present and otherwise returns 404. A missing manifest, missing file, hash
 mismatch, unavailable blob, or failed remote fetch returns a plain 404.
 Responses forward the stored content type and length, use the blob hash as the ETag,
-and verify the blob before serving it.
+and verify the blob before serving it. `Cache-Control: no-transform` keeps
+intermediaries from changing the verified representation or its validators.
 
 The relay's Rules > Reads setting applies to sites. Open reads make a site
 public; signed-in and members-only reads require the same admission as the

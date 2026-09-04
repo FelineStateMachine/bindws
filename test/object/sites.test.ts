@@ -100,6 +100,7 @@ describe("sites", () => {
       expect(res.headers.get("content-type")).toBe("text/plain");
       expect(res.headers.get("content-length")).toBe("10");
       expect(res.headers.get("etag")).toBe('"' + file.sha + '"');
+      expect(res.headers.get("cache-control")).toContain("no-transform");
       const head = await SELF.fetch(url + "/", { method: "HEAD" });
       expect(head.status).toBe(200); expect(await head.text()).toBe("");
       expect((await SELF.fetch(url + "/", { headers: { "if-none-match": res.headers.get("etag")! } })).status).toBe(304);
@@ -117,6 +118,7 @@ describe("sites", () => {
     expect((await SELF.fetch(url, { headers: { authorization: await nip98(generateSecretKey(), url) } })).status).toBe(403);
     const member = await SELF.fetch(url, { headers: { authorization: await nip98(sk, url) } });
     expect(member.status).toBe(200); expect(member.headers.get("cache-control")).toContain("no-store");
+    expect(member.headers.get("cache-control")).toContain("no-transform");
     await rpc(host, sk, "setpolicy", { reads: "open", features: { sites: false } });
     expect((await SELF.fetch(url)).status).toBe(404); expect((await info(host)).nsites).toBeUndefined();
     await rpc(host, sk, "setpolicy", { features: { sites: true } });
