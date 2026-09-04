@@ -1,5 +1,5 @@
 // The moderation log: who did what, when, to whom. Every management method
-// that changes something (manage.ts) and every NIP-29 moderation event
+// that changes something (the ones without `reads` in manage.ts) and every NIP-29 moderation event
 // (groups.ts) leaves a row. The owner and moderators read it with listaudit
 // and on the console's Moderation tab. Each row also goes out as a JSON
 // line on the console, so an OTLP logs destination gets it as it happens
@@ -16,15 +16,6 @@ const PAGE = 100;
 
 export type AuditRow = { seq: number; at: number; actor: string; action: string; target: string; detail: string };
 type Row = Record<string, string | number>;
-
-// The management methods that change nothing; the rest are logged when they succeed.
-export const READ_METHODS = new Set([
-  "supportedmethods", "claim", "stats", "getpolicy", "listpresets", "listviews",
-  "listbannedpubkeys", "listallowedpubkeys", "listmembers", "listpeople", "listinvites",
-  "listbannedevents", "listrecentevents", "searchevents", "listallowedkinds", "listblockedkinds", "listblobs", "listretention", "listreports",
-  "listblockedips", "listpins", "listeventsneedingmoderation", "storagestats", "listjobs", "pullstatus", "listdumps",
-  "successionstatus", "listdomains", "checkdomain", "exportconfig", "notifytest", "listaudit",
-]);
 
 // detailOf compresses a method's parameters into the detail column: the
 // first string parameter is the target, the rest is JSON, and bulky

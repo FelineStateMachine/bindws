@@ -117,7 +117,7 @@ Members inviting members is `invited_by` on the member row, set from the invite'
 
 ## Management and rate limits
 
-`manage.ts` implements NIP-86 over NIP-98. The console is a client of it. `verifyNIP98` is a local implementation: kind 27235, 60-second window, `u` matches host and path, method matches, payload hash matches when there is a body. Every method except `claim` and `supportedmethods` names an action in `roles.ts`; a method without one is refused for everyone.
+`manage.ts` implements NIP-86 over NIP-98. The console is a client of it. `verifyNIP98` is a local implementation: kind 27235, 60-second window, `u` matches host and path, method matches, payload hash matches when there is a body. Every method is one entry in its `METHODS` table: the action it needs (`roles.ts`), whether it changes nothing, and its handler; `claim` and `supportedmethods` are the two open to anyone.
 
 `listeventsneedingmoderation` is a view over the reports queue: one entry per open reported thing, an event id or a blob hash, with the report's type and words as the reason. `blockip`, `unblockip` and `listblockedips` work on the address the worker stamped. A blocked address gets no socket and no write, read or upload door, while the page, NIP-11 and management stay reachable so an owner can undo a block on their own address.
 

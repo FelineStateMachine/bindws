@@ -74,8 +74,8 @@ CI runs typecheck and the object tests on every push; the conformance suite agai
 
 ## Add a management method
 
-1. Add the name to `METHODS` in `src/manage.ts` and the action it needs to `METHOD_ACTIONS` in `src/roles.ts`; a method without an action is refused for everyone.
-2. Add a `case` in the switch. Use `num(i)` and `str(i)` for parameters. Return `reply({ result })` or `reply({ error }, 400)`.
+1. Add an entry to `METHODS` in `src/manage.ts`: the action it needs (`roles.ts`), `reads: true` if it changes nothing, and `run`. The handler takes what it uses from the call: `str(i)` and `num(i)` for parameters, `s` for settings, `reply({ result })` or `reply({ error }, 400)` to answer. `supportedmethods`, the permission check and the moderation log read the same entry.
+2. A method a moderator may call names an action in the moderator's set in `roles.ts`; anything else is the owner's.
 3. If it changes state that other code caches, update `Settings` and its in-memory sets.
 4. If the console should call it, add the control to `src/console/console.html` and a handler in `console.js`.
 5. Cover it in the `test/object` file for its feature, with `rpc` from `test/helpers/relay.ts`. If it can show a member, an event or a file, ask `Settings.mayRead` (or `mayList` for names and counts) with what `whoAsks` found in the header, and add the path to the door walk in `test/object/exposure.test.ts`, which knocks on every path as a stranger and as a signed-in non-member and fails on anything of a member's that comes back.
