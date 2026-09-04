@@ -10,7 +10,7 @@
 import { validate, type Event } from "./event.ts";
 import { parseFilter, type Filter } from "./filter.ts";
 import { hllOffset } from "./hll.ts";
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98 } from "./auth.ts";
 import { readGate } from "./gates.ts";
 import type { Relay } from "./relay.ts";
 

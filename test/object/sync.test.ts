@@ -37,7 +37,7 @@ async function seed(name: string) {
 
 describe("NIP-77 across a wake", () => {
   it("carries a sync on from the store after the session left memory", async () => {
-    const { host, c, notes, stray, mine } = await seed("syncwake");
+    const { c, notes, stray, mine } = await seed("syncwake");
     const neg = new Negentropy(mine.map(item), sha256);
     c.send("NEG-OPEN", "s1", { kinds: [1] }, bytesToHex(neg.initiate()));
     const first = await c.expect("NEG-MSG");

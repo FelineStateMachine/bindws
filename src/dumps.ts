@@ -5,7 +5,7 @@
 // The file is streamed in pages by sequence into an R2 multipart upload, so
 // a large relay never holds its history in memory. Every part but the last
 // is exactly PART bytes, which is what R2 requires.
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98 } from "./auth.ts";
 import { can } from "./roles.ts";
 import type { Relay } from "./relay.ts";
 

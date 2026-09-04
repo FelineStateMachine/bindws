@@ -12,7 +12,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { tagValues } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98 } from "./auth.ts";
 import { can } from "./roles.ts";
 import { EXT, blobBlocked, blobURL, blossom, nip94Tags, storeBlob, type Blob } from "./blossom.ts";
 import type { Relay } from "./relay.ts";

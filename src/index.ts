@@ -4,7 +4,7 @@
 import { Relay, type Env } from "./relay.ts";
 import { landing } from "./landing.ts";
 import { FAVICON_SVG } from "./ui.ts";
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98 } from "./auth.ts";
 import { leaseNames, leaseDays, validName } from "./names.ts";
 import { now } from "./event.ts";
 import { clientIP, customHost, hostnameKnown, leaseAllowed } from "./edge.ts";

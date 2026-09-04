@@ -6,7 +6,7 @@
 // rule does not: the owner asked for these. The file counts as media while
 // it exists and is deleted when the job is done.
 import { validate, now, type Event } from "./event.ts";
-import { verifyNIP98 } from "./manage.ts";
+import { verifyNIP98 } from "./auth.ts";
 import { can } from "./roles.ts";
 import { ERR_DUPLICATE } from "./store.ts";
 import { newJobID, type Job } from "./jobs.ts";

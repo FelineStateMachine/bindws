@@ -11,29 +11,24 @@ import { discovery } from "./nip66.ts";
 import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected } from "./settings.ts";
+import { blobBytes, type Blob } from "./blossom.ts";
+import { DIGEST_DAYS, digestText, notify, fuelLow, fuelText } from "./notify.ts";
 import { Succession } from "./succession.ts";
 import { isGated, route } from "./routes.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
 import { Fuel, fuelConfig, acceptReceipt, type Fetcher, type LnurlParams } from "./fuel.ts";
 import { Identity } from "./identity.ts";
 import { Bucket } from "./ratelimit.ts";
-import { blobBytes } from "./blossom.ts";
 import { dumpBytes, dumpDue, writeDump } from "./dumps.ts";
 import { importBytes } from "./imports.ts";
-import { DIGEST_DAYS, digestText } from "./notify.ts";
 import { claimFromProfile } from "./nip05.ts";
-import { checkInvite, claimInviteRequest, invitePage, termsPage } from "./invites.ts";
-import { verifyNIP98, whoAsks } from "./auth.ts";
 import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { Hostnames, forgetDomains } from "./domains.ts";
 import { hostOf } from "./edge.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
-import { isPagePath, pages } from "./pages.ts";
-import { notify, fuelLow, fuelText } from "./notify.ts";
 import { markView, notePresence, viewsTick } from "./views.ts";
-import type { Blob } from "./blossom.ts";
 import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY } from "./kinds.ts";
 
 export interface Env {
@@ -428,7 +423,6 @@ export class Relay extends DurableObject<Env> {
 
   // mayUpload applies the write policy to Blossom uploads. "" allows.
   mayUpload(pubkey: string, host: string): string {
-    const p = this.settings.policy;
     if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed";
     if (this.settings.leaseExpired(now())) return "restricted: this temporary relay has expired";
     if (this.settings.isBanned(pubkey)) return "blocked: this pubkey is banned from this relay";

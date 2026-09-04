@@ -12,7 +12,6 @@ import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite 
 import { descriptor, type Blob } from "./blossom.ts";
 import { badBlockedWord, blockedWords, gateFields, isWriteRule, limitFields, viewFields, type Policy, type Settings } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields, validIP } from "./settings.ts";
-export { validIP };
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, publishView, viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
@@ -23,9 +22,7 @@ import { can, type Action, type Role } from "./roles.ts";
 import { detailOf } from "./audit.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
 import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
-
 import { verifyNIP98 } from "./auth.ts";
-export { verifyNIP98 };
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
