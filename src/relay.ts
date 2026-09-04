@@ -1487,19 +1487,28 @@ export class Relay extends DurableObject<Env> {
     return gone;
   }
 
-  private canSee(s: ConnState, e: Event): boolean {
+  // canSee decides whether a private kind reaches a socket through the
+  // filter that matched it. A socket that has AUTHed as the sender or a
+  // recipient always sees it. NIP-46 traffic is also delivered to a filter
+  // that names a party's key outright, in "#p" or "authors", on a socket the
+  // read rule admits: the payload is encrypted end to end, and remote signers
+  // such as Amethyst's listen under a transport key they never AUTH with, so
+  // the filter is the only proof they give. A bare subscription to the kind
+  // sees nothing, and a members-only relay shows a stranger nothing at all.
+  private canSee(s: ConnState, e: Event, f: Filter): boolean {
     if (!isPrivate(e.kind)) return true;
-    if (s.authed.includes(e.pubkey)) return true;
-    return tagValues(e, "p").some((p) => s.authed.includes(p));
+    const parties = [e.pubkey, ...tagValues(e, "p")];
+    if (parties.some((p) => s.authed.includes(p))) return true;
+    if (e.kind !== KIND_NOSTR_CONNECT || this.settings.mayRead(s.authed)) return false;
+    return [...(f.authors ?? []), ...(f.tags.p ?? [])].some((k) => parties.includes(k));
   }
 
   broadcast(e: Event) {
     const raw = canonical(e);
     for (const ws of this.ctx.getWebSockets()) {
       const s = this.state(ws);
-      if (!this.canSee(s, e)) continue;
       for (const [id, filters] of Object.entries(s.subs)) {
-        if (filters.some((f) => match(f, e))) {
+        if (filters.some((f) => match(f, e) && this.canSee(s, e, f))) {
           this.raw(ws, `["EVENT",${JSON.stringify(id)},${raw}]`);
           break;
         }
@@ -1523,8 +1532,8 @@ export class Relay extends DurableObject<Env> {
   // hint applies because private kinds were silently filtered out.
   allowFilters(s: ConnState, filters: Filter[]): { reason: string; authHint: boolean } {
     // A subscription to NIP-46 traffic alone may be opened under any read
-    // policy, so a signer can subscribe before its AUTH lands; the traffic
-    // itself is a private kind, delivered only to its parties (canSee).
+    // policy, with or without AUTH; the traffic itself is a private kind,
+    // delivered only to its parties (canSee).
     if (filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
     const authed = s.authed.length > 0;
     const gate = this.settings.mayRead(s.authed);

@@ -78,22 +78,31 @@ describe("NIP-46 transport", () => {
     const host = "phone.bind.ws";
     const signerKey = generateSecretKey();
     const client = generateSecretKey();
+    // A signer that names its key in the filter and never AUTHs, the way
+    // Amethyst's bunker listens under a transport key.
     const listener = await WS.connect(host);
     expect(await listener.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).toBe("");
-    // A bystander with the same subscription, who has not proved the key.
+    // A bystander subscribed to the kind alone, naming no key.
     const bystander = await WS.connect(host);
-    expect(await bystander.open("nc", { kinds: [24133], "#p": [getPublicKey(signerKey)] })).toBe("");
+    expect(await bystander.open("nc", { kinds: [24133] })).toBe("");
 
     const sender = await WS.connect(host);
-    const early = ev(client, 24133, "before auth", [["p", getPublicKey(signerKey)]]);
-    expect(await sender.ok(early)).toEqual({ ok: true, msg: "" });
-    // Nothing reaches a socket that has not authenticated as a party.
-    await listener.auth(signerKey, host);
     const req = ev(client, 24133, "ciphertext", [["p", getPublicKey(signerKey)]]);
     expect(await sender.ok(req)).toEqual({ ok: true, msg: "" });
     const got = await listener.expect("EVENT");
     expect(got[1]).toBe("nc");
     expect(got[2].id).toBe(req.id);
+    // The reply, addressed to the client, reaches a socket that AUTHed as the
+    // client, and one that asks by the signer's key as author.
+    const clientSock = await WS.connect(host);
+    expect(await clientSock.open("nc", { kinds: [24133] })).toBe("");
+    await clientSock.auth(client, host);
+    const byAuthor = await WS.connect(host);
+    expect(await byAuthor.open("nc", { kinds: [24133], authors: [getPublicKey(signerKey)] })).toBe("");
+    const reply = ev(signerKey, 24133, "ciphertext", [["p", getPublicKey(client)]]);
+    expect(await listener.ok(reply)).toEqual({ ok: true, msg: "" });
+    expect((await clientSock.expect("EVENT"))[2].id).toBe(reply.id);
+    expect((await byAuthor.expect("EVENT"))[2].id).toBe(reply.id);
     // The bystander saw neither; a later frame proves the queue is empty.
     expect(await bystander.open("probe", { kinds: [24133] })).toBe("");
     // Anything else is still refused while unclaimed, and the request left no trace.
@@ -130,6 +139,19 @@ describe("NIP-46 transport", () => {
     expect(await c.open("c", { kinds: [24133, 1] })).toMatch(/^auth-required/);
     expect(await c.open("d", { kinds: [24133] }, { kinds: [1] })).toMatch(/^auth-required/);
     expect(await c.open("e", {})).toMatch(/^auth-required/);
+    // A member's app listens under a transport key it never AUTHs with, on
+    // the socket it AUTHed as the member: requests to that key arrive. The
+    // same filter on a stranger's socket gets nothing.
+    const transport = generateSecretKey();
+    await c.auth(owner, host);
+    expect(await c.open("nc", { kinds: [24133], "#p": [getPublicKey(transport)] })).toBe("");
+    const stranger = await WS.connect(host);
+    expect(await stranger.open("nc", { kinds: [24133], "#p": [getPublicKey(transport)] })).toBe("");
+    const app = generateSecretKey();
+    const req = ev(app, 24133, "ciphertext", [["p", getPublicKey(transport)]]);
+    expect(await stranger.ok(req)).toEqual({ ok: true, msg: "" });
+    expect((await c.expect("EVENT"))[2].id).toBe(req.id);
+    expect(await stranger.open("probe", { kinds: [24133] })).toBe("");
   });
 
   it("serves the signer library with a long cache", async () => {
