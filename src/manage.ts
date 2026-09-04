@@ -25,6 +25,7 @@ import { PRESETS, applyPreset, findPreset } from "./presets.ts";
 import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from "./domains.ts";
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
+import { gitStorage } from "./git-storage.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -453,6 +454,14 @@ export const METHODS: Record<string, Method> = {
       const kinds = relay.store.kindStats().map((k) => ({ ...k, days: s.retentionDays(k.kind), replaceable: isReplaceable(k.kind), protected: isProtected(k.kind) }));
       const blobs = relay.sql.exec<{ n: number | null; bytes: number | null }>(`SELECT count(*) AS n, sum(size) AS bytes FROM blobs`).one();
       return reply({ result: { kinds, events: kinds.reduce((a, k) => a + k.n, 0), eventBytes: kinds.reduce((a, k) => a + k.bytes, 0), databaseBytes: relay.eventBytes(), blobs: blobs.n ?? 0, mediaBytes: blobs.bytes ?? 0, dumps: listDumps(relay.sql).length, dumpBytes: dumpBytes(relay.sql), retention: s.listRetention() } });
+    },
+  },
+  gitstorage: {
+    action: "storage", reads: true,
+    run: async ({ relay, params, str, hex64, reply }) => {
+      if (params.length !== 2 || !hex64(str(0)) || typeof params[1] !== "string" || !str(1) || new TextEncoder().encode(str(1)).length > 256) return reply({ error: "invalid: expected repository owner hex pubkey and identifier" }, 400);
+      const result = await gitStorage(relay, str(0), str(1));
+      return reply(result.body, result.status);
     },
   },
   setretention: {

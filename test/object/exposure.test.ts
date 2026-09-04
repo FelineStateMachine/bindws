@@ -81,6 +81,17 @@ function doors(f: Fixture): { path: string; host?: string; method?: string; gate
 const leaks = (text: string, secrets: string[]) => secrets.filter((s) => text.includes(s));
 
 describe("the read rule at every door", () => {
+  it("keeps Git storage inventory owner-only at the management door", async () => {
+    const host = "exposure-git-storage.bind.ws";
+    const owner = generateSecretKey();
+    const stranger = generateSecretKey();
+    await rpc(host, owner, "claim");
+    expect((await rpc(host, null, "gitstorage", pk(owner), "missing")).status).toBe(401);
+    expect((await rpc(host, stranger, "gitstorage", pk(owner), "missing")).status).toBe(403);
+    const methods = (await rpc(host, owner, "supportedmethods")).result as string[];
+    expect(methods).toContain("gitstorage");
+  });
+
   it("shows a stranger nothing of a member, her note or her file", async () => {
     const f = await seed("exposure-stranger.bind.ws");
     for (const d of doors(f)) {

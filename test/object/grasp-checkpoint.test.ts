@@ -7,6 +7,7 @@ import { npubEncode } from "nostr-tools/nip19";
 import { encodePack, type WalRecord } from "ntig";
 import { KIND_REPO } from "../../src/kinds.ts";
 import { repository } from "../../src/grasp-state.ts";
+import { gitStorage } from "../../src/git-storage.ts";
 import { gitRepository } from "../../src/grasp.ts";
 import type { RepositoryAnnouncement } from "../../src/grasp-policy.ts";
 import { ev, pk, rpc } from "../helpers/relay.ts";
@@ -51,7 +52,7 @@ describe("GRASP checkpoint integration", () => {
     connection.ws.close();
 
     const fixture = await fixturePack();
-    const measurements = await runInDurableObject(env.RELAY.getByName(host.split(".")[0]), async (relay) => {
+    const measurements = await runInDurableObject(env.RELAY.getByName(host.split(".")[0]), async (relay) => relay.repositoryAccess.run("control", async () => {
       const repo = repository(relay, pk(owner), identifier) as RepositoryAnnouncement | null;
       expect(repo).not.toBeNull();
       const wal = await gitRepository(relay, repo!);
@@ -102,8 +103,18 @@ describe("GRASP checkpoint integration", () => {
         return counts;
       }, {});
       const retained = await inventory(relay, repo!, rebuilt);
+      const scan = await gitStorage(relay, pk(owner), identifier);
+      expect(scan.status).toBe(200);
+      if (!("result" in scan.body)) throw new Error("inventory did not complete");
+      const report = scan.body.result;
+      if (!report) throw new Error("inventory report missing");
+      expect(report.inventory.listed.bytes).toBe(retained.physicalBytes);
+      expect(report.inventory.live.bytes).toBe(retained.currentBytes);
+      expect(report.reservations.bytes).toBe(retained.reservedBytes);
+      expect(report.inventory.unknown.bytes).toBe(0);
+      console.info("runtime checkpoint inventory", JSON.stringify({ workload, physical: report.inventory.listed.bytes, live: report.inventory.live.bytes, ...report.operations, ...report.inventory.observed }));
       return { before, after, keyCount: keys.length, categories, sequence: cold.sequence, empty, oneCommit, retained };
-    });
+    }, () => { throw new Error("fixture admission refused"); }));
 
     console.info("checkpoint inventory", JSON.stringify({ workload, empty: measurements.empty, oneCommit: measurements.oneCommit, retained: measurements.retained }));
     console.info("checkpoint storage measurement", {
