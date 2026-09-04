@@ -51,6 +51,7 @@ async function seed(host: string): Promise<Fixture> {
 // Every HTTP path a relay answers that could carry something of a member's.
 function doors(f: Fixture): { path: string; host?: string; method?: string; gated: boolean; blossom?: string }[] {
   return [
+    { path: `/${npubEncode(pk(f.eve))}/member.git`, gated: false },
     { host: f.siteHost, path: "/", gated: true },
     { host: f.siteHost, path: "/index.html", method: "HEAD", gated: true },
     { host: f.siteHost, path: "/.well-known/nsite/auth", gated: true },

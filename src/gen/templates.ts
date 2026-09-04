@@ -312,5 +312,28 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       },
       "retention": []
     }
+  },
+  {
+    "name": "grasp",
+    "document": {
+      "format": "bind.ws/relay-config/2",
+      "template": {
+        "title": "Git repositories",
+        "about": "A GRASP Git host. Admitted members publish repository state and related events; the owner's fuel pays for storage."
+      },
+      "policy": {
+        "writes": "allowlist",
+        "reads": "open",
+        "directoryPublic": true,
+        "features": {
+          "grasp": true
+        }
+      },
+      "kinds": {
+        "allow": [],
+        "block": []
+      },
+      "retention": []
+    }
   }
 ];

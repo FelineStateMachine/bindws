@@ -48,7 +48,7 @@ npm install
 npm run deploy
 ```
 
-Nothing else is required: no origin, no certificates, no servers. An idle relay costs nothing; a busy one is billed per Cloudflare's Durable Object and R2 rates.
+Nothing else is required: no origin, no certificates, no servers. Hibernation avoids idle duration charges; retained storage, alarm work and provider operations still follow Cloudflare's rates. See [Costs and margins](15-costs-and-margins.md) for the tenant meters and host overhead.
 
 ## Presets
 

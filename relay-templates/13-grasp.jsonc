@@ -1,0 +1,25 @@
+// A GRASP Git host: admitted members publish repository state and use the
+// relay's Git Smart HTTP door. Related announcements, comments and issues
+// remain admissible events, so the template leaves kinds unrestricted. The
+// bounded backend is a prototype with finite storage and compute limits; the
+// owner's fuel pays for admitted member writes. NIP-5A sites can link to the
+// repository or its deployed files, but this template does not build them.
+{
+  "$schema": "https://bind.ws/relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Git repositories",
+    "about": "A GRASP Git host. Admitted members publish repository state and related events; the owner's fuel pays for storage."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "open",
+    "directoryPublic": true,
+    "features": { "grasp": true }
+  },
+  "kinds": {
+    "allow": [],
+    "block": []
+  },
+  "retention": []
+}

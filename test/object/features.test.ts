@@ -15,7 +15,7 @@ describe("features", () => {
     const owner = generateSecretKey();
     await rpc(host, owner, "claim");
     const p = (await rpc(host, owner, "getpolicy")).result;
-    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false });
+    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false });
     for (const n of [5, 45, 46, 50, 66, 77]) expect((await info(host)).supported_nips).toContain(n);
     const r = await rpc(host, owner, "setpolicy", { features: { search: "full", sync: false, bogus: true, count: "no" } });
     expect(r.result.features).toMatchObject({ search: "full", sync: false, count: true });
@@ -29,6 +29,20 @@ describe("features", () => {
     const doc = await info(other);
     expect(doc.supported_nips).not.toContain(77);
     expect(doc.supported_nips).toContain(50);
+  });
+
+  it("GRASP is off by default and survives policy export and import", async () => {
+    const host = "feat-grasp.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    expect((await rpc(host, owner, "getpolicy")).result.features.grasp).toBe(false);
+    const policy = await rpc(host, owner, "setpolicy", { features: { grasp: true } });
+    expect(policy.result.features.grasp).toBe(true);
+    const config = (await rpc(host, owner, "exportconfig")).result;
+    const other = "feat-grasp-import.bind.ws";
+    await rpc(other, owner, "claim");
+    expect((await rpc(other, owner, "importconfig", config)).status).toBe(200);
+    expect((await rpc(other, owner, "getpolicy")).result.features.grasp).toBe(true);
   });
 
   it("search: prose indexes notes, full indexes reactions too, off refuses the filter", async () => {

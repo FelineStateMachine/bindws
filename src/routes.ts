@@ -3,6 +3,7 @@
 // it; the page, NIP-11 and management stay reachable, so an owner who
 // blocked their own address can undo it. The websocket upgrade is the one
 // door relay.ts answers itself, before this table.
+import { grasp, isGitPath } from "./grasp.ts";
 import type { Relay } from "./relay.ts";
 import { featureOn, type Feature } from "./settings.ts";
 import { now } from "./event.ts";
@@ -43,6 +44,7 @@ const get = (when: (url: URL) => boolean) => (url: URL, req: Request) => req.met
 const post = (when: (url: URL) => boolean) => (url: URL, req: Request) => req.method === "POST" && when(url);
 
 export const ROUTES: Route[] = [
+  { when: isGitPath, gated: true, answer: grasp },
   // NIP-11, on any path, by the accept header.
   {
     when: (_, req) => req.headers.get("accept")?.includes("application/nostr+json") ?? false,

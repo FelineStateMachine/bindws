@@ -4,6 +4,7 @@
 // subscription's filters must clear for the socket that opened it: the
 // read rule, and the private kinds only their parties may see. Both answer
 // "" to let through, or the reason in NIP-01's prefix: form.
+import { graspGate } from "./grasp-state.ts";
 import { checkSite } from "./sites.ts";
 import type { Relay, ConnState } from "./relay.ts";
 import { expiration, hasTag, isPrivate, tagValues, type Event } from "./event.ts";
@@ -16,6 +17,9 @@ import { marmotPrincipal, marmotShape } from "./marmot.ts";
 // writeGate is what every write must pass, whoever sends it: shape, bans, the
 // relay's state, fuel, and the one-group rule. "" lets it through.
 export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: number): string {
+  if (relay.graspBusy) return "restricted: Git transaction in progress; retry the event";
+  const graspError = graspGate(relay, e, conn?.host ?? "");
+  if (graspError) return graspError;
   const siteError = checkSite(e);
   if (siteError) return siteError;
   if (e.kind === KIND_MARMOT_GROUP || e.kind === KIND_MARMOT_KEY_PACKAGE) {

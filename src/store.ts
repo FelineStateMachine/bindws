@@ -1,5 +1,6 @@
 // Persistence on Durable Object SQLite. Every method is
 // synchronous, so each call is one atomic write batch on the DO.
+import { GRASP_SCHEMA } from "./grasp-state.ts";
 import { canonical, expiration, isAddressable, isEphemeral, isPrivate, isReplaceable, tag, tagValues, type Event } from "./event.ts";
 import { ftsQuery, searchTerms, type Filter } from "./filter.ts";
 import { SITE_SCHEMA, SITE_KINDS } from "./sites.ts";
@@ -85,6 +86,7 @@ export class Store {
   init() {
     this.sql.exec(SCHEMA);
     this.sql.exec(SITE_SCHEMA);
+    this.sql.exec(GRASP_SCHEMA);
   }
 
   // x runs a statement and remembers its cursor so drain() can report rows
@@ -218,6 +220,7 @@ export class Store {
       conds.push("seq IN (SELECT rowid FROM search WHERE search MATCH ?)");
       args.push(ftsQuery(terms));
     }
+    conds.push("NOT EXISTS (SELECT 1 FROM grasp_pending WHERE grasp_pending.id=events.id)");
     conds.push("(expires = 0 OR expires > ?)");
     args.push(now);
     if (this.hidden.size > 0) {

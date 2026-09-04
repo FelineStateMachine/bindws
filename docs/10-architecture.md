@@ -156,6 +156,13 @@ The mirror queue creates one bounded alarm job per manifest; deletion cancels
 pending work. Site requests carry `x-relay-site`, so a site origin cannot
 reach relay doors.
 
+`grasp-policy.ts` keeps GRASP-01 repository policy pure: NIP-34 announcement
+and state parsing, recursive maintainers, exact ref comparison and the
+temporary `refs/nostr/<event-id>` namespace. The Git Smart HTTP door uses the
+accepted state as its authorization boundary and passes Git objects through
+the object-store seam. It stays separate from the NIP-5A site door, so a site
+hostname cannot reach relay events or repository data.
+
 ## Views
 
 `src/views.ts` is a registry of folds. Each view names a trigger, an audience and a fold that returns tags and content; hourly views add a fingerprint so nothing is republished when the inputs did not move. The record is a kind 30078 signed by the identity key on the same strictly increasing clock as the group state, `d` = `bind.ws/view/<name>`, stored and broadcast through `emit` like the roster, taken down when the view is switched off, empty, or no longer public. The rows a run wrote are measured around the fold from the store's write counter and kept as the last 60 runs, which the console and the digest read.

@@ -46,7 +46,10 @@ Names are cheap, so a relay does not have to do everything. On the Rules tab, **
 | search | only you | anyone | a copy of another relay's searchable kinds, refreshed every six hours |
 | articles | only you | anyone | long-form articles and profiles; mirrored daily from a source if you give one |
 | dm | anyone | members | private messages only; directory hidden |
-| quiet | members | members | every kind, forever; search, sync, counts, discovery, names, files, pages and signer traffic off |
+| quiet | members | members | every kind, forever; optional features off |
+| site | members | anyone | every kind, forever; site hosting, mirroring and files enabled |
+| marmot | anyone | anyone | KeyPackages, encrypted group envelopes, private welcomes and relay lists; Marmot enabled |
+| grasp | members publish events | anyone | every kind, forever; GRASP Git hosting enabled |
 
 Each preset is a file in the repository's `relay-templates/` folder: a relay configuration with the rules sections only, which is also what a file of your own looks like ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)). A preset that names features sets them too.
 
@@ -65,13 +68,20 @@ The result is the new console URL to hand over. The new name is temporary until 
 
 ## Leave
 
-Your data is yours. Any relay that speaks sync can pull everything from yours:
+Your data is yours. A relay that speaks sync can pull the events your read rule exposes:
 
 ```
 nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
 ```
 
 Or download a dump.
+
+Event sync and JSONL dumps do not contain site files or Git packs. An unfiltered
+bind.ws pull can copy Blossom files, but it does not copy GRASP repositories.
+Copy site blobs through Blossom and clone Git repositories separately before
+leaving. Pending GRASP events remain outside normal event queries until their
+Git data arrives. A relay fork does not replace these separate file and Git
+backups.
 
 ## What it spends
 

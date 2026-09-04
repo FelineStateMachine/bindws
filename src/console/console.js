@@ -222,6 +222,11 @@
   async function loadInfo() {
     info = await (await fetch("/", { headers: { accept: "application/nostr+json" } })).json();
     renderHeader();
+    const git = info.supported_grasps?.includes("GRASP-01");
+    $("#git-connect").classList.toggle("hidden", !git);
+    const clone = "git clone '" + location.origin + "/<npub>/<repo>.git'";
+    $("#git-clone").textContent = clone;
+    $("#git-copy").dataset.copytext = clone;
   }
 
   async function loadFuel() {
@@ -407,6 +412,7 @@
     ["pages", "Pages and feed", "Notes and articles as pages, and the Atom feed."],
     ["sites", "Static websites", "NIP-5A sites on their own hostnames. Mirroring copies missing files into this relay and costs fuel.", ["mirror:on, mirror files", "proxy:on, fetch as needed", "off:off"]],
     ["marmot", "Marmot transport", "Signed KeyPackages and encrypted group messages, with account admission for ephemeral authors."],
+    ["grasp", "Git repositories", "GRASP Git hosting with admitted repository state. The prototype backend has bounded storage and compute limits."],
     ["signer", "Signer traffic", "NIP-46 remote signing carried for anyone, never stored."],
   ];
   function renderFeatures(f) {
