@@ -11,6 +11,7 @@ import { gitRepository } from "../../src/grasp.ts";
 import type { RepositoryAnnouncement } from "../../src/grasp-policy.ts";
 import { ev, pk, rpc } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
+import { inventory } from "../helpers/grasp-inventory.ts";
 
 const encoder = new TextEncoder();
 const oid = async (type: string, data: Uint8Array) => {
@@ -38,8 +39,8 @@ const announcement = (sk: Uint8Array, host: string, identifier: string) => ev(sk
 ]);
 
 describe("GRASP checkpoint integration", () => {
-  it("migrates an isolated legacy repository and retains indexed receipts", async () => {
-    const host = "grasp-checkpoint.bind.ws";
+  it.each(["growing", "fixed"])("migrates an isolated %s-ref repository and reconciles retained storage", async (workload) => {
+    const host = `grasp-checkpoint-${workload}.bind.ws`;
     const owner = generateSecretKey();
     const identifier = "checkpoint";
     await rpc(host, owner, "claim");
@@ -54,12 +55,14 @@ describe("GRASP checkpoint integration", () => {
       const repo = repository(relay, pk(owner), identifier) as RepositoryAnnouncement | null;
       expect(repo).not.toBeNull();
       const wal = await gitRepository(relay, repo!);
+      const empty = await inventory(relay, repo!, wal);
       const first = await wal.commit({ id: "checkpoint-initial", updates: [{ name: "refs/heads/main", old: null, new: fixture.commitID }], pack: fixture.pack });
+      const oneCommit = await inventory(relay, repo!, wal);
       const legacy: WalRecord[] = [];
       legacy.push((await wal.lookupRecord!(first.id))!);
       let prior = fixture.commitID;
       for (let i = 1; i < 128; i++) {
-        const receipt = await wal.commit({ id: `checkpoint-legacy-${i}`, updates: [{ name: `refs/tags/legacy-${i}`, old: null, new: prior }] });
+        const receipt = await wal.commit({ id: `checkpoint-legacy-${i}`, updates: [{ name: workload === "growing" ? `refs/tags/legacy-${i}` : "refs/heads/main", old: workload === "growing" ? null : prior, new: prior }] });
         legacy.push((await wal.lookupRecord!(receipt.id))!);
       }
       expect((await wal.load()).sequence).toBe(128);
@@ -77,14 +80,14 @@ describe("GRASP checkpoint integration", () => {
       // Format 2 allows more than the legacy 128-record ceiling. Ref-only
       // commits exercise manifest/index growth without creating more packs.
       for (let i = 128; i < 260; i++) {
-        await wal.commit({ id: `checkpoint-v2-${i}`, updates: [{ name: `refs/tags/v2-${i}`, old: null, new: prior }] });
+        await wal.commit({ id: `checkpoint-v2-${i}`, updates: [{ name: workload === "growing" ? `refs/tags/v2-${i}` : "refs/heads/main", old: workload === "growing" ? null : prior, new: prior }] });
       }
       const replay = await wal.commit({ id: first.id, updates: [{ name: "refs/heads/main", old: null, new: fixture.commitID }], pack: fixture.pack });
       expect(replay).toMatchObject({ id: first.id, sequence: 1, replayed: true });
       const rebuilt = await gitRepository(relay, repo!);
       const cold = await rebuilt.load();
       expect(cold.sequence).toBe(260);
-      expect(cold.refs["refs/tags/v2-259"]).toBe(fixture.commitID);
+      expect(cold.refs[workload === "growing" ? "refs/tags/v2-259" : "refs/heads/main"]).toBe(fixture.commitID);
       const advertised = await rebuilt.loadRefs!();
       expect(advertised.sequence).toBe(260);
       expect(advertised.refs["refs/heads/main"]).toBe(fixture.commitID);
@@ -98,10 +101,13 @@ describe("GRASP checkpoint integration", () => {
         counts[category] = (counts[category] ?? 0) + 1;
         return counts;
       }, {});
-      return { before, after, keyCount: keys.length, categories, sequence: cold.sequence };
+      const retained = await inventory(relay, repo!, rebuilt);
+      return { before, after, keyCount: keys.length, categories, sequence: cold.sequence, empty, oneCommit, retained };
     });
 
+    console.info("checkpoint inventory", JSON.stringify({ workload, empty: measurements.empty, oneCommit: measurements.oneCommit, retained: measurements.retained }));
     console.info("checkpoint storage measurement", {
+      workload,
       beforeObjects: measurements.before.n,
       afterObjects: measurements.after.n,
       beforeBytes: measurements.before.bytes,
@@ -117,6 +123,11 @@ describe("GRASP checkpoint integration", () => {
     expect(measurements.after.bytes).toBeGreaterThan(measurements.before.bytes);
     expect(measurements.keyCount).toBeGreaterThan(128);
     expect(measurements.sequence).toBe(260);
+    expect(measurements.empty.physicalBytes).toBe(0);
+    expect(measurements.empty.reservedBytes).toBe(0);
+    expect(measurements.retained.currentBytes).toBeLessThan(measurements.retained.physicalBytes);
+    expect(measurements.retained.categories["unreferenced/records"]).toBeUndefined();
+    expect(measurements.retained.categories["unreferenced/packs"]).toBeUndefined();
   });
 
   it("retains a reservation when an immutable checkpoint write is ambiguous", async () => {
