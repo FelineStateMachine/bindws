@@ -15,6 +15,7 @@ import { relaysFromList } from "./jobs.ts";
 import { notify, notifySettings } from "./notify.ts";
 import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dumps.ts";
 import { can, METHOD_ACTIONS } from "./roles.ts";
+import { READ_METHODS, detailOf } from "./audit.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
 import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
 
@@ -29,7 +30,7 @@ const METHODS = [
   "allowkind", "disallowkind", "unrulekind", "listallowedkinds", "listblockedkinds",
   "changerelayname", "changerelaydescription", "changerelayicon",
   "createinvite", "listinvites", "revokeinvite", "listmembers",
-  "listreports", "resolvereport", "listeventsneedingmoderation",
+  "listreports", "resolvereport", "listeventsneedingmoderation", "listaudit",
   "blockip", "unblockip", "listblockedips", "setblockedwords",
   "listblobs", "deleteblob",
   "storagestats", "setretention", "listretention", "purgekind",
@@ -99,7 +100,21 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
   const num = (i: number) => (Number.isInteger(params[i]) ? (params[i] as number) : parseInt(str(i), 10));
   const hex64 = (v: string) => /^[0-9a-f]{64}$/.test(v);
 
+  // Every method that changed something and answered 200 goes in the
+  // moderation log with who called it (audit.ts). deleterelay took the
+  // table with it.
+  const resp = await run();
+  if (resp.status === 200 && !READ_METHODS.has(method) && method !== "deleterelay") {
+    const { target, detail } = detailOf(method, params);
+    relay.audit.record(t, caller, method, target, detail);
+  }
+  return resp;
+
+  async function run(): Promise<Response> {
   switch (method) {
+    case "listaudit":
+      // (before): rows older than that seq, newest first; 0 or nothing for the newest page.
+      return reply({ result: relay.audit.list(Math.max(num(0) || 0, 0)) });
     case "stats": {
       const d = new Date(now() * 1000);
       const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
@@ -561,4 +576,5 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     }
   }
   return reply({ error: "unsupported: " + method }, 400);
+  }
 }

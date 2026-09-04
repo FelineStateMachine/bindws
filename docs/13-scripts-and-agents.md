@@ -90,6 +90,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 - `listrecentevents [limit]`: the newest events.
 - `listallowedkinds`, `listblockedkinds`, `listretention`: the kind and keep-for rules.
 - `listblobs`, `listreports`: files and the reports queue.
+- `listaudit [before]`: the moderation log, newest first, 100 rows; pass the last row's `seq` for the next page. Every method that changed something is in it with the caller, the first string parameter as the target and the rest as detail.
 - `successionstatus`: last seen, days silent, warning state and the handover log; the heir may read it too.
 
 **Members**

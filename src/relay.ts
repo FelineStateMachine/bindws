@@ -8,6 +8,7 @@ import { match, parseFilter, type Filter } from "./filter.ts";
 import { hllOffset } from "./hll.ts";
 import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
 import { KIND_RELAY_DISCOVERY, discovery } from "./nip66.ts";
+import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
 import { manage } from "./manage.ts";
@@ -130,6 +131,7 @@ export class Relay extends DurableObject<Env> {
   settings: Settings;
   fuel: Fuel;
   identity: Identity;
+  audit: Audit;
   slug = "";
   private states = new Map<WebSocket, ConnState>();
   private syncs = new Map<WebSocket, Map<string, Negentropy>>();
@@ -168,6 +170,7 @@ export class Relay extends DurableObject<Env> {
     this.settings = new Settings(ctx.storage.sql);
     this.fuel = new Fuel(ctx.storage.sql, fuelConfig(env as unknown as Record<string, unknown>));
     this.identity = new Identity(ctx.storage);
+    this.audit = new Audit(ctx.storage.sql, () => this.slug);
     this.hostnames = env.CF_API_TOKEN && env.ZONE_ID ? new Hostnames(env.CF_API_TOKEN, env.ZONE_ID, (u, i) => this.fetcher(u, i)) : null;
     ctx.blockConcurrencyWhile(async () => {
       this.store.init();
@@ -565,6 +568,7 @@ export class Relay extends DurableObject<Env> {
     this.settings = new Settings(this.sql);
     this.fuel = new Fuel(this.sql, this.fuel.cfg);
     this.identity = new Identity(this.ctx.storage);
+    this.audit = new Audit(this.sql, () => this.slug);
     this.store.init();
     this.settings.load();
     this.store.hidden = this.settings.hiddenEvents;

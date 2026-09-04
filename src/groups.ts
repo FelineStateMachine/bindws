@@ -61,10 +61,23 @@ type Result = { ok: boolean; msg: string; stored: boolean };
 const OK: Result = { ok: true, msg: "", stored: true };
 const no = (msg: string): Result => ({ ok: false, msg, stored: false });
 
+const MODERATION_NAMES: Record<number, string> = { [KIND_PUT_USER]: "put-user", [KIND_REMOVE_USER]: "remove-user", [KIND_EDIT_METADATA]: "edit-metadata", [KIND_DELETE_EVENT]: "delete-event", [KIND_CREATE_INVITE]: "create-invite", [KIND_PINS]: "update-pins" };
+
 // handleGroupEvent applies a join, leave or moderation event that has passed
 // the common gate. It does not store the event; stored: true asks the caller
-// to keep and broadcast it.
+// to keep and broadcast it. A moderation event that took effect goes in the
+// moderation log under the kind's NIP-29 name, like the management method
+// that does the same thing.
 export async function handleGroupEvent(relay: Relay, e: Event): Promise<Result> {
+  const r = await applyGroupEvent(relay, e);
+  if (r.ok && isModeration(e.kind)) {
+    const target = e.tags.find((x) => (x[0] === "p" || x[0] === "e") && HEX64.test(x[1] ?? ""))?.[1] ?? "";
+    relay.audit.record(now(), e.pubkey, MODERATION_NAMES[e.kind] ?? "kind " + e.kind, target, e.kind === KIND_EDIT_METADATA || e.kind === KIND_PINS ? JSON.stringify(e.tags.filter((x) => x[0] !== "h")).slice(0, 500) : "");
+  }
+  return r;
+}
+
+async function applyGroupEvent(relay: Relay, e: Event): Promise<Result> {
   const s = relay.settings;
   const t = now();
   const role = s.roleOf(e.pubkey);

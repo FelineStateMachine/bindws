@@ -121,6 +121,8 @@ Members inviting members is `invited_by` on the member row, set from the invite'
 
 `listeventsneedingmoderation` is a view over the reports queue: one entry per open reported thing, an event id or a blob hash, with the report's type and words as the reason. `blockip`, `unblockip` and `listblockedips` work on the address the worker stamped. A blocked address gets no socket and no write, read or upload door, while the page, NIP-11 and management stay reachable so an owner can undo a block on their own address.
 
+`audit.ts` is the moderation log. `manage` runs the method, and when it answered 200 and the method is not on the read list, writes a row: when, the caller, the method, the first string parameter as the target and the rest as detail, with `setpolicy` reduced to the field names and `importconfig` to counts. `handleGroupEvent` in `groups.ts` does the same for a moderation kind that took effect, under its NIP-29 name. The table keeps the newest 5,000 rows; `listaudit(before)` pages backward, and each row is also a JSON line on the console for the logs export.
+
 Rate limits are token buckets per connection (`ratelimit.ts`) and, beside them, per address at four times the allowance. The address buckets are the HTTP bridge's only limit, live in memory and reset when the object sleeps. The apex caps leases with two rate limiting bindings, per address and overall.
 
 ## Presets
