@@ -1,0 +1,24 @@
+// Accountable Marmot transport: members publish KeyPackages and authenticate
+// their sockets before publishing envelopes signed by fresh ephemeral keys.
+// The admitted account's limits apply; the relay owner's fuel pays for storage.
+// Reads stay open for encrypted transport, with recipient checks on gift wraps.
+// Relay membership admits publishers; clients manage MLS group membership.
+{
+  "$schema": "https://bind.ws/relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Marmot members",
+    "about": "Members publish Marmot KeyPackages and authenticate group message writes. Encrypted transport stays publicly readable; member limits apply and gift wraps keep their recipient checks."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "open",
+    "directoryPublic": true,
+    "features": { "marmot": true }
+  },
+  "kinds": {
+    "allow": [10002, 10050, 1059, 30443, 445],
+    "block": []
+  },
+  "retention": []
+}

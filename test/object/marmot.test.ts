@@ -45,19 +45,28 @@ describe("marmot", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
   });
 
-  it("requires an authenticated admitted account for group envelopes on limited relays", async () => {
+  it("the members template requires admitted account authentication while encrypted messages stay publicly readable", async () => {
     const host = "marmot-auth.bind.ws";
     const owner = generateSecretKey();
     const member = generateSecretKey();
     const ephemeral = generateSecretKey();
     await rpc(host, owner, "claim");
     await rpc(host, owner, "setmember", pk(member));
-    await rpc(host, owner, "setpolicy", { features: { marmot: true }, writes: "allowlist" });
+    await rpc(host, owner, "applypreset", "marmot-members");
     const c = await WS.connect(host);
     const group = () => ev(ephemeral, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "cd".repeat(32)]]);
     expect((await c.ok(group())).msg).toMatch(/^auth-required:/);
     await c.auth(member, host);
     expect((await c.ok(group())).ok).toBe(true);
+    const stranger = await WS.connect(host);
+    await stranger.auth(generateSecretKey(), host);
+    const denied = ev(generateSecretKey(), KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ee".repeat(32)]]);
+    expect((await stranger.ok(denied)).msg).toMatch(/^auth-required:/);
+    stranger.ws.close();
+    const reader = await WS.connect(host);
+    const messages = await reader.query({ kinds: [KIND_MARMOT_GROUP], "#h": ["cd".repeat(32)] });
+    expect(messages.events.map((e) => e.pubkey)).toEqual([pk(ephemeral)]);
+    reader.ws.close();
     const reused = ev(ephemeral, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "de".repeat(32)]]);
     expect((await c.ok(reused)).msg).toMatch(/fresh ephemeral author|already used/);
     c.ws.close();
@@ -70,7 +79,7 @@ describe("marmot", () => {
     const member = generateSecretKey();
     await rpc(host, owner, "claim");
     await rpc(host, owner, "setmember", pk(member), { maxBytes: 700 });
-    await rpc(host, owner, "setpolicy", { features: { marmot: true }, writes: "allowlist" });
+    await rpc(host, owner, "applypreset", "marmot-members");
     const c = await WS.connect(host);
     await c.auth(member, host);
     const first = ev(generateSecretKey(), KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ef".repeat(32)]]);

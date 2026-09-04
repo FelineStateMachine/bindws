@@ -13,10 +13,23 @@ encrypted group message and routes it with one `h` tag containing the random
 32-byte group id. The relay checks the signed envelope and leaves MLS
 verification to clients.
 
-The transport is off on a fresh relay. An owner enables it with the Marmot
-template or `setpolicy` with `{"features":{"marmot":true}}`. The template
-also allows kinds `10002`, `10050`, `1059`, `30443` and `445`, which are the
+The transport is off on a fresh relay. You enable it with **Marmot**,
+**Marmot members** or `setpolicy` with `{"features":{"marmot":true}}`.
+Both templates allow kinds `10002`, `10050`, `1059`, `30443` and `445`, which are the
 account relay list, inbox list, gift wrap, KeyPackage and group message paths.
+
+Choose **Marmot** for public opaque transport: anyone can publish, including
+group envelopes without account authentication. Choose **Marmot members**
+when you admit the publishers. Add their account npubs on the People tab;
+their clients authenticate with NIP-42 before publishing group envelopes.
+Both templates keep encrypted messages publicly readable and retain the
+recipient checks on gift wraps. Relay membership controls who writes; your
+clients control who belongs to an MLS group and holds its decryption keys.
+
+**Marmot members** charges each envelope against its authenticated account's
+member limits. Both templates use the relay owner's existing fuel allowance
+and balance for storage and metered work; neither sets a new price or cap.
+Other feature settings stay as they are.
 
 Kind `445` uses a fresh ephemeral author, so that author is not a membership
 identity. An open relay may accept it anonymously. A relay with an allowlist,

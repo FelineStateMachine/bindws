@@ -1,9 +1,12 @@
+// Public opaque transport: anyone can publish KeyPackages and group envelopes.
+// Ephemeral envelope authors need no account authentication on open writes.
+// Clients hold the MLS keys; gift wraps keep their recipient checks.
 {
   "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Marmot",
-    "about": "A relay for Marmot KeyPackages, opaque group messages and private welcomes. Group envelopes stay subject to the relay's write limits."
+    "about": "Public Marmot transport. Anyone publishes KeyPackages and opaque group messages; gift wraps keep their recipient checks. Relay write limits still apply."
   },
   "policy": {
     "writes": "open",

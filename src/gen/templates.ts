@@ -292,7 +292,7 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       "format": "bind.ws/relay-config/2",
       "template": {
         "title": "Marmot",
-        "about": "A relay for Marmot KeyPackages, opaque group messages and private welcomes. Group envelopes stay subject to the relay's write limits."
+        "about": "Public Marmot transport. Anyone publishes KeyPackages and opaque group messages; gift wraps keep their recipient checks. Relay write limits still apply."
       },
       "policy": {
         "writes": "open",
@@ -333,6 +333,35 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       },
       "kinds": {
         "allow": [],
+        "block": []
+      },
+      "retention": []
+    }
+  },
+  {
+    "name": "marmot-members",
+    "document": {
+      "format": "bind.ws/relay-config/2",
+      "template": {
+        "title": "Marmot members",
+        "about": "Members publish Marmot KeyPackages and authenticate group message writes. Encrypted transport stays publicly readable; member limits apply and gift wraps keep their recipient checks."
+      },
+      "policy": {
+        "writes": "allowlist",
+        "reads": "open",
+        "directoryPublic": true,
+        "features": {
+          "marmot": true
+        }
+      },
+      "kinds": {
+        "allow": [
+          10002,
+          10050,
+          1059,
+          30443,
+          445
+        ],
         "block": []
       },
       "retention": []
