@@ -126,7 +126,7 @@ export function landing(req: Request, env: Env): Response {
   ]);
   const limits = table(["Parameter", "Default", "Range"], [
     ["name", "3 to 32 of a-z 0-9 -", "some names are reserved"],
-    ["max_message_length", `${n(MAX_MESSAGE)} bytes`, "fixed"],
+    ["max_message_length", `${p.maxMessageKB} KB`, `16 to ${n(MAX_MESSAGE / 1024)} KB`],
     ["max_subscriptions", String(p.maxSubs), "1 to 200"],
     ["max_limit", String(p.maxLimit), "1 to 5,000"],
     ["eventsPerMinute / reqsPerMinute", `${p.eventsPerMinute} / ${p.reqsPerMinute} per connection`, "set by the owner"],

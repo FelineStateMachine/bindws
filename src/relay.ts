@@ -80,7 +80,7 @@ export const KIND_REPORT = 1984;
 export const KIND_NOSTR_CONNECT = 24133;
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";
-export const MAX_MESSAGE = 128 * 1024;
+export const MAX_MESSAGE = 1024 * 1024;
 const FAVICON = FAVICON_SVG;
 const MAX_SYNC = 100_000;
 // How long a leased relay keeps everything, so a claim inherits a bounded
@@ -1096,6 +1096,11 @@ export class Relay extends DurableObject<Env> {
     return this.relayURL(host).replace(/^ws/, "http");
   }
 
+  // maxMessage is the socket message cap in bytes: the owner's rule, under the platform's ceiling.
+  maxMessage(): number {
+    return Math.min(this.settings.policy.maxMessageKB * 1024, MAX_MESSAGE);
+  }
+
   info(host: string) {
     const p = this.settings.policy;
     const doc: Record<string, unknown> = {
@@ -1105,7 +1110,7 @@ export class Relay extends DurableObject<Env> {
       software: SOFTWARE,
       version: VERSION,
       limitation: {
-        max_message_length: MAX_MESSAGE,
+        max_message_length: this.maxMessage(),
         max_subscriptions: p.maxSubs,
         max_limit: p.maxLimit,
         default_limit: p.maxLimit,
@@ -1201,7 +1206,7 @@ export class Relay extends DurableObject<Env> {
       return;
     }
     this.meter.bytesIn += message.length;
-    if (message.length > MAX_MESSAGE) {
+    if (message.length > this.maxMessage()) {
       this.send(ws, "NOTICE", "error: message too large");
       return;
     }

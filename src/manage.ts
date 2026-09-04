@@ -5,7 +5,7 @@ import { now, tagValues, validate, type Event } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { blockedWords, gateFields, isWriteRule, viewFields } from "./settings.ts";
+import { blockedWords, gateFields, isWriteRule, limitFields, viewFields } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, viewsSummary } from "./views.ts";
@@ -123,12 +123,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       if (typeof patch.directoryPublic === "boolean") clean.directoryPublic = patch.directoryPublic;
       const notifyPatch = notifySettings(patch.notify, p.notify);
       if (notifyPatch) clean.notify = notifyPatch;
-      for (const k of ["minPow", "maxFuture", "maxLimit", "maxSubs", "maxBlobMB", "eventsPerMinute", "reqsPerMinute"]) if (Number.isInteger(patch[k]) && (patch[k] as number) >= 0) clean[k] = patch[k];
-      if (typeof clean.maxBlobMB === "number") clean.maxBlobMB = Math.min(Math.max(clean.maxBlobMB as number, 1), 95);
-      if (typeof clean.eventsPerMinute === "number") clean.eventsPerMinute = Math.max(clean.eventsPerMinute as number, 1);
-      if (typeof clean.reqsPerMinute === "number") clean.reqsPerMinute = Math.max(clean.reqsPerMinute as number, 1);
-      if (typeof clean.maxLimit === "number") clean.maxLimit = Math.min(Math.max(clean.maxLimit as number, 1), 5000);
-      if (typeof clean.maxSubs === "number") clean.maxSubs = Math.min(Math.max(clean.maxSubs as number, 1), 200);
+      Object.assign(clean, limitFields(patch));
       s.update(clean);
       // A read rule that tightened ends the subscriptions it no longer admits.
       relay.enforceReads();

@@ -60,6 +60,7 @@ export interface Policy {
   maxFuture: number; // seconds; 0 disables
   maxLimit: number;
   maxSubs: number;
+  maxMessageKB: number; // largest socket message, in KB; MAX_MESSAGE in relay.ts is the ceiling
   // Nightly dumps: a JSONL of every event, written to R2 by the alarm and
   // kept for `dumpsKeep` runs. Counted as media for fuel.
   dumps: "off" | "daily" | "weekly";
@@ -117,6 +118,7 @@ export const DEFAULT_POLICY: Policy = {
   maxFuture: 900,
   maxLimit: 500,
   maxSubs: 20,
+  maxMessageKB: 128,
   dumps: "off",
   dumpsKeep: 7,
   memberInvites: { depth: 0, quota: 0 },
@@ -224,6 +226,25 @@ export function gateFields(patch: Record<string, unknown>): Partial<Policy> {
   const words = blockedWords(patch.blockedWords);
   if (words) out.blockedWords = words;
   if (Number.isInteger(patch.reportThreshold) && (patch.reportThreshold as number) >= 0 && (patch.reportThreshold as number) <= 100) out.reportThreshold = patch.reportThreshold as number;
+  return out;
+}
+
+// limitFields validates the numeric limits of a policy patch, clamped to
+// what the relay can honour. Anything that is not a whole number is dropped.
+export function limitFields(patch: Record<string, unknown>): Partial<Policy> {
+  const out: Partial<Policy> = {};
+  const clamp = (k: keyof Policy, lo: number, hi: number) => {
+    const v = patch[k];
+    if (Number.isInteger(v) && (v as number) >= 0) (out as Record<string, unknown>)[k] = Math.min(Math.max(v as number, lo), hi);
+  };
+  clamp("minPow", 0, 256);
+  clamp("maxFuture", 0, Number.MAX_SAFE_INTEGER);
+  clamp("maxLimit", 1, 5000);
+  clamp("maxSubs", 1, 200);
+  clamp("maxMessageKB", 16, 1024);
+  clamp("maxBlobMB", 1, 95);
+  clamp("eventsPerMinute", 1, Number.MAX_SAFE_INTEGER);
+  clamp("reqsPerMinute", 1, Number.MAX_SAFE_INTEGER);
   return out;
 }
 
@@ -628,7 +649,7 @@ export class Settings {
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;
     const notify = notifySettings(policy.notify, this.policy.notify);
     if (notify) clean.notify = notify;
-    for (const k of ["minPow", "maxFuture", "maxLimit", "maxSubs", "maxBlobMB", "eventsPerMinute", "reqsPerMinute"] as const) if (Number.isInteger(policy[k]) && (policy[k] as number) >= 0) clean[k] = policy[k] as number;
+    Object.assign(clean, limitFields(policy));
     this.update(clean);
     for (const m of this.members()) if (m.role !== "owner") this.removeMember(m.pubkey);
     for (const m of Array.isArray(c.members) ? c.members : []) {

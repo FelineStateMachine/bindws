@@ -49,7 +49,7 @@ Who can do what, and how much.
 | Reads | anyone, signed in, members. One rule for everything the relay shows: events, counts, sync and search, pages and the feed, files and file listings, views and presence, signer traffic, and reports about files. What stays public whatever the rule: the information document with the owner's key and the relay's own key, the card, the terms, invite pages and the fuel meters. Tightening the rule closes the subscriptions it no longer admits. |
 | Proof of work | minimum bits an event must carry, 0 to disable |
 | Timestamp window | how far in the future an event may be dated |
-| Query limits | max events per query, max subscriptions per connection |
+| Query limits | max events per query, max subscriptions per connection, largest socket message in KB, 16 to 1,024 |
 | Rate limits | events and queries per minute, per connection; an address gets four times that across all its connections |
 | Upload size | largest file in megabytes, up to 95 |
 | Kinds | allow list and block list by kind number |
