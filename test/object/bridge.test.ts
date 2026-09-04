@@ -1,11 +1,58 @@
-// NIP-46 transport: kind 24133 passes the ownership and write gates and a
-// subscription to it alone passes the read gate, so the relay can carry a
-// remote signer's session for anyone, including someone about to claim it.
+// Doors for a client without a socket: the HTTP bridge, and NIP-46 as
+// transport, where kind 24133 passes the ownership and write gates and a
+// subscription to it alone passes the read gate.
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
-import { ev, rpc } from "../helpers/relay.ts";
+import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
+import { getToken } from "nostr-tools/nip98";
+import { ev, rpc, post } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
+
+describe("HTTP bridge", () => {
+  it("accepts events, answers queries and counts with NIP-98, applying the same gates", async () => {
+    const host = "bridge.bind.ws";
+    const owner = generateSecretKey();
+    const other = generateSecretKey();
+    await rpc(host, owner, "claim");
+    const e = ev(owner, 1, "over http");
+    let r = await post(host, owner, "/events", e);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ event_id: e.id, accepted: true, message: "" });
+    r = await post(host, owner, "/events", e);
+    expect(r.body.accepted).toBe(true);
+    expect(r.body.message).toMatch(/^duplicate:/);
+
+    r = await post(host, other, "/query", [{ kinds: [1], authors: [getPublicKey(owner)] }]);
+    expect(r.status).toBe(200);
+    expect(r.body.map((x: Event) => x.id)).toEqual([e.id]);
+    r = await post(host, other, "/count", [{ kinds: [1] }]);
+    expect(r.body.count).toBe(1);
+
+    // Unsigned, wrong-URL, and non-JSON requests are refused cleanly.
+    expect((await post(host, null, "/query", [{}])).status).toBe(401);
+    const badUrlToken = await getToken("http://elsewhere.bind.ws/query", "POST", (x) => finalizeEvent(x, other), true, [{}] as any);
+    const bad = await SELF.fetch(`http://${host}/query`, { method: "POST", headers: { authorization: badUrlToken }, body: "[{}]" });
+    expect(bad.status).toBe(401);
+
+    // A subscriber on the socket sees bridge writes live.
+    const c = await WS.connect(host);
+    await c.open("live", { kinds: [1] });
+    const e2 = ev(owner, 1, "pushed");
+    await post(host, owner, "/events", e2);
+    expect((await c.expect("EVENT"))[2].id).toBe(e2.id);
+
+    // Private kinds via the bridge follow the recipient rule; the signer counts as authenticated.
+    const recipient = generateSecretKey();
+    const wrap = ev(generateSecretKey(), 1059, "dm", [["p", getPublicKey(recipient)]]);
+    await post(host, owner, "/events", wrap);
+    r = await post(host, other, "/query", [{ kinds: [1059] }]);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual([]); // authenticated but not a party: silently filtered
+    expect((await post(host, null, "/query", [{ kinds: [1059] }])).status).toBe(401);
+    r = await post(host, recipient, "/query", [{ kinds: [1059] }]);
+    expect(r.body.map((x: Event) => x.id)).toEqual([wrap.id]);
+  });
+});
 
 describe("NIP-46 transport", () => {
   it("carries kind 24133 on an unclaimed relay, live only, never stored", async () => {

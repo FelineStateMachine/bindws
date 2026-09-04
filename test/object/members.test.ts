@@ -1,79 +1,84 @@
-// Dumps to R2, per-member keep-for and caps, and members inviting members.
-import { env, runInDurableObject } from "cloudflare:test";
+// Members: invites, members-only reads and eviction, per-member keep-for
+// and caps, members inviting members, and the migration of the members table.
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { generateSecretKey } from "nostr-tools/pure";
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import type { Relay } from "../../src/relay.ts";
-import { writeDump } from "../../src/dumps.ts";
-import { now, ev, pk, rpc, get, post } from "../helpers/relay.ts";
+import { now, ev, rpc, post, pk } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
-describe("dumps", () => {
-  it("writes a JSONL of every event to R2, lists it, serves it to a signature, rotates and counts as media", async () => {
-    const host = "dumpy.bind.ws";
+describe("invites", () => {
+  it("lets the owner mint links that non-members can claim, with expiry and use limits", async () => {
+    const host = "invite.bind.ws";
     const owner = generateSecretKey();
-    const writer = generateSecretKey();
+    const guest = generateSecretKey();
     await rpc(host, owner, "claim");
+    await rpc(host, owner, "setpolicy", { writes: "allowlist", joinTerms: "Be kind." });
+    expect((await rpc(host, guest, "createinvite")).status).toBe(403);
+    const inv = (await rpc(host, owner, "createinvite", 3600, 1, "for guest")).result;
+    expect(inv.code).toMatch(/^[0-9a-f]{32}$/);
+    expect(inv.max_uses).toBe(1);
+
+    // The page renders the terms for a valid code and a problem for a bad one.
+    let page = await (await SELF.fetch(`http://${host}/invite/${inv.code}`)).text();
+    expect(page).toContain("Be kind.");
+    expect(page).toContain("Join with extension");
+    page = await (await SELF.fetch(`http://${host}/invite/nope`)).text();
+    expect(page).toContain("isn't valid");
+
+    // Before joining: writes refused. After: accepted, and the roster changed.
     const c = await WS.connect(host);
-    for (let i = 0; i < 3; i++) expect((await c.ok(ev(writer, 1, "note " + i))).ok).toBe(true);
-    expect((await rpc(host, owner, "setpolicy", { dumps: "daily", dumpsKeep: 2 })).result.dumps).toBe("daily");
-
-    const d = (await rpc(host, owner, "dumpnow")).result;
-    expect(d.name).toMatch(/^\d{4}-\d{2}-\d{2}\.jsonl$/);
-    const total = (await rpc(host, owner, "stats")).result.events;
-    expect(d.events).toBe(total);
-    expect(total).toBeGreaterThanOrEqual(3);
-    const obj = await env.MEDIA.get(`dumpy/dumps/${d.name}`);
-    expect(obj).not.toBeNull();
-    const text = await obj!.text();
-    const lines = text.split("\n").filter(Boolean);
-    expect(lines.length).toBe(d.events);
-    for (const l of lines) expect(JSON.parse(l).id).toMatch(/^[0-9a-f]{64}$/);
-    expect(d.bytes).toBe(text.length);
-
-    const list = (await rpc(host, owner, "listdumps")).result;
-    expect(list.map((x: any) => x.name)).toEqual([d.name]);
-    expect(list[0].url).toBe("/dumps/" + d.name);
-
-    // Download needs a signature from someone with the storage action.
-    const signed = await get(host, "/dumps/" + d.name, owner);
-    expect(signed.status).toBe(200);
-    expect(signed.headers.get("content-disposition")).toContain(d.name);
-    expect(await signed.text()).toBe(text);
-    expect((await get(host, "/dumps/" + d.name, null)).status).toBe(401);
-    expect((await get(host, "/dumps/" + d.name, writer)).status).toBe(403);
-    expect((await get(host, "/dumps/nope.jsonl", owner)).status).toBe(400);
-    expect((await get(host, "/dumps/1999-01-01.jsonl", owner)).status).toBe(404);
-
-    const stub = env.RELAY.getByName("dumpy");
-    await runInDurableObject(stub, async (r: Relay) => {
-      expect(r.mediaBytes()).toBe(d.bytes);
-      // Two older dumps and a keep of two: the oldest goes.
-      await writeDump(r, now() - 2 * 86400);
-      await writeDump(r, now() - 86400);
-    });
-    const after = (await rpc(host, owner, "listdumps")).result.map((x: any) => x.name);
-    expect(after.length).toBe(2);
-    expect(after[0]).toBe(d.name);
-    expect((await env.MEDIA.list({ prefix: "dumpy/dumps/" })).objects.length).toBe(2);
-    expect((await rpc(host, owner, "storagestats")).result.dumps).toBe(2);
-
-    expect((await rpc(host, owner, "deletedump", after[1])).result).toBe(true);
-    expect((await env.MEDIA.list({ prefix: "dumpy/dumps/" })).objects.length).toBe(1);
-    expect((await rpc(host, writer, "listdumps")).status).toBe(403);
+    expect((await c.ok(ev(guest, 1, "hi"))).msg).toMatch(/^restricted:/);
+    let r = await post(host, guest, "/api/invites/claim", { code: inv.code });
+    expect(r.body).toEqual({ status: "joined", role: "member" });
+    expect((await c.ok(ev(guest, 1, "hi again"))).ok).toBe(true);
+    r = await post(host, guest, "/api/invites/claim", { code: inv.code });
+    expect(r.body.status).toBe("already_member");
+    r = await post(host, generateSecretKey(), "/api/invites/claim", { code: inv.code });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe("invite_exhausted");
+    expect((await post(host, generateSecretKey(), "/api/invites/claim", { code: "bogus" })).body.error).toBe("invite_invalid");
+    const list = (await rpc(host, owner, "listinvites")).result;
+    expect(list[0].uses).toBe(1);
+    expect((await rpc(host, owner, "revokeinvite", inv.code)).result).toBe(true);
+    expect((await rpc(host, owner, "listinvites")).result).toEqual([]);
+    const members = (await rpc(host, owner, "listmembers")).result.members;
+    expect(members.find((m: any) => m.pubkey === getPublicKey(guest)).via).toMatch(/^invite /);
   });
+});
 
-  it("the alarm writes a scheduled dump once a day, not twice", async () => {
-    const host = "dumpz.bind.ws";
+describe("members-only reads and eviction", () => {
+  it("serves only members when reads=members, and closes the door on bans and removals", async () => {
+    const host = "closed.bind.ws";
     const owner = generateSecretKey();
+    const member = generateSecretKey();
+    const stranger = generateSecretKey();
     await rpc(host, owner, "claim");
-    const stub = env.RELAY.getByName("dumpz");
-    await runInDurableObject(stub, async (r: Relay) => r.alarm());
-    expect((await rpc(host, owner, "listdumps")).result.length).toBe(0);
-    await rpc(host, owner, "setpolicy", { dumps: "daily" });
-    await runInDurableObject(stub, async (r: Relay) => r.alarm());
-    expect((await rpc(host, owner, "listdumps")).result.length).toBe(1);
-    await runInDurableObject(stub, async (r: Relay) => r.alarm());
-    expect((await rpc(host, owner, "listdumps")).result.length).toBe(1);
+    await rpc(host, owner, "allowpubkey", getPublicKey(member));
+    await rpc(host, owner, "setpolicy", { reads: "members" });
+    const s = await WS.connect(host);
+    expect((await s.query({ kinds: [1] })).closed).toMatch(/^auth-required:/);
+    await s.auth(stranger, host);
+    expect((await s.query({ kinds: [1] })).closed).toMatch(/^restricted: .*members/);
+    const m = await WS.connect(host);
+    await m.auth(member, host);
+    expect((await m.query({ kinds: [1] })).closed).toBe("");
+    m.send("REQ", "live", { kinds: [1] });
+    await m.expect("EOSE");
+
+    // Removal ends every subscription with a reason; the socket stays.
+    await rpc(host, owner, "unrulepubkey", getPublicKey(member));
+    const closed = await m.expect("CLOSED");
+    expect(closed[1]).toBe("live");
+    expect(closed[2]).toMatch(/^restricted:/);
+    expect(m.closed).toBeNull();
+
+    // A ban closes the socket outright.
+    const b = await WS.connect(host);
+    await b.auth(stranger, host);
+    await rpc(host, owner, "banpubkey", getPublicKey(stranger), "bye");
+    for (let i = 0; i < 20 && !b.closed; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(b.closed?.code).toBe(4403);
   });
 });
 
@@ -195,5 +200,27 @@ describe("members invite members", () => {
     await runInDurableObject(stub, async (r: Relay) => expect((r as any).__pub).toBe(1));
     expect((await ws.req({ kinds: [9001] })).length).toBe(3);
     expect((await rpc(host, owner, "removesubtree", pk(owner))).status).toBe(400);
+  });
+});
+
+describe("members migration", () => {
+  it("folds the earlier allow list and names table into members on load", async () => {
+    const stub = env.RELAY.getByName("legacy");
+    const owner = generateSecretKey();
+    const a = getPublicKey(generateSecretKey());
+    const b = getPublicKey(generateSecretKey());
+    await runInDurableObject(stub, async (r: Relay) => {
+      r.settings.update({ owner: getPublicKey(owner) });
+      r.sql.exec(`INSERT INTO pubkey_rules(pubkey,rule,reason,at) VALUES(?,'allow','old friend',1000)`, a);
+      r.sql.exec(`INSERT INTO nip05(name,pubkey,at) VALUES('bob',?,2000)`, b);
+      r.sql.exec(`INSERT INTO nip05(name,pubkey,at) VALUES('alice',?,3000)`, a);
+      r.settings.load();
+      const m = r.settings.members();
+      expect(m.map((x) => [x.role, x.name, x.via])).toEqual([["owner", null, "claimed"], ["member", "alice", "added"], ["member", "bob", "profile"]]);
+      expect(r.settings.isAllowed(a) && r.settings.isAllowed(b)).toBe(true);
+      expect(r.sql.exec(`SELECT count(*) AS n FROM pubkey_rules`).one().n).toBe(0);
+      r.settings.load(); // idempotent
+      expect(r.settings.members().length).toBe(3);
+    });
   });
 });

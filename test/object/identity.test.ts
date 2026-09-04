@@ -1,11 +1,46 @@
-// NIP-43, the rest of it: the relay's own profile, role definitions, roles
-// in the roster, the NIP-43 join and leave requests, and the promise that
-// the roster and the NIP-29 group never disagree, whichever path changed
-// the members.
+// The relay's identity under NIP-43: its profile, the role definitions, the
+// roster with roles, join and leave requests, and the promise that the roster
+// and the NIP-29 group never disagree, whichever path changed the members.
+import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { generateSecretKey } from "nostr-tools/pure";
-import { ev, pk, tagsOf, rpc, info } from "../helpers/relay.ts";
+import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
+import { ev, rpc, pk, tagsOf, info } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
+
+describe("relay identity and NIP-43 roster", () => {
+  it("signs a roster after claiming and deltas on membership changes, advertised as self", async () => {
+    const host = "roster.bind.ws";
+    const owner = generateSecretKey();
+    const bob = generateSecretKey();
+    let info: any = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
+    expect(info.self).toBeUndefined();
+    await rpc(host, owner, "claim");
+    info = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
+    expect(info.self).toMatch(/^[0-9a-f]{64}$/);
+    expect(info.supported_nips).toContain(43);
+    const c = await WS.connect(host);
+    c.send("REQ", "live", { kinds: [8000, 8001] });
+    await c.expect("EOSE");
+    let r = await c.req({ kinds: [13534] });
+    expect(r.length).toBe(1);
+    expect(r[0].pubkey).toBe(info.self);
+    expect(r[0].tags).toEqual([["-"], ["member", getPublicKey(owner), "owner"]]);
+
+    await rpc(host, owner, "allowpubkey", getPublicKey(bob), "friend");
+    const added = await c.expect("EVENT");
+    expect(added[2].kind).toBe(8000);
+    expect(added[2].tags).toContainEqual(["p", getPublicKey(bob)]);
+    r = await c.req({ kinds: [13534] });
+    expect(r[0].tags).toContainEqual(["member", getPublicKey(bob)]);
+    await rpc(host, owner, "unrulepubkey", getPublicKey(bob));
+    expect((await c.expect("EVENT"))[2].kind).toBe(8001);
+    // Nobody can forge relay-signed kinds: a client-signed 13534 is just another replaceable event by another author.
+    const forged = await c.ok(ev(bob, 13534, "", [["member", getPublicKey(bob), "owner"]]));
+    expect(forged.ok).toBe(true);
+    r = await c.req({ kinds: [13534], authors: [info.self] });
+    expect(r.map((x) => [x.pubkey, x.tags]), JSON.stringify(r)).toEqual([[info.self, [["-"], ["member", getPublicKey(owner), "owner"]]]]);
+  });
+});
 
 describe("relay profile and roles", () => {
   it("signs a kind 0 for the self key, role definitions, and roles in the roster", async () => {

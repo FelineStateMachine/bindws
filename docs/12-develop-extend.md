@@ -43,8 +43,10 @@ src/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
-  *.test.ts     Durable Object tests in workerd, one file per feature
-  conformance/                               black-box suite for any relay URL, files included
+  unit/         pure functions on node: the QR encoder, bolt11 amounts, the edge
+  object/       Durable Object tests in workerd, one file per feature or module
+  helpers/      the socket client, the management call, media tokens, the QR reader
+  conformance/  black-box suite for any relay URL, one file per NIP, files included
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
   build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
@@ -56,7 +58,7 @@ wrangler.celld.jsonc  the same Worker on celld (docs/16)
 ## Run the tests
 
 ```
-npm test                  # Durable Object tests
+npm test                  # unit and Durable Object tests
 npm run typecheck
 npm run test:conformance  # against RELAY_URL, default ws://127.0.0.1:7447
 ```
@@ -75,7 +77,7 @@ CI runs typecheck and the object tests on every push; the conformance suite agai
 2. Add a `case` in the switch. Use `num(i)` and `str(i)` for parameters. Return `reply({ result })` or `reply({ error }, 400)`.
 3. If it changes state that other code caches, update `Settings` and its in-memory sets.
 4. If the console should call it, add the control to `dashboard.ts` and a handler in its script.
-5. Cover it in `test/adopt.test.ts` with the `rpc` helper. If it can show a member, an event or a file, ask `Settings.mayRead` (or `mayList` for names and counts) with what `whoAsks` found in the header, and add the path to the door walk in `test/exposure.test.ts`, which knocks on every path as a stranger and as a signed-in non-member and fails on anything of a member's that comes back.
+5. Cover it in the `test/object` file for its feature, with `rpc` from `test/helpers/relay.ts`. If it can show a member, an event or a file, ask `Settings.mayRead` (or `mayList` for names and counts) with what `whoAsks` found in the header, and add the path to the door walk in `test/object/exposure.test.ts`, which knocks on every path as a stranger and as a signed-in non-member and fails on anything of a member's that comes back.
 
 ## Add a NIP
 
@@ -91,7 +93,7 @@ Most NIPs land as their own module, wired in from `relay.ts` with one import and
 | 96 files | `nip96.ts` over `blossom.ts` | one path line in `fetch` |
 | 11 extras | `settings.ts` fields, `info()` | `relay.ts` |
 
-A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a conformance test in `test/conformance` so the behavior is checked from outside, and a Durable Object test next to the feature's file in `test/`.
+A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a file named after the NIP in `test/conformance` so the behavior is checked from outside, and a Durable Object test in `test/object`, named after the module it exercises; a NIP number names a test file only where the feature has no other name (`nip05`, `nip11`, `nip66`).
 
 ## The signer bundle
 
