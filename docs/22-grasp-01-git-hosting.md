@@ -130,12 +130,14 @@ The hard limits are:
 | Format 1 | 128 transactions | legacy WAL replay |
 | Format 2 | 128 unique packs, 2 MiB manifest | explicitly migrated repository metadata |
 
-ntig 0.2.0 reads both formats, but installing it leaves existing roots alone
+ntig 0.2.1 reads both formats, but installing it leaves existing roots alone
 and new repositories still use format 1. Bindws exposes no checkpoint action
 or scheduled migration. The backend's explicit `checkpoint()` upgrade is
 one-way: every reader and writer must support format 2 before an isolated
 repository is migrated. Versions 0.1.x cannot read the upgraded root.
-Migration retains old data and receipts; it does not reclaim storage.
+Migration retains old data and receipts; it does not reclaim storage. Bulk
+construction publishes the final receipt-index nodes without storing each
+intermediate index from the migration. Existing roots are unchanged.
 
 Format-2 ref advertisements read the root and manifest without downloading
 packs. They retain the same accepted HEAD and hidden PR rules. Full clone,
@@ -147,6 +149,14 @@ the timed cleanup transaction. An expired unknown PR ref therefore stays
 hidden when cleanup cannot commit, while immutable WAL history keeps its old
 object bytes billed until the relay is torn down. The same retention behavior
 applies when a ref is cleaned after its 20-minute window.
+
+Each Git HTTP request reuses immutable object bytes within its existing
+authority fence. The read session retains at most 2 MiB of payload and 512
+entries; larger objects are read normally. Roots are never cached, every
+write still passes through storage reservations, and each new request
+rechecks authority. The session closes on return or error. This bounds the
+cache, not total request memory, and does not skip Git validation or pending
+promotion.
 
 ## Information document and limits
 

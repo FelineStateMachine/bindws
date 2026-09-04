@@ -103,7 +103,7 @@ Prices go up when bitcoin falls. When it rises, do nothing until a line has sat 
 
 ## Accounting coverage, checked Sept. 4, 2026
 
-The following inventory describes the host with ntig 0.2.0 and unmigrated
+The following inventory describes the host with ntig 0.2.1 and unmigrated
 format-1 repositories. Installing the library does not migrate roots. Observing an
 expense does not authorize a new customer charge. `/fuel` and the Health tab
 expose aggregate tenant meters, not every operation the host pays for.
@@ -148,6 +148,15 @@ for, and an ambiguous PUT can leave a reservation larger than physical
 storage. Neither receipt lookup nor checkpointing reclaims old bytes.
 Operation counts are host costs, not a new tenant charge; lower read costs
 alone do not establish a margin after metadata writes and retained storage.
+
+Git HTTP requests reuse up to 2 MiB and 512 entries of immutable payload in a
+session that ends with the request. Repeated validation and promotion can
+reuse those bytes, while mutable roots and all writes still reach R2 and
+its accounting adapter. New requests start fresh, oversized objects bypass
+the cache, and Git validation still runs. Lower R2 read counts do not imply
+lower CPU cost or a complete request-memory bound. Bulk initial checkpoint
+construction avoids writing intermediate receipt-index nodes; it removes
+no stored data and does not start migration automatically.
 
 `graspBusy`, `graspControls` and the job round's `working` flag fence work
 within a live instance. Async handlers can interleave across awaits. Those
@@ -232,7 +241,7 @@ These are proposed operating boundaries, not new allowances or charges.
 
 ## Proposed maintenance contract
 
-ntig 0.2.0 has no resumable optimization runner. No maintenance job, budget
+ntig 0.2.1 has no resumable optimization runner. No maintenance job, budget
 setting, wake schedule, format migration or garbage collection is enabled by
 this contract. Existing ref cleanup, retention and alarms keep their current
 roles. An eventual integration has these boundaries:

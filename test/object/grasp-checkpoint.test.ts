@@ -107,6 +107,7 @@ describe("GRASP checkpoint integration", () => {
       beforeBytes: measurements.before.bytes,
       afterBytes: measurements.after.bytes,
       retainedKeys: measurements.keyCount,
+      categories: measurements.categories,
       sequence: measurements.sequence,
     });
     // The accounting adapter retains every immutable manifest/index/receipt
@@ -128,6 +129,7 @@ describe("GRASP checkpoint integration", () => {
       const operations = { get: 0, getBytes: 0, put: 0, putBytes: 0, putAck: 0, head: 0, headBytes: 0 };
       let writes = 0;
       let throwManifest = false;
+      let ownerCap = 0;
       let failedManifestKey = "";
       let failedManifestBytes = 0;
       const previous = { ...operations };
@@ -172,7 +174,7 @@ describe("GRASP checkpoint integration", () => {
         media: bucket,
         sql: relay.sql,
         fuelStatus: () => ({ outOfFuel: false }),
-        settings: { limitsOf: () => ({ cap: 0 }) },
+        settings: { limitsOf: () => ({ cap: ownerCap }) },
         store: { authorBytes: () => 0 },
       } as unknown as typeof relay;
       const repo = { id: "a".repeat(64), owner: pk(owner), identifier: "ambiguous", clone: [], relays: [], maintainers: [pk(owner)], private: false };
@@ -203,6 +205,17 @@ describe("GRASP checkpoint integration", () => {
       console.info("ambiguous checkpoint reservation", reserved);
       expect(reserved.n).toBeGreaterThan(0);
       expect(reserved.bytes).toBeGreaterThan(0);
+      ownerCap = relay.sql.exec<{ bytes: number }>("SELECT sum(size) AS bytes FROM grasp_objects WHERE owner=?", pk(owner)).one().bytes;
+      const beforeQuota = await wal.load();
+      const putsBeforeQuota = operations.put;
+      await wal.withReadSession(async (scoped) => {
+        await expect(scoped.commit({ id: "ambiguous-initial", updates: [{ name: "refs/heads/main", old: null, new: fixture.commitID }], pack: fixture.pack })).resolves.toMatchObject({ sequence: 1, replayed: true });
+        await expect(scoped.commit({ id: "over-quota", updates: [{ name: "refs/tags/quota", old: null, new: fixture.commitID }] })).rejects.toThrow("Repository owner's storage cap reached");
+      });
+      expect(operations.put).toBe(putsBeforeQuota);
+      expect((await wal.load()).sequence).toBe(beforeQuota.sequence);
+      expect((await wal.loadRefs()).refs["refs/tags/quota"]).toBeUndefined();
+      expect(relay.sql.exec<{ bytes: number }>("SELECT sum(size) AS bytes FROM grasp_objects WHERE owner=?", pk(owner)).one().bytes).toBe(ownerCap);
     });
   });
 });

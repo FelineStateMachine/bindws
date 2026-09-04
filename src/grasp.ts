@@ -137,8 +137,10 @@ export async function grasp(relay: Relay, req: Request, url: URL): Promise<Respo
       return new Response(req.method === "HEAD" ? null : html, { headers: { ...CORS, "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
     const wal = await gitRepository(relay, repo);
-    const handler = createGitHandler(authorizedRepository(relay, repo, wal), { prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
-    const response = await handler(req);
+    const response = await wal.withReadSession(async (scopedWal) => {
+      const handler = createGitHandler(authorizedRepository(relay, repo, scopedWal), { prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
+      return await handler(req);
+    });
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(CORS)) headers.set(key, value);
     return new Response(response.body, { status: response.status, headers });

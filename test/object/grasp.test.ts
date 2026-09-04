@@ -349,7 +349,8 @@ describe("GRASP", () => {
     });
     expect(retried.body).toContain(`ok ${ref}`);
     expect(retried.counters.puts).toBe(0);
-    expect(retried.counters.gets).toBe(23);
+    expect(retried.counters.gets).toBe(11);
+    expect(retried.counters.getBytes).toBeLessThan(47_529);
     console.info("checkpoint old PR correction HTTP retry", JSON.stringify({ sequence, ...retried.counters }));
     await runInDurableObject(stub, async (relay) => {
       const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
@@ -359,6 +360,14 @@ describe("GRASP", () => {
     const body = await visible.text();
     expect(body).toContain(`${next.commitID} ${ref}`);
     expect(body).toContain("symref=HEAD:refs/heads/main");
+    // A new request must recheck authority even when its receipt is committed.
+    await runInDurableObject(stub, (relay) => relay.settings.setEvent(pr.id, "hide"));
+    const revoked = await receiveSettled(path, host, null, next.commitID, ref, next.pack, requestId);
+    expect(await revoked.text()).toContain(`ng ${ref}`);
+    await runInDurableObject(stub, async (relay) => {
+      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
+      expect((await wal.load()).sequence).toBe(sequence);
+    });
   });
 
   it.each(["expired", "moderated"])("an identical Git retry completes interrupted promotion and rechecks %s candidates", async (mode) => {
