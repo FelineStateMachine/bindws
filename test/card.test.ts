@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from "nostr-tools/pure";
 import { decode } from "nostr-tools/nip19";
 import { getToken } from "nostr-tools/nip98";
+import jsQR from "jsqr";
 import { EC_M, MASKS, dataCodewords, dataOrder, encode, formatBits, gfMul, gfPow, layout, capacity } from "../src/qr.ts";
 
 async function rpc(host: string, sk: Uint8Array, method: string, ...params: unknown[]) {
@@ -21,11 +22,16 @@ const get = (host: string, path: string) => SELF.fetch(`http://${host}${path}`);
 function readBack(sym: ReturnType<typeof encode>): { mask: number; level: number; bytes: Uint8Array } {
   const { size, modules, version } = sym;
   const at = (x: number, y: number) => modules[y * size + x];
-  // Format bits around the top-left finder.
+  // Format bits around the top-left finder, and the second copy split
+  // between the other two; both must agree.
   const fbits: number[] = [];
-  for (let i = 0; i < 6; i++) fbits.push(at(i, 8));
-  fbits.push(at(7, 8), at(8, 8), at(8, 7));
-  for (let i = 9; i < 15; i++) fbits.push(at(8, 14 - i));
+  for (let i = 0; i < 6; i++) fbits.push(at(8, i));
+  fbits.push(at(8, 7), at(8, 8), at(7, 8));
+  for (let i = 9; i < 15; i++) fbits.push(at(14 - i, 8));
+  const second: number[] = [];
+  for (let i = 0; i < 8; i++) second.push(at(size - 1 - i, 8));
+  for (let i = 8; i < 15; i++) second.push(at(8, size - 15 + i));
+  expect(second).toEqual(fbits);
   let f = 0;
   fbits.forEach((b, i) => (f |= b << i));
   const mask = (f ^ 0x5412) >> 10 & 7;
@@ -95,6 +101,32 @@ describe("qr encoder", () => {
     expect(capacity(10)).toBe(213);
     expect(capacity(20)).toBe(666);
     expect(() => encode("y".repeat(667))).toThrow(/too long/);
+  });
+
+  it("scans with an independent decoder, which the read-back above cannot prove", () => {
+    // The read-back shares the encoder's assumptions: transposed format bits
+    // passed it for months while no phone could scan the result, and a
+    // misplaced alignment pattern in version 10 hid behind error correction
+    // at short lengths. jsQR is a different code base; every version at
+    // full capacity goes through it.
+    const uri = "nostrconnect://" + "ab".repeat(32) + "?relay=wss%3A%2F%2Fdami.bind.ws&secret=0123456789abcdef&perms=sign_event%3A27235%2Csign_event%3A9734&name=dami.bind.ws&url=https%3A%2F%2Fdami.bind.ws";
+    const full = Array.from({ length: 20 }, (_, i) => Array.from({ length: capacity(i + 1) }, (_, j) => String.fromCharCode(48 + ((j * 7 + i) % 74))).join(""));
+    for (const text of ["nostr:npub1abc", uri, ...full]) {
+      const sym = encode(text);
+      const px = 4, margin = 4, n = sym.size + margin * 2, w = n * px;
+      const img = new Uint8ClampedArray(w * w * 4).fill(255);
+      for (let y = 0; y < sym.size; y++) {
+        for (let x = 0; x < sym.size; x++) {
+          if (!sym.modules[y * sym.size + x]) continue;
+          for (let dy = 0; dy < px; dy++) for (let dx = 0; dx < px; dx++) {
+            const i = (((y + margin) * px + dy) * w + (x + margin) * px + dx) * 4;
+            img[i] = img[i + 1] = img[i + 2] = 0;
+          }
+        }
+      }
+      const r = jsQR(img, w, w);
+      expect(r?.data, `version ${sym.version}`).toBe(text);
+    }
   });
 });
 

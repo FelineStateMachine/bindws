@@ -15,7 +15,7 @@ export const EC_M: [number, number, number, number, number][] = [
   [28, 7, 45, 3, 46], [28, 10, 46, 1, 47], [26, 9, 43, 4, 44], [26, 3, 44, 11, 45], [26, 3, 41, 13, 42],
 ];
 const ALIGN: number[][] = [
-  [], [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 52],
+  [], [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50],
   [6, 30, 54], [6, 32, 58], [6, 34, 62], [6, 26, 46, 66], [6, 26, 48, 70], [6, 26, 50, 74], [6, 30, 54, 78], [6, 30, 56, 82], [6, 30, 58, 86], [6, 34, 62, 90],
 ];
 export const MAX_VERSION = 20;
@@ -324,15 +324,17 @@ export function encode(text: string | Uint8Array): Symbol {
     for (const [x, y] of order) if (MASKS[mask](x, y)) m[y * size + x] ^= 1;
     const fb = formatBits(mask);
     const bit = (i: number) => (fb >> i) & 1;
-    // Around the top-left finder.
-    for (let i = 0; i < 6; i++) m[8 * size + i] = bit(i);
-    m[8 * size + 7] = bit(6);
+    // Around the top-left finder: bits 0 to 7 run down column 8, bits 8 to
+    // 14 run leftwards along row 8 (ISO 18004 figure 25).
+    for (let i = 0; i < 6; i++) m[i * size + 8] = bit(i);
+    m[7 * size + 8] = bit(6);
     m[8 * size + 8] = bit(7);
-    m[7 * size + 8] = bit(8);
-    for (let i = 9; i < 15; i++) m[(14 - i) * size + 8] = bit(i);
-    // Split between the other two finders.
-    for (let i = 0; i < 8; i++) m[(size - 1 - i) * size + 8] = bit(i);
-    for (let i = 8; i < 15; i++) m[8 * size + (size - 15 + i)] = bit(i);
+    m[8 * size + 7] = bit(8);
+    for (let i = 9; i < 15; i++) m[8 * size + (14 - i)] = bit(i);
+    // Split between the other two finders: bits 0 to 7 leftwards along row
+    // 8 from the right edge, bits 8 to 14 down column 8 to the bottom.
+    for (let i = 0; i < 8; i++) m[8 * size + (size - 1 - i)] = bit(i);
+    for (let i = 8; i < 15; i++) m[(size - 15 + i) * size + 8] = bit(i);
     const s = penalty(m, size);
     if (s < bestScore) {
       bestScore = s;
