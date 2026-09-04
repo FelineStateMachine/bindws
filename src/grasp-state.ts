@@ -1,4 +1,4 @@
-// GRASP's accepted Nostr authority and purgatory. Git refs remain in nostrwal;
+// GRASP's accepted Nostr authority and purgatory. Git refs remain in ntig;
 // these tables record only visibility, cleanup deadlines and billed objects.
 import { now, tag, tagValues, type Event } from "./event.ts";
 import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";

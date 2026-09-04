@@ -8,7 +8,7 @@ import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "../
 import { gitRepositoryPath } from "../../src/grasp-policy.ts";
 import { ev, info, pk, rpc, sleep } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
-import { decodePack, encodePack } from "nostrwal";
+import { decodePack, encodePack } from "ntig";
 
 const encoder = new TextEncoder();
 const packet = (value: string | Uint8Array) => {

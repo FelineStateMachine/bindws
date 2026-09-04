@@ -1,6 +1,6 @@
 // GRASP-01 Smart HTTP on a relay origin. Nostr events authorize changes;
-// nostrwal owns the conditional R2 root, pack verification and Git protocol.
-import { createGitHandler, createAcceptedStateRepository, WalRepository, NativeGitEngine, R2ObjectStore, parseRepositoryPath, repositoryAddress, repositoryStoragePrefix, readObjects, LimitError, type ObjectStore, type CommitRequest, type GitRepository } from "nostrwal";
+// ntig owns the conditional R2 root, pack verification and Git protocol.
+import { createGitHandler, createAcceptedStateRepository, WalRepository, NativeGitEngine, R2ObjectStore, parseRepositoryPath, repositoryAddress, repositoryStoragePrefix, readObjects, LimitError, type ObjectStore, type CommitRequest, type GitRepository } from "ntig";
 import { npubEncode, naddrEncode } from "nostr-tools/nip19";
 import { now, tag, type Event } from "./event.ts";
 import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";
