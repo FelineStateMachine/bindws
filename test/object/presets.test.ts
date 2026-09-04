@@ -11,7 +11,7 @@ describe("presets", () => {
     const owner = generateSecretKey();
     await rpc(host, owner, "claim");
     const list = (await rpc(host, owner, "listpresets")).result;
-    expect(list.map((p: any) => p.name)).toEqual(["default", "outbox", "inbox", "private", "chat", "media", "search", "articles", "dm", "quiet", "site"]);
+    expect(list.map((p: any) => p.name)).toEqual(["default", "outbox", "inbox", "private", "chat", "media", "search", "articles", "dm", "quiet", "site", "marmot"]);
     for (const p of list) expect(p.about.length).toBeGreaterThan(10);
     expect(list.find((p: any) => p.name === "search").source).toBe("required");
     expect(list.find((p: any) => p.name === "articles").source).toBe("optional");

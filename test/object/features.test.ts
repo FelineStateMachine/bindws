@@ -15,7 +15,7 @@ describe("features", () => {
     const owner = generateSecretKey();
     await rpc(host, owner, "claim");
     const p = (await rpc(host, owner, "getpolicy")).result;
-    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true } });
+    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false });
     for (const n of [5, 45, 46, 50, 66, 77]) expect((await info(host)).supported_nips).toContain(n);
     const r = await rpc(host, owner, "setpolicy", { features: { search: "full", sync: false, bogus: true, count: "no" } });
     expect(r.result.features).toMatchObject({ search: "full", sync: false, count: true });

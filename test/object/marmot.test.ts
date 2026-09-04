@@ -35,13 +35,14 @@ describe("marmot", () => {
     const c = await WS.connect(host);
     const group = ev(stranger, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "ab".repeat(32)]]);
     expect((await c.ok(group)).msg).toMatch(/^restricted:/);
-    expect((await c.open("m", { kinds: [KIND_MARMOT_GROUP] })).closed).toMatch(/^unsupported:/);
+    expect((await c.query({ kinds: [KIND_MARMOT_GROUP] })).closed).toMatch(/^unsupported:/);
     await rpc(host, owner, "setpolicy", { features: { marmot: true } });
     expect((await c.ok(group)).ok).toBe(true);
     const foreign = ev(stranger, 1, "hello", [["h", "other"]]);
     expect((await c.ok(foreign)).msg).toMatch(/^blocked: this relay hosts/);
     expect((await info(host)).supported_nips).toContain(1);
     c.ws.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 
   it("requires an authenticated admitted account for group envelopes on limited relays", async () => {
@@ -60,6 +61,7 @@ describe("marmot", () => {
     const reused = ev(ephemeral, KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "de".repeat(32)]]);
     expect((await c.ok(reused)).msg).toMatch(/fresh ephemeral author|already used/);
     c.ws.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 
   it("counts opaque group bytes against the authenticated account cap", async () => {
@@ -76,5 +78,6 @@ describe("marmot", () => {
     const second = ev(generateSecretKey(), KIND_MARMOT_GROUP, GROUP_CONTENT, [["h", "01".repeat(32)]]);
     expect((await c.ok(second)).msg).toMatch(/^restricted: you have reached your storage cap/);
     c.ws.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 });
