@@ -79,6 +79,11 @@ new tip's objects arrive.
 
 ## Pull requests and purgatory
 
+Promotion checks for relevant pending events before loading Git packs. An
+empty queue or another repository's pending work does not trigger that read.
+A retried Git write still completes any pending promotion left by an earlier
+successful publication; expiry and authority are checked again after reads.
+
 A pull request or update can name a Git ref as
 `refs/nostr/<event-id>`. The event ID is checked as a 64-character lowercase
 hex value. The relay can hold the event and the Git data while it waits for

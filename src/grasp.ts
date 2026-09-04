@@ -67,17 +67,22 @@ function prTip(relay: Relay, repo: RepositoryAnnouncement, id: string): string |
   return /^[0-9a-f]{40}$/.test(tag(e, "c")) ? tag(e, "c") : false;
 }
 
-// promote makes only verified, present Git tips visible to ordinary queries.
+// promote checks pending work before loading Git packs, and rechecks authority
+// after the read. Replays still finish promotion left pending by an earlier write.
 async function promote(relay: Relay, repo: RepositoryAnnouncement, wal: WalRepository) {
+  const requiredFor = (e: Event) => {
+    if (relay.settings.isEventHidden(e.id) || relay.settings.isEventBanned(e.id) || relay.settings.isBanned(e.pubkey)) return null;
+    const relevant = e.kind === KIND_REPO ? repository(relay, repo.owner, repo.identifier)?.id === e.id : e.kind === KIND_REPO_STATE ? tag(e, "d") === repo.identifier && repositoryState(relay, repo)?.id === e.id : eventRepository(relay, e)?.id === repo.id;
+    return relevant ? requiredObjects(relay, e) : null;
+  };
+  const pending = () => relay.sql.exec<{ raw: string }>(`SELECT raw FROM events JOIN grasp_pending ON grasp_pending.id=events.id WHERE grasp_pending.until>? AND (events.expires=0 OR events.expires>?) LIMIT 1024`, now(), now()).toArray();
+  if (!pending().some(({ raw }) => requiredFor(JSON.parse(raw) as Event) !== null)) return;
   const snapshot = await wal.load();
   if (!snapshot.sequence) return;
   const objects = await readObjects(snapshot.packs);
-  const pending = relay.sql.exec<{ raw: string }>(`SELECT raw FROM events JOIN grasp_pending ON grasp_pending.id=events.id WHERE grasp_pending.until>? LIMIT 1024`, now()).toArray();
-  for (const { raw } of pending) {
+  for (const { raw } of pending()) {
     const e = JSON.parse(raw) as Event;
-    const relevant = e.kind === KIND_REPO ? e.id === repo.id : e.kind === KIND_REPO_STATE ? tag(e, "d") === repo.identifier && repositoryState(relay, repo)?.id === e.id : eventRepository(relay, e)?.id === repo.id;
-    if (!relevant) continue;
-    const required = requiredObjects(relay, e);
+    const required = requiredFor(e);
     if (required && required.every((oid) => objects.has(oid))) {
       relay.sql.exec(`DELETE FROM grasp_pending WHERE id=?`, e.id);
       relay.broadcast(e);

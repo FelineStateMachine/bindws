@@ -264,10 +264,10 @@ describe("GRASP", () => {
     expect((await c.ok(ev(owner, KIND_REPO_STATE, "", [["d", "correction"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", first.commitID]]))).ok).toBe(true);
     c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "correction");
-    expect(await (await receiveSettled(path, host, null, first.commitID, "refs/heads/main", first.pack)).text()).toContain("ok refs/heads/main");
+    expect(await (await receiveSettled(path, host, null, first.commitID, "refs/heads/main", first.pack, "benchmark-initial")).text()).toContain("ok refs/heads/main");
     const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:correction`], ["c", next.commitID]]);
     const ref = `refs/nostr/${pr.id}`;
-    expect(await (await receiveSettled(path, host, null, first.commitID, ref)).text()).toContain(`ok ${ref}`);
+    expect(await (await receiveSettled(path, host, null, first.commitID, ref, undefined, "benchmark-unknown")).text()).toContain(`ok ${ref}`);
     const publisher = await WS.connect(host);
     expect((await publisher.ok(pr)).ok).toBe(true);
     publisher.ws.close();
@@ -315,6 +315,11 @@ describe("GRASP", () => {
         return snapshot.sequence;
       } finally { relay.graspBusy = false; }
     });
+    // Pending work for another repository does not reload this one's packs.
+    const other = await WS.connect(host);
+    expect((await other.ok(repository(owner, host, "other"))).ok).toBe(true);
+    expect((await other.ok(ev(owner, KIND_REPO_STATE, "", [["d", "other"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", first.commitID]]))).ok).toBe(true);
+    other.ws.close();
     const retried = await runInDurableObject(stub, async (relay) => {
       const bucket = relay.media;
       const counters = { gets: 0, getBytes: 0, puts: 0, heads: 0 };
@@ -344,6 +349,7 @@ describe("GRASP", () => {
     });
     expect(retried.body).toContain(`ok ${ref}`);
     expect(retried.counters.puts).toBe(0);
+    expect(retried.counters.gets).toBe(23);
     console.info("checkpoint old PR correction HTTP retry", JSON.stringify({ sequence, ...retried.counters }));
     await runInDurableObject(stub, async (relay) => {
       const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
@@ -353,6 +359,94 @@ describe("GRASP", () => {
     const body = await visible.text();
     expect(body).toContain(`${next.commitID} ${ref}`);
     expect(body).toContain("symref=HEAD:refs/heads/main");
+  });
+
+  it.each(["expired", "moderated"])("an identical Git retry completes interrupted promotion and rechecks %s candidates", async (mode) => {
+    const host = `grasp-promotion-${mode}.bind.ws`;
+    const owner = generateSecretKey();
+    const pack = await tinyRepository();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "applypreset", "grasp");
+    const announcement = repository(owner, host, "promotion");
+    const state = ev(owner, KIND_REPO_STATE, "", [["d", "promotion"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", pack.commitID]]);
+    const c = await WS.connect(host);
+    expect((await c.ok(announcement)).ok).toBe(true);
+    expect((await c.ok(state)).ok).toBe(true);
+    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:promotion`], ["c", pack.commitID]]);
+    expect((await c.ok(pr)).ok).toBe(true);
+    c.ws.close();
+    const path = gitRepositoryPath(npubEncode(pk(owner)), "promotion");
+    const requestId = "promotion-recovery";
+    const stub = env.RELAY.getByName(`grasp-promotion-${mode}`);
+    await runInDurableObject(stub, async (relay) => {
+      const bucket = relay.media;
+      let published = false;
+      let failed = false;
+      const observed = new Proxy(bucket, { get(target, name) {
+        if (name === "get") return (key: string, options?: R2GetOptions) => {
+          if (published && key.endsWith("/root.json")) { failed = true; throw new Error("publication succeeded before promotion read failed"); }
+          return target.get(key, options);
+        };
+        if (name === "put") return async (...args: unknown[]) => {
+          const result = await Reflect.apply(target.put, target, args);
+          if (String(args[0]).endsWith("/root.json") && result) published = true;
+          return result;
+        };
+        const value = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+      Object.defineProperty(relay, "media", { value: observed, configurable: true });
+      try {
+        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
+          method: "POST",
+          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
+          body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
+        }));
+        expect(await response.text()).not.toContain("ok refs/heads/main");
+        expect(published).toBe(true);
+        expect(failed).toBe(true);
+      } finally { Reflect.deleteProperty(relay, "media"); }
+      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
+      expect((await wal.load()).sequence).toBe(1);
+      expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toHaveLength(2);
+    });
+    const replay = await runInDurableObject(stub, async (relay) => {
+      const bucket = relay.media;
+      let roots = 0;
+      const observed = new Proxy(bucket, { get(target, name) {
+        if (name === "get") return (key: string, options?: R2GetOptions) => {
+          // The replay loads the WAL, then promotion loads it again. Change
+          // eligibility only after promotion's initial candidate check.
+          if (key.endsWith("/root.json") && ++roots === 2) {
+            if (mode === "expired") relay.sql.exec("UPDATE events SET expires=1 WHERE id=?", pr.id);
+            else relay.settings.setEvent(pr.id, "hide");
+          }
+          return target.get(key, options);
+        };
+        const value = Reflect.get(target, name, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      } });
+      Object.defineProperty(relay, "media", { value: observed, configurable: true });
+      try {
+        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
+          method: "POST",
+          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
+          body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
+        }));
+        expect(roots).toBeGreaterThanOrEqual(2);
+        return await response.text();
+      } finally { Reflect.deleteProperty(relay, "media"); }
+    });
+    expect(replay).toContain("ok refs/heads/main");
+    await runInDurableObject(stub, async (relay) => {
+      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
+      expect((await wal.load()).sequence).toBe(1);
+      expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toEqual([]);
+      expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id=?", pr.id).toArray()).toHaveLength(1);
+    });
+    const reader = await WS.connect(host);
+    expect((await reader.query({ ids: [announcement.id, state.id] })).events).toHaveLength(2);
+    reader.ws.close();
   });
 
   it("removes the public Git contract when reads become restricted", async () => {
