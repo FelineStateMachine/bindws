@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
-    "nostr-tools": "^2.25.1"
+    "nostr-tools": "^2.25.1",
+    "nostrwal": "file:vendor/nostrwal-0.1.0.tgz"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
