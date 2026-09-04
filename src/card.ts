@@ -9,12 +9,11 @@
 // get a smaller card that says so.
 import { naddrEncode, nprofileEncode } from "nostr-tools/nip19";
 import { svg as qrSVG, encode as qrEncode } from "./qr.ts";
-import { KIND_GROUP_METADATA } from "./identity.ts";
 import { escapeHTML } from "./ui.ts";
 import type { Relay } from "./relay.ts";
 import { whoAsks } from "./auth.ts";
+import { KIND_APP_DATA, KIND_GROUP_METADATA } from "./kinds.ts";
 
-export const KIND_APP_DATA = 30078;
 export const CARD_D = "bind.ws/card";
 export const QR_MAX_BYTES = 512;
 const CACHE = "public, max-age=300";

@@ -3,11 +3,11 @@
 // relay.go; policy is per relay and owner-managed (see manage.ts).
 import { DurableObject } from "cloudflare:workers";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { KIND_AUTH, KIND_VANISH, difficulty, expiration, hasTag, isPrivate, now, tagValues, validate, canonical, type Event } from "./event.ts";
+import { difficulty, expiration, hasTag, isPrivate, now, tagValues, validate, canonical, type Event } from "./event.ts";
 import { match, parseFilter, type Filter } from "./filter.ts";
 import { hllOffset } from "./hll.ts";
 import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
-import { KIND_RELAY_DISCOVERY, discovery } from "./nip66.ts";
+import { discovery } from "./nip66.ts";
 import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
@@ -21,7 +21,6 @@ import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
 import { nip96 } from "./nip96.ts";
 import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
 import { importBytes, importUpload } from "./imports.ts";
-import { KIND_GROUP_PINS } from "./identity.ts";
 import { DIGEST_DAYS, digestText } from "./notify.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
 import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
@@ -32,13 +31,13 @@ import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { Hostnames, forgetDomains } from "./domains.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
-import { KIND_GROUP_MEMBERS } from "./identity.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
 import { card } from "./card.ts";
-import { KIND_PRESENCE, PRESENCE_THROTTLE_S, VIEWS, latestStored, nip11Views, presenceTags, serveView, viewByName, viewD, viewEvent, viewOn, viewStored, type ViewRun } from "./views.ts";
+import { PRESENCE_THROTTLE_S, VIEWS, latestStored, nip11Views, presenceTags, serveView, viewByName, viewD, viewEvent, viewOn, viewStored, type ViewRun } from "./views.ts";
 import type { Blob } from "./blossom.ts";
+import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_PRESENCE, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY } from "./kinds.ts";
 
 export interface Env {
   RELAY: DurableObjectNamespace<Relay>;
@@ -81,9 +80,6 @@ export interface Env {
 // gate(); 66 is the discovery record the relay signs about itself
 // (publishDiscovery); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
-export const KIND_REPORT = 1984;
-// NIP-46 remote signing traffic: ephemeral, encrypted end to end, never stored.
-export const KIND_NOSTR_CONNECT = 24133;
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";
 export const MAX_MESSAGE = 1024 * 1024;

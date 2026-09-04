@@ -6,8 +6,6 @@
 // no rtt or geohash tags: those are a monitor's to add.
 import type { Relay } from "./relay.ts";
 
-export const KIND_RELAY_DISCOVERY = 30166;
-
 export interface Discovery {
   url: string;
   tags: string[][];

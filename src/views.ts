@@ -14,11 +14,8 @@
 import { bolt11Msats } from "./fuel.ts";
 import { now, tag, tagValues, type Event } from "./event.ts";
 import type { Relay } from "./relay.ts";
+import { KIND_VIEW, KIND_PRESENCE } from "./kinds.ts";
 
-export const KIND_VIEW = 30078;
-// Presence is ephemeral: 20000 plus the view kind's 78, so a client that
-// knows one can guess the other.
-export const KIND_PRESENCE = 20078;
 export const PRESENCE_ACTIVE_S = 15 * 60;
 export const PRESENCE_THROTTLE_S = 30;
 export const viewD = (name: string) => "bind.ws/view/" + name;

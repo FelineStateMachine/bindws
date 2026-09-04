@@ -23,8 +23,9 @@ export { verifyBlossom } from "./auth.ts";
 import { tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
 import { localName } from "./pull.ts";
-import { KIND_REPORT, type Relay } from "./relay.ts";
+import { type Relay } from "./relay.ts";
 import { notify } from "./notify.ts";
+import { KIND_REPORT } from "./kinds.ts";
 
 export type Blob = {
   sha256: string;

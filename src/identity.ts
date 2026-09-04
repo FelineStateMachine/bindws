@@ -8,20 +8,7 @@
 import { finalizeEvent, getPublicKey, generateSecretKey, type Event } from "nostr-tools/pure";
 import { wrapEvent } from "nostr-tools/nip59";
 import { bytesToHex, hexToBytes } from "./negentropy.ts";
-
-export const KIND_MEMBER_ADDED = 8000;
-export const KIND_MEMBER_REMOVED = 8001;
-export const KIND_ROSTER = 13534;
-export const KIND_PUT_USER = 9000;
-export const KIND_REMOVE_USER = 9001;
-export const KIND_GROUP_METADATA = 39000;
-export const KIND_GROUP_ADMINS = 39001;
-export const KIND_GROUP_MEMBERS = 39002;
-export const KIND_GROUP_ROLES = 39003;
-export const KIND_GROUP_PINS = 39005;
-export const KIND_ROLE_DEF = 33534;
-export const KIND_VIEW = 30078;
-export const KIND_PROFILE = 0;
+import { KIND_PROFILE, KIND_VIEW, KIND_MEMBER_ADDED, KIND_MEMBER_REMOVED, KIND_ROSTER, KIND_ROLE_DEF, KIND_PUT_USER, KIND_REMOVE_USER, KIND_GROUP_METADATA, KIND_GROUP_ADMINS, KIND_GROUP_MEMBERS, KIND_GROUP_ROLES, KIND_GROUP_PINS } from "./kinds.ts";
 
 export interface GroupFacts {
   id: string;

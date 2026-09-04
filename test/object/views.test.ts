@@ -5,9 +5,10 @@ import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../../src/relay.ts";
-import { KIND_PRESENCE, KIND_VIEW, viewD } from "../../src/views.ts";
+import { viewD } from "../../src/views.ts";
 import { now, ev, tagsOf, rpc, info, alarm } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
+import { KIND_VIEW, KIND_PRESENCE } from "../../src/kinds.ts";
 
 async function view(host: string, name: string, sk: Uint8Array | null = null) {
   const url = `http://${host}/view/${name}`;

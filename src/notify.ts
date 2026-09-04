@@ -8,6 +8,7 @@ import { dial } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 import { viewRowsSince } from "./views.ts";
 import type { FuelStatus } from "./fuel.ts";
+import { KIND_DM } from "./kinds.ts";
 
 export type NotifyKind = "reports" | "fuel" | "jobs" | "succession" | "digest" | "test";
 export interface NotifySettings {
@@ -19,8 +20,6 @@ export interface NotifySettings {
 }
 export const DIGEST_DAYS = 7;
 
-const KIND_DM = 14;
-export const KIND_WRAP = 1059;
 const PUSH_RELAYS = 3;
 const PUSH_TIMEOUT_MS = 4000;
 // Below this balance, while past an allowance, fuel counts as low.

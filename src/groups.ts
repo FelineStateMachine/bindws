@@ -9,22 +9,10 @@
 // a moderator moderates whatever the write rule says.
 import { now, tagValues, type Event } from "./event.ts";
 import { claimInvite, inviteCreator, memberInviteGate, mintInvite } from "./invites.ts";
-import { KIND_PROFILE, KIND_PUT_USER, KIND_REMOVE_USER, type GroupFacts } from "./identity.ts";
+import { type GroupFacts } from "./identity.ts";
 import { can, ROLES, type Action } from "./roles.ts";
 import type { Relay } from "./relay.ts";
-
-export const KIND_EDIT_METADATA = 9002;
-export const KIND_DELETE_EVENT = 9005;
-export const KIND_CREATE_GROUP = 9007;
-export const KIND_DELETE_GROUP = 9008;
-export const KIND_CREATE_INVITE = 9009;
-export const KIND_PINS = 9010;
-export const KIND_JOIN = 9021;
-export const KIND_LEAVE = 9022;
-// NIP-43's own join and leave requests: ephemeral, no h tag, a claim tag
-// carries the invite code.
-export const KIND_NIP43_JOIN = 28934;
-export const KIND_NIP43_LEAVE = 28936;
+import { KIND_PROFILE, KIND_PUT_USER, KIND_REMOVE_USER, KIND_EDIT_METADATA, KIND_DELETE_EVENT, KIND_CREATE_GROUP, KIND_DELETE_GROUP, KIND_CREATE_INVITE, KIND_PINS, KIND_JOIN, KIND_LEAVE, KIND_NIP43_JOIN, KIND_NIP43_LEAVE } from "./kinds.ts";
 
 export const isModeration = (kind: number) => kind >= 9000 && kind <= 9020;
 export const isNIP43Request = (kind: number) => kind === KIND_NIP43_JOIN || kind === KIND_NIP43_LEAVE;

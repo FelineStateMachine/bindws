@@ -3,10 +3,6 @@ import { verifyEvent, type Event } from "nostr-tools/pure";
 
 export type { Event };
 
-export const KIND_DELETION = 5;
-export const KIND_VANISH = 62;
-export const KIND_AUTH = 22242;
-
 export const isEphemeral = (k: number) => k >= 20000 && k < 30000;
 export const isReplaceable = (k: number) => k === 0 || k === 3 || (k >= 10000 && k < 20000);
 export const isAddressable = (k: number) => k >= 30000 && k < 40000;
