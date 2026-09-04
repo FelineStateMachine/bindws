@@ -57,6 +57,10 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 
 - [NIP-5A static websites](docs/20-nip-5a-static-websites.md): publish and serve static sites from signed Nostr manifests.
 
+### Protocol guides
+
+- [Marmot transport](docs/21-marmot-transport.md): carry KeyPackages and opaque MLS group messages through a relay.
+
 ## Quick start
 
 ```
@@ -69,7 +73,7 @@ npm run deploy
 
 ## Protocol surface
 
-NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
+NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, Marmot transport and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
 
 ## License
 

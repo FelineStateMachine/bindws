@@ -88,7 +88,7 @@ export type ViewSetting = (typeof VIEW_SETTINGS)[number];
 // is not one: the console runs on it. What is off leaves supported_nips
 // (nip11.ts), answers 404 at its door (routes.ts) and is refused at the
 // socket (gates.ts, relay.ts).
-export const FEATURE_NAMES = ["search", "sync", "count", "discovery", "names", "files", "pages", "signer", "sites"] as const;
+export const FEATURE_NAMES = ["search", "sync", "count", "discovery", "names", "files", "pages", "signer", "sites", "marmot"] as const;
 export type Feature = (typeof FEATURE_NAMES)[number];
 export type SearchMode = "full" | "prose" | "off";
 export interface Features {
@@ -101,8 +101,9 @@ export interface Features {
   pages: boolean; // notes and articles as pages, the feed
   sites: { enabled: boolean; mirror: boolean }; // NIP-5A hosting and automatic blob copies
   signer: boolean; // NIP-46 traffic carried for anyone
+  marmot: boolean; // Marmot's opaque MLS transport events
 }
-export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true } };
+export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false };
 export const featureOn = (p: Policy, f: Feature): boolean => f === "sites" ? p.features.sites.enabled : p.features[f] !== false && p.features[f] !== "off";
 
 export function featureFields(patch: Record<string, unknown>, cur: Features): Partial<Policy> {

@@ -32,7 +32,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(content);
 CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
   DELETE FROM tags WHERE event_id = old.id;
   DELETE FROM search WHERE rowid = old.seq;
+  DELETE FROM marmot_principals WHERE event_id = old.id;
 END;
+CREATE TABLE IF NOT EXISTS marmot_principals (
+  event_id TEXT PRIMARY KEY,
+  pubkey   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS marmot_principal_pk ON marmot_principals(pubkey);
 CREATE TABLE IF NOT EXISTS vanished (
   pubkey TEXT PRIMARY KEY,
   until  INTEGER NOT NULL
@@ -316,9 +322,16 @@ export class Store {
   authorBytes(pubkey: string): number {
     const cached = this.bytesByAuthor.get(pubkey);
     if (cached !== undefined) return cached;
-    const n = this.x<{ n: number | null }>(`SELECT sum(length(raw)) AS n FROM events WHERE pubkey=?`, pubkey).one().n ?? 0;
+    const n = this.x<{ n: number | null }>(`SELECT COALESCE((SELECT sum(length(raw)) FROM events WHERE pubkey=?),0) + COALESCE((SELECT sum(length(e.raw)) FROM events e JOIN marmot_principals m ON m.event_id=e.id WHERE m.pubkey=?),0) AS n`, pubkey, pubkey).one().n ?? 0;
     this.bytesByAuthor.set(pubkey, n);
     return n;
+  }
+
+  // notePrincipal ties an opaque group event to the authenticated account
+  // whose storage allowance admitted it.
+  notePrincipal(eventID: string, pubkey: string) {
+    this.x(`INSERT OR REPLACE INTO marmot_principals(event_id,pubkey) VALUES(?,?)`, eventID, pubkey);
+    this.bytesByAuthor.delete(pubkey);
   }
   // noteSaved keeps the cache right after a save. A replaceable kind may
   // have displaced an older row, so its author is simply recounted next time.
