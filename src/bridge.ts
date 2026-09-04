@@ -11,6 +11,7 @@ import { validate, type Event } from "./event.ts";
 import { parseFilter, type Filter } from "./filter.ts";
 import { hllOffset } from "./hll.ts";
 import { verifyNIP98 } from "./manage.ts";
+import { readGate } from "./gates.ts";
 import type { Relay } from "./relay.ts";
 
 export async function bridge(relay: Relay, req: Request): Promise<Response> {
@@ -53,7 +54,7 @@ export async function bridge(relay: Relay, req: Request): Promise<Response> {
     if (typeof f === "string") return json({ error: "invalid: bad filter: " + f }, 400);
     filters.push(f);
   }
-  const gate = relay.allowFilters(conn, filters);
+  const gate = readGate(relay, conn, filters);
   if (gate.reason) return json({ error: gate.reason }, gate.reason.startsWith("auth-required") || gate.reason.startsWith("restricted") ? 403 : 400);
   const who = { pubkeys: conn.authed };
   const p = relay.settings.policy;

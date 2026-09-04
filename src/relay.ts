@@ -12,6 +12,7 @@ import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
 import { manage } from "./manage.ts";
+import { guestPass, readGate, writeGate } from "./gates.ts";
 import { dashboard } from "./dashboard.ts";
 import { Fuel, fuelConfig, fetchLnurl, requestInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
 import { Identity } from "./identity.ts";
@@ -30,7 +31,7 @@ import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { Hostnames, forgetDomains } from "./domains.ts";
-import { groupFacts, handleGroupEvent, isGroupManagement, isGroupState, isNIP43Request } from "./groups.ts";
+import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
@@ -92,7 +93,7 @@ const LEASE_RETENTION_DAYS = 14;
 const FORK_INTERVAL = 3600;
 
 // ConnState is everything about a websocket that must survive hibernation.
-interface ConnState {
+export interface ConnState {
   challenge: string;
   host: string; // Host header, for NIP-42 relay-tag checks
   ip: string; // the client's address as the worker saw it; "unknown" outside Cloudflare
@@ -474,7 +475,7 @@ export class Relay extends DurableObject<Env> {
       const s = this.state(ws);
       let changed = false;
       for (const [id, filters] of Object.entries(s.subs)) {
-        const { reason } = this.allowFilters(s, filters);
+        const { reason } = readGate(this, s, filters);
         if (!reason) continue;
         this.send(ws, "CLOSED", id, reason);
         delete s.subs[id];
@@ -1327,7 +1328,7 @@ export class Relay extends DurableObject<Env> {
   // then role checks instead of the write policy, then stored like any event.
   private async acceptGroup(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
     const t = now();
-    const reason = this.gate(e, conn, t);
+    const reason = writeGate(this, e, conn, t);
     if (reason) return { ok: false, msg: reason, stored: false };
     if (this.sql.exec(`SELECT 1 FROM events WHERE id=?`, e.id).toArray().length) return { ok: true, msg: ERR_DUPLICATE, stored: false };
     const r = await handleGroupEvent(this, e);
@@ -1335,43 +1336,6 @@ export class Relay extends DurableObject<Env> {
     const err = this.store.save(e, t);
     if (err) return { ok: false, msg: err, stored: false };
     return { ok: true, msg: "", stored: true };
-  }
-
-  // gate is what every write must pass, whoever sends it: shape, bans, the
-  // relay's state, fuel, and the one-group rule. "" lets it through.
-  private gate(e: Event, conn: ConnState | null, t: number): string {
-    const p = this.settings.policy;
-    if (e.kind === KIND_AUTH) return "blocked: kind 22242 is only accepted inside an AUTH message";
-    if (p.maxFuture > 0 && e.created_at > t + p.maxFuture) return "invalid: event creation date is too far off from the current time";
-    const exp = expiration(e);
-    if (exp > 0 && exp <= t) return "invalid: event has already expired";
-    if (this.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
-    if (this.settings.isEventBanned(e.id)) return "blocked: this event is banned from this relay";
-    // Blocked words: the owner and moderators may say anything, nobody else may say these.
-    const where = this.settings.hasBlockedWord(e.content, e.tags);
-    if (where) {
-      const role = this.settings.roleOf(e.pubkey);
-      if (role !== "owner" && role !== "moderator") return where === "tags" ? "blocked: a tag contains a blocked word" : "blocked: content contains a blocked word";
-    }
-    // NIP-46 traffic passes the ownership, fuel and write gates: it is
-    // ephemeral, never stored, and readable only by its two parties, and
-    // letting it through means this relay can carry a remote signer's
-    // session, even for the person about to claim it from a phone. Bans
-    // and the per-connection rate limit still apply.
-    if (e.kind === KIND_NOSTR_CONNECT) return "";
-    const h = tagValues(e, "h")[0];
-    if (h !== undefined && h !== this.slug) return "blocked: this relay hosts one group: " + this.slug;
-    if (conn) {
-      if (isGroupState(e.kind)) return "blocked: group metadata is written by the relay";
-      if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed; open https://" + conn.host + "/ to claim it";
-      if (this.settings.leaseExpired(t)) return "restricted: this temporary relay has expired";
-      const f = this.fuelStatus();
-      if (f.outOfFuel) {
-        return f.enabled ? "restricted: this relay is out of fuel; zap it at https://" + conn.host + "/ to top up" : "restricted: this relay has reached its storage or traffic limit";
-      }
-      if (hasTag(e, "-") && !conn.authed.includes(e.pubkey)) return "auth-required: this event may only be published by its author";
-    }
-    return "";
   }
 
   // acceptReport files a NIP-56 report in the moderation queue. It is never
@@ -1400,28 +1364,13 @@ export class Relay extends DurableObject<Env> {
     return { ok: true, msg: "info: report received", stored: false };
   }
 
-  // guestPass lets a stranger through a limited write rule: a kind the owner
-  // opened to anyone, or, when replies are open, a note or comment that
-  // answers something a member or the owner wrote here.
-  private guestPass(e: Event): boolean {
-    const p = this.settings.policy;
-    if (p.openKinds.includes(e.kind)) return true;
-    if (!p.guestReplies || (e.kind !== 1 && e.kind !== 1111)) return false;
-    const parents = [...tagValues(e, "e"), ...tagValues(e, "E")].filter((id) => /^[0-9a-f]{64}$/.test(id)).slice(0, 5);
-    for (const id of parents) {
-      const row = this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM events WHERE id=?`, id).toArray()[0];
-      if (row && this.settings.isAllowed(row.pubkey)) return true;
-    }
-    return false;
-  }
-
   // accept runs the write-side rules and stores the event. conn is null for
   // host-side publishes (the dashboard), which skip client policy.
   accept(e: Event, conn: ConnState | null): { ok: boolean; msg: string; stored: boolean } {
     const p = this.settings.policy;
     const t = now();
     const no = (msg: string) => ({ ok: false, msg, stored: false });
-    const gate = this.gate(e, conn, t);
+    const gate = writeGate(this, e, conn, t);
     if (gate) return no(gate);
     if (e.kind === KIND_NOSTR_CONNECT) return { ok: true, msg: "", stored: true }; // see gate
     const exp = expiration(e);
@@ -1440,7 +1389,7 @@ export class Relay extends DurableObject<Env> {
         if (lim.cap > 0 && this.store.authorBytes(e.pubkey) + canonical(e).length > lim.cap) return no(`restricted: you have reached your storage cap of ${Math.max(1, Math.round(lim.cap / 1024))} KB on this relay`);
       }
       const why = this.settings.mayWrite(e.pubkey);
-      if (why && !this.guestPass(e)) return no(why);
+      if (why && !guestPass(this, e)) return no(why);
       if (p.minPow > 0) {
         const d = difficulty(e);
         if (d.difficulty < p.minPow) return no(`pow: difficulty ${d.difficulty} is less than ${p.minPow}`);
@@ -1593,36 +1542,12 @@ export class Relay extends DurableObject<Env> {
     return filters;
   }
 
-  // allowFilters returns a CLOSED reason, or "" plus whether an EOSE "auth"
-  // hint applies because private kinds were silently filtered out.
-  allowFilters(s: ConnState, filters: Filter[]): { reason: string; authHint: boolean } {
-    // A subscription to NIP-46 traffic alone may be opened under any read
-    // policy, with or without AUTH; the traffic itself is a private kind,
-    // delivered only to its parties (canSee).
-    if (filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
-    const authed = s.authed.length > 0;
-    const gate = this.settings.mayRead(s.authed);
-    if (gate) return { reason: gate, authHint: false };
-    if (authed) return { reason: "", authHint: false };
-    let authHint = false;
-    for (const f of filters) {
-      if (!f.kinds || f.kinds.length === 0) {
-        authHint = true;
-        continue;
-      }
-      const priv = f.kinds.filter(isPrivate).length;
-      if (priv === f.kinds.length) return { reason: "auth-required: private kinds are only served to their recipients", authHint: false };
-      if (priv > 0) authHint = true;
-    }
-    return { reason: "", authHint };
-  }
-
   private handleReq(ws: WebSocket, s: ConnState, verb: string, rawID: unknown, rawFilters: unknown[]) {
     if (typeof rawID !== "string" || rawID === "" || rawID.length > 64) return this.send(ws, "NOTICE", "error: bad subscription id");
     const id = rawID;
     const filters = this.parseFilters(rawFilters);
     if (typeof filters === "string") return this.send(ws, "CLOSED", id, filters);
-    const { reason, authHint } = this.allowFilters(s, filters);
+    const { reason, authHint } = readGate(this, s, filters);
     if (reason) return this.send(ws, "CLOSED", id, reason);
     const who: Access = { pubkeys: s.authed };
     const t = now();
@@ -1720,7 +1645,7 @@ export class Relay extends DurableObject<Env> {
       if (rest.length < 2) return this.send(ws, "NEG-ERR", id, "error: NEG-OPEN needs a filter and a message");
       const f = parseFilter(rest[0]);
       if (typeof f === "string") return this.send(ws, "NEG-ERR", id, "invalid: bad filter: " + f);
-      const { reason } = this.allowFilters(s, [f]);
+      const { reason } = readGate(this, s, [f]);
       if (reason) return this.send(ws, "NEG-ERR", id, reason);
       const open = new Set([...sessions.keys(), ...Object.keys(s.syncs ?? {})]);
       if (!open.has(id) && open.size >= this.settings.policy.maxSubs) return this.send(ws, "NEG-ERR", id, "blocked: too many open syncs");
@@ -1736,7 +1661,7 @@ export class Relay extends DurableObject<Env> {
         // A wake since NEG-OPEN. The read rule is asked again with what the
         // socket has proved by now, and the items are read afresh, so the
         // session carries on from the store as it is.
-        const { reason } = this.allowFilters(s, [f]);
+        const { reason } = readGate(this, s, [f]);
         if (reason) {
           remember(null);
           return this.send(ws, "NEG-ERR", id, reason);
