@@ -12,10 +12,10 @@
 import { readFileSync } from "node:fs";
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : "true"] : [])).filter((x) => x.length));
-const TARGET = Number(args.target ?? 0.33); // margin on revenue: 0.33 is a 1.5x markup
+const TARGET = Number(args.target ?? 0.33); // gross margin on revenue; price is cost / (1 - target)
 const FLOOR = Number(args.floor ?? 0.2); // below this, reprice now
 
-// Cloudflare list prices, Workers Paid, USD. Checked 2026-09-03 against
+// Cloudflare list prices, Workers Paid, USD. Checked 2026-09-04 against
 // developers.cloudflare.com/{durable-objects/platform,r2,workers/platform}/pricing.
 const CF = {
   base: 5, // per month, the plan itself
@@ -79,7 +79,7 @@ for (const l of lines) {
 
 let out = [];
 out.push(`# Fuel margins at $${n(btc)} per bitcoin`, "");
-out.push(`Target margin ${pct(TARGET)} of revenue (a ${(1 / (1 - TARGET)).toFixed(2)}x markup). Reprice when a line falls under ${pct(FLOOR)}.`, "");
+out.push(`Target gross margin ${pct(TARGET)} of revenue (price is cost / ${(1 - TARGET).toFixed(2)}; ${pct(1 / (1 - TARGET) - 1)} markup on cost). Reprice when a line falls under ${pct(FLOOR)}.`, "");
 out.push("| Line | Cloudflare cost | Cost in sats | Our price | Margin | Target holds while BTC is above | Price for target today |");
 out.push("|---|---|---|---|---|---|---|");
 for (const l of lines) {
@@ -101,10 +101,11 @@ out.push(`The plan includes ${n(coveredHours)} awake hours, ${n(CF.rowsWrittenIn
 
 // Lines nobody pays for: requests, reads, R2 operations, KV. Absorbed by margin.
 out.push("## What is not priced", "");
-out.push("Traffic is free to relays, but Cloudflare bills these. They come out of the margin on the four lines above.", "");
+out.push("Traffic has no fuel price, but Cloudflare bills these. They consume margin on the four lines above. This is a partial, pro-rata projection, not an invoice: DO compute and R2 billing-unit rounding are omitted. Worker CPU, logs, traces, Analytics Engine, KV usage, custom hostnames, payment fees, support and additional retry or maintenance work also need separate budgets.", "");
 out.push("| Line | Cloudflare cost | Included per month |");
 out.push("|---|---|---|");
-out.push(`| Durable Object requests (every websocket message, HTTP request and alarm) | $${CF.doRequestsPerM} per million | ${n(CF.doRequestsIncluded)} |`);
+out.push(`| Durable Object requests (HTTP, RPC and alarms) | $${CF.doRequestsPerM} per million | ${n(CF.doRequestsIncluded)} |`);
+out.push(`| Durable Object inbound WebSocket messages (20:1 request ratio) | $${CF.doRequestsPerM} per million billable requests | included with DO requests |`);
 out.push(`| Worker requests | $${CF.workerRequestsPerM} per million | ${n(CF.workerRequestsIncluded)} |`);
 out.push(`| rows read | $${CF.rowsReadPerM} per million | ${n(CF.rowsReadIncluded / 1e9)} billion |`);
 out.push(`| R2 writes (class A) | $${CF.r2ClassAPerM} per million | ${n(CF.r2ClassAIncluded)} |`);
@@ -115,18 +116,22 @@ out.push(`| the plan | $${CF.base} | |`, "");
 // A deployment projection: what N relays cost at a typical shape, and what the paid ones bring in.
 const relays = Number(args.relays ?? 1000);
 // Websocket messages count as object requests but never reach the Worker, so Worker requests are the HTTP door and page loads only.
-const typical = { eventsGB: 0.02, mediaGB: 0.1, hours: 8, rowsM: 0.1, doReqM: 0.3, workerReqM: 0.01, rowsReadM: 5, r2AM: 0.002, r2BM: 0.02 };
-const heavy = { eventsGB: 0.5, mediaGB: 3, hours: 200, rowsM: 3, doReqM: 5, workerReqM: 0.2, rowsReadM: 100, r2AM: 0.05, r2BM: 0.5 };
+// Illustrative raw traffic mixes total 0.3M and 5M messages/requests. The
+// split is an assumption, not measured traffic. Incoming socket messages
+// use the 20:1 ratio; HTTP/RPC/alarms count individually.
+const typical = { eventsGB: 0.02, mediaGB: 0.1, hours: 8, rowsM: 0.1, doHttpRpcAlarmM: 0.01, wsMessagesM: 0.29, workerReqM: 0.01, rowsReadM: 5, r2AM: 0.002, r2BM: 0.02 };
+const heavy = { eventsGB: 0.5, mediaGB: 3, hours: 200, rowsM: 3, doHttpRpcAlarmM: 0.2, wsMessagesM: 4.8, workerReqM: 0.2, rowsReadM: 100, r2AM: 0.05, r2BM: 0.5 };
 function bill(count, heavyShare) {
   const h = Math.round(count * heavyShare), t = count - h;
   const sum = (k) => t * typical[k] + h * heavy[k];
+  const doBillableRequestsM = sum("doHttpRpcAlarmM") + sum("wsMessagesM") / 20;
   const over = (x, inc) => Math.max(0, x - inc);
   const items = {
     "SQLite storage": over(sum("eventsGB"), CF.sqlIncludedGB) * CF.sqlGBMonth,
     "R2 storage": over(sum("mediaGB"), CF.r2IncludedGB) * CF.r2GBMonth,
     "DO duration": (over(sum("hours") * GBS_PER_HOUR, CF.doDurationIncluded) / 1e6) * CF.doDurationPerMGBs,
     "rows written": (over(sum("rowsM") * 1e6, CF.rowsWrittenIncluded) / 1e6) * CF.rowsWrittenPerM,
-    "DO requests": (over(sum("doReqM") * 1e6, CF.doRequestsIncluded) / 1e6) * CF.doRequestsPerM,
+    "DO requests": (over(doBillableRequestsM * 1e6, CF.doRequestsIncluded) / 1e6) * CF.doRequestsPerM,
     "Worker requests": (over(sum("workerReqM") * 1e6, CF.workerRequestsIncluded) / 1e6) * CF.workerRequestsPerM,
     "rows read": (over(sum("rowsReadM") * 1e6, CF.rowsReadIncluded) / 1e6) * CF.rowsReadPerM,
     "R2 operations": (over(sum("r2AM") * 1e6, CF.r2ClassAIncluded) / 1e6) * CF.r2ClassAPerM + (over(sum("r2BM") * 1e6, CF.r2ClassBIncluded) / 1e6) * CF.r2ClassBPerM,
@@ -138,15 +143,15 @@ function bill(count, heavyShare) {
   return { items, total: Object.values(items).reduce((a, b) => a + b, 0), revenue, heavy: h };
 }
 out.push(`## The deployment at ${n(relays)} relays`, "");
-out.push(`A typical relay: ${Math.round(typical.eventsGB * 1024)} MB of events, ${Math.round(typical.mediaGB * 1024)} MB of files, ${typical.hours} hours awake, ${typical.rowsM * 1e6 / 1000}k rows written, ${typical.doReqM}M object requests a month. A heavy one: ${heavy.eventsGB * 1024} MB, ${heavy.mediaGB} GB, ${heavy.hours} hours, ${heavy.rowsM}M rows, ${heavy.doReqM}M requests. Heavy relays pass their allowances and pay fuel; typical ones ride free.`, "");
-out.push("| Heavy share | Cloudflare bill | Fuel revenue | Net | Per relay |");
+out.push(`A typical relay: ${Math.round(typical.eventsGB * 1024)} MB of events, ${Math.round(typical.mediaGB * 1024)} MB of files, ${typical.hours} hours awake, ${typical.rowsM * 1e6 / 1000}k rows written, ${typical.doHttpRpcAlarmM}M raw DO HTTP/RPC/alarm requests plus ${typical.wsMessagesM}M inbound WebSocket messages (illustrative ${(typical.doHttpRpcAlarmM + typical.wsMessagesM / 20).toFixed(4)}M billable DO requests) a month. A heavy one: ${heavy.eventsGB * 1024} MB, ${heavy.mediaGB} GB, ${heavy.hours} hours, ${heavy.rowsM}M rows, ${heavy.doHttpRpcAlarmM}M raw DO requests plus ${heavy.wsMessagesM}M inbound WebSocket messages (illustrative ${(heavy.doHttpRpcAlarmM + heavy.wsMessagesM / 20).toFixed(4)}M billable DO requests). WebSocket messages do not count as Worker requests. Heavy relays pass their allowances and pay fuel; typical ones ride free.`, "");
+out.push("| Heavy share | Modeled provider cost | Fuel revenue | Net before omitted costs | Cost per relay |");
 out.push("|---|---|---|---|---|");
 for (const share of [0, 0.02, 0.05, 0.1]) {
   const b = bill(relays, share);
   out.push(`| ${pct(share)} (${n(b.heavy)} relays) | ${money(b.total)} | ${money(b.revenue)} | ${money(b.revenue - b.total)} | ${money(b.total / relays)} |`);
 }
 const b5 = bill(relays, 0.05);
-out.push("", `Where the bill goes at 5% heavy: ` + Object.entries(b5.items).filter(([, x]) => x > 0.005).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${money(x)}`).join(", ") + ".", "");
+out.push("", `Modeled costs at 5% heavy: ` + Object.entries(b5.items).filter(([, x]) => x > 0.005).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${money(x)}`).join(", ") + ".", "");
 
 // Repricing guidance.
 out.push("## Weekly check", "");

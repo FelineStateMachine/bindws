@@ -100,7 +100,7 @@ export const IP_LIMIT_MULTIPLE = 4;
 function clientIP(req: Request): string {
   return req.headers.get("x-relay-ip") || "unknown";
 }
-// How long Cloudflare keeps an idle object awake before hibernating it.
+// The legacy fuel estimate caps entrypoint gaps at this window.
 const IDLE_GRACE_MS = 10_000;
 
 export class Relay extends DurableObject<Env> {
@@ -201,10 +201,9 @@ export class Relay extends DurableObject<Env> {
     this.meter.bytesOut += bytesOut;
   }
 
-  // touch accounts for the object being awake. Cloudflare bills wall-clock
-  // time from a wake until the object has been idle for about ten seconds
-  // and hibernates, so each piece of work is charged the gap since the last
-  // one, capped at that idle window, and a wake is charged the window once.
+  // touch estimates awake time from entrypoint gaps, with one window on wake.
+  // It does not measure long handlers or Cloudflare's billable duration:
+  // idle objects eligible for hibernation incur no provider duration charge.
   private touch() {
     const t = Date.now();
     this.meter.activeMs += this.lastActive === 0 ? IDLE_GRACE_MS : Math.min(t - this.lastActive, IDLE_GRACE_MS);

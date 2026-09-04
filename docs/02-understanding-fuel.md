@@ -26,12 +26,11 @@ charge attached to moving or storing those bytes.
 
 **Time awake** estimates how long the relay is in memory from its entrypoints.
 It can sleep between messages, while alarms and scheduled jobs wake it even
-when no client is connected. A relay with a client connected all day is awake only while messages
-pass, plus a few seconds after each. Jobs on the Sync tab, pulls, backfills and
-rebroadcasts wake the relay on their own and spend this line while they run; a
-standing job spends it on every run. Git requests and site work also wake the
-relay, although the exact provider duration can differ from the relay's
-entrypoint meter.
+when no client is connected. The meter adds ten seconds after a wake, then
+the gap between entrypoints capped at ten seconds. It does not time a whole
+long-running job. Jobs on the Sync tab, pulls, backfills, rebroadcasts, Git
+requests and site work all wake the relay. The host's actual duration cost
+can be higher or lower than this estimate.
 
 Dumps, the JSONL files the Data tab can write on a schedule, live next to uploaded files and count as files stored. What each job and dump does is in [Data and names](04-data-and-names.md).
 
