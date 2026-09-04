@@ -111,6 +111,10 @@ The edge mapping may remain cached for up to 60 seconds. The local record
 checks that the selected site still exists before it serves a request, so a
 stale mapping cannot serve a removed target.
 
+Manifest replacements coalesce into one index write per hostname in each
+outbox batch. The route stays present while a throttled write waits for a
+retry; replacing a manifest does not delete and recreate its hostname.
+
 ## Deliberate limits
 
 bind.ws does not advertise NIP-5A in `supported_nips`: NIP-11 still defines

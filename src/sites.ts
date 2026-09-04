@@ -105,23 +105,37 @@ CREATE TRIGGER IF NOT EXISTS site_removed AFTER DELETE ON events WHEN old.kind I
 END;
 `;
 
-// syncSiteIndex never clears another relay's or publication's mapping.
-// A failed KV write leaves the SQL entry intact for the next alarm.
+// syncSiteIndex coalesces replacements into one KV write per label, keeping
+// the old route usable if a write is throttled. Failed groups stay queued.
 export async function syncSiteIndex(relay: Relay): Promise<boolean> {
   if (!relay.hosts || !relay.slug) return false;
   const rows = relay.sql.exec<{ seq: number; raw: string; removed: number }>(`SELECT * FROM site_outbox ORDER BY seq LIMIT 100`).toArray();
+  const groups = new Map<string, { seq: number; e: Event; removed: number }[]>();
   for (const row of rows) {
     const e = JSON.parse(row.raw) as Event;
-    if (!checkSite(e)) {
-      const key = siteKey(siteLabel(e));
-      if (row.removed || (expiration(e) > 0 && expiration(e) <= now())) {
-        const existing = await relay.hosts.get(key);
-        if (existing === JSON.stringify({ name: relay.slug, event: e.id })) await relay.hosts.delete(key);
-      } else {
-        await relay.hosts.put(key, JSON.stringify({ name: relay.slug, event: e.id }));
-      }
+    if (checkSite(e)) { relay.sql.exec(`DELETE FROM site_outbox WHERE seq=?`, row.seq); continue; }
+    const label = siteLabel(e);
+    const group = groups.get(label) ?? [];
+    group.push({ seq: row.seq, e, removed: row.removed });
+    groups.set(label, group);
+  }
+  for (const [label, group] of groups) {
+    const last = group[group.length - 1];
+    const removed = last.removed || (expiration(last.e) > 0 && expiration(last.e) <= now());
+    // A batch can end between a replacement's removal and insertion. A
+    // different live version keeps the route; teardown removes the same
+    // version explicitly even while it still exists in the events table.
+    const current = manifest(relay, parseSite(label)!);
+    const target = removed ? current && current.id !== last.e.id ? current : null : current;
+    const key = siteKey(label);
+    const existing = await relay.hosts.get(key);
+    if (target) {
+      const value = JSON.stringify({ name: relay.slug, event: target.id });
+      if (existing !== value) await relay.hosts.put(key, value);
+    } else if (group.some(({ e }) => existing === JSON.stringify({ name: relay.slug, event: e.id }))) {
+      await relay.hosts.delete(key);
     }
-    relay.sql.exec(`DELETE FROM site_outbox WHERE seq=?`, row.seq);
+    for (const row of group) relay.sql.exec(`DELETE FROM site_outbox WHERE seq=?`, row.seq);
   }
   return relay.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length > 0;
 }

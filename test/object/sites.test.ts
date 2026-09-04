@@ -1,7 +1,8 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { aggregate, base36, checkSite, parseSite, siteKey, siteLabel, unbase36 } from "../../src/sites.ts";
+import { aggregate, base36, checkSite, parseSite, siteKey, siteLabel, syncSiteIndex, unbase36 } from "../../src/sites.ts";
+import type { Relay } from "../../src/relay.ts";
 import { upload } from "../helpers/media.ts";
 import { ev, pk, rpc, now, nip98, info } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
@@ -149,6 +150,58 @@ async function syncIndex(name: string) {
 }
 
 describe("site hostname index cleanup", () => {
+  it("keeps a replacement route through a throttled write and a split outbox batch", async () => {
+    const name = "idx-retry", sk = generateSecretKey();
+    await rpc(name + ".bind.ws", sk, "claim");
+    await runInDurableObject(env.RELAY.getByName(name), async (r) => {
+      r.store.onSitesChanged = () => {};
+      let value: string | null = null, writes = 0, deletes = 0, fail = false;
+      const hosts = {
+        get: async () => value,
+        put: async (_key: string, next: string) => { if (fail) throw new Error("KV write limit"); writes++; value = next; },
+        delete: async () => { deletes++; value = null; },
+      };
+      const subject = { sql: r.sql, store: r.store, slug: name, hosts } as unknown as Relay;
+      const first = ev(sk, 15128, "first", paths, now() - 3);
+      const second = ev(sk, 15128, "second", paths, now() - 2);
+      const third = ev(sk, 15128, "third", paths, now() - 1);
+      expect(r.store.save(first, now())).toBe("");
+      await syncSiteIndex(subject);
+      const original = value;
+      writes = 0;
+      expect(r.store.save(second, now())).toBe("");
+      expect(r.store.save(third, now())).toBe("");
+      fail = true;
+      await expect(syncSiteIndex(subject)).rejects.toThrow("KV write limit");
+      expect(value).toBe(original);
+      expect(deletes).toBe(0);
+      expect(r.sql.exec("SELECT * FROM site_outbox").toArray()).toHaveLength(4);
+      fail = false;
+      await syncSiteIndex(subject);
+      expect(value).toBe(JSON.stringify({ name, event: third.id }));
+      expect(writes).toBe(1);
+      expect(deletes).toBe(0);
+      expect(r.sql.exec("SELECT * FROM site_outbox").toArray()).toHaveLength(0);
+
+      // The first batch ends on the old version's removal; the successor
+      // is already durable, and its insertion remains for the next batch.
+      for (let i = 0; i < 99; i++) r.sql.exec("INSERT INTO site_outbox(raw,removed) VALUES(?,1)", JSON.stringify(third));
+      const fourth = ev(sk, 15128, "fourth", paths);
+      expect(r.store.save(fourth, now())).toBe("");
+      writes = 0;
+      expect(await syncSiteIndex(subject)).toBe(true);
+      expect(value).toBe(JSON.stringify({ name, event: fourth.id }));
+      expect(await syncSiteIndex(subject)).toBe(false);
+      expect(writes).toBe(1);
+      expect(deletes).toBe(0);
+      for (let i = 0; i < 100; i++) r.sql.exec("INSERT INTO site_outbox(raw,removed) VALUES(?,0)", JSON.stringify(first));
+      writes = 0;
+      expect(await syncSiteIndex(subject)).toBe(false);
+      expect(value).toBe(JSON.stringify({ name, event: fourth.id }));
+      expect(writes).toBe(0);
+    });
+  });
+
   it("clears a mapping when management deletes its manifest", async () => {
     const name = "idx-manage";
     const sk = generateSecretKey();
