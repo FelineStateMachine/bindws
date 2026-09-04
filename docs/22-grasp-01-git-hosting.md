@@ -34,8 +34,8 @@ when the relay's event policy requires them.
 ## Announce a repository
 
 The repository owner publishes a kind 30617 event with a `d` identifier,
-`clone` URLs and `relays` URLs. The first announcement that creates a hosted
-repository must list this service in both lists. A companion announcement
+`clone` URLs and `relays` URLs. An announcement that hosts a repository
+here must list this service in both lists. A companion announcement
 from an already recognized maintainer may omit those service tags because the
 repository is already hosted here. The service URL is the relay's HTTPS Git
 endpoint and its WebSocket relay URL. The identifier is percent-encoded in the
@@ -60,6 +60,8 @@ to the ordinary policy.
 
 The repository maintainer publishes a kind 30618 event with the same `d`
 identifier, a `HEAD` tag and the complete `refs/heads/*` and `refs/tags/*` map.
+The [NIP-34 HEAD tag](https://github.com/nostr-protocol/nips/blob/master/34.md#repository-state-announcements)
+uses `["HEAD", "ref: refs/heads/main"]`; a bare branch path is refused.
 The latest valid state is selected by NIP-34 addressable-event ordering among
 the owner and the recursive maintainer set. The recursive set starts at the
 owner and follows the maintainer announcements for that repository, with
@@ -101,14 +103,14 @@ for a path that is not hosted. Upload-pack advertises and serves
 `blob:none` and `tree:0` requests. Receive-pack applies the accepted state,
 maintainer and `refs/nostr` rules before storing anything.
 
-The Git route's root page and protocol responses include the GRASP CORS
-headers. `OPTIONS` returns 204; GET and POST are the allowed methods, and
-`Content-Type` is the allowed request header. The relay keeps the NIP-01 root
-and the Git path distinct, so
-the NIP-5A site origins remain isolated from relay events and repository data.
+The relay root, Git repository page and protocol responses include the GRASP
+CORS headers. `OPTIONS` returns 204. GET and POST are the allowed methods;
+`Content-Type`, `Authorization`, `Git-Protocol` and `X-Git-Request-Id` are
+allowed request headers. The NIP-5A site origins remain isolated from relay
+events and repository data.
 
 The Worker depends on the `ntig` package, whose source and package artifact
-are recorded in `vendor/README.md`. Its object-store seam validates pack
+are recorded in [Vendored dependencies](../vendor/README.md). Its object-store seam validates pack
 structure, deltas, object dependencies, trees and commits before publication.
 The hard limits are:
 
@@ -116,7 +118,7 @@ The hard limits are:
 |---|---:|---|
 | Relay | 16 repositories, 320 MiB Git storage | accepted repositories and billed retained Git objects across the relay |
 | Repository | 4 MiB per pack, 16 MiB packed history | one upload and the aggregate packed history read into memory |
-| Repository | 128 transactions, 1,024 refs | WAL history and advertised or updated refs |
+| Repository | 128 transactions, 1,024 refs, 4,096 objects | WAL history, ref maps and verified object graphs |
 
 Checkpoints, compaction, orphan collection, large-pack streaming and
 production capacity measurements remain follow-up work. Once a repository
