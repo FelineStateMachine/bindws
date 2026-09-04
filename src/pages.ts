@@ -27,16 +27,26 @@ export function pages(relay: Relay, req: Request): Response {
   if (relay.settings.isUnclaimed()) return nothing(relay, "Nobody has claimed this relay yet.");
   if (relay.settings.policy.reads !== "open") return nothing(relay, "This relay's events are for its members.");
   if (url.pathname === "/feed.xml") return feed(relay, url, origin);
-  const parts = url.pathname.split("/").filter(Boolean);
-  let e: Event | null = null;
-  if (parts[0] === "e" && parts.length === 2 && HEX64.test(parts[1])) e = one(relay, { ids: [parts[1]], kinds: KINDS, tags: {} });
-  else if (parts[0] === "a" && parts.length === 2) e = one(relay, { kinds: [30023], authors: [relay.settings.policy.owner], tags: { d: [decodeURIComponent(parts[1])] } });
-  else if (parts[0] === "a" && parts.length === 3) {
-    const author = pubkeyOf(parts[1]);
-    if (author) e = one(relay, { kinds: [30023], authors: [author], tags: { d: [decodeURIComponent(parts[2])] } });
-  }
+  const e = pageEvent(relay, url.pathname);
   if (!e) return nothing(relay, "Nothing by that name here.");
   return new Response(render(relay, e, origin), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE } });
+}
+
+// pageEvent selects the same live, public event for HTML and web addresses.
+export function pageEvent(relay: Relay, path: string): Event | null {
+  if (relay.settings.isUnclaimed() || relay.settings.leaseExpired(now()) || relay.settings.policy.reads !== "open") return null;
+  const parts = path.split("/").filter(Boolean);
+  let e: Event | null = null;
+  // A malformed escape names no page, rather than raising a URIError.
+  try {
+    if (parts[0] === "e" && parts.length === 2 && HEX64.test(parts[1])) e = one(relay, { ids: [parts[1]], kinds: KINDS, tags: {} });
+    else if (parts[0] === "a" && parts.length === 2) e = one(relay, { kinds: [30023], authors: [relay.settings.policy.owner], tags: { d: [decodeURIComponent(parts[1])] } });
+    else if (parts[0] === "a" && parts.length === 3) {
+      const author = pubkeyOf(parts[1]);
+      if (author) e = one(relay, { kinds: [30023], authors: [author], tags: { d: [decodeURIComponent(parts[2])] } });
+    }
+  } catch { return null; }
+  return e;
 }
 
 function nothing(relay: Relay, why: string): Response {

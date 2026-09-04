@@ -117,6 +117,12 @@ retry; replacing a manifest does not delete and recreate its hostname.
 
 ## Deliberate limits
 
+Supporting Nostr clients can resolve a hosted site URL through
+[NIP-AD web addresses](23-nip-ad-web-addresses.md). Discovery maps existing
+site paths to the live manifest under the same site authentication and read
+rules, with the hosting relay as its hint. Custom site domains retain their
+site origin; discovery does not open the hosting relay's other HTTP doors.
+
 bind.ws does not advertise NIP-5A in `supported_nips`: NIP-11 still defines
 that field as integer identifiers, while 5A is a lettered draft and does not
 ask relays to advertise it. The relay advertises `nsites` instead. Follow

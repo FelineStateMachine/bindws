@@ -11,6 +11,7 @@ import { manage } from "./manage.ts";
 import { bridge } from "./bridge.ts";
 import { nip11 } from "./nip11.ts";
 import { nip05Document } from "./nip05.ts";
+import { isWebAddressRequest, webAddress } from "./nipad.ts";
 import { verifyNIP98, whoAsks } from "./auth.ts";
 import { checkInvite, claimInviteRequest, invitePage, termsPage } from "./invites.ts";
 import { dumpDownload } from "./dumps.ts";
@@ -46,7 +47,10 @@ export const isManagementRequest = (req: Request) => req.method === "POST" && (r
 
 export const ROUTES: Route[] = [
   { when: isGitPath, gated: true, answer: grasp },
-  // NIP-11, on any path, by the accept header.
+  // Explicit path discovery wins over content negotiation, independently
+  // of member names. The handler applies each target's visibility policy.
+  { when: isWebAddressRequest, gated: true, answer: webAddress },
+  // NIP-11, after explicit discovery, by the accept header.
   {
     when: (_, req) => req.headers.get("accept")?.includes("application/nostr+json") ?? false,
     answer: (relay, _, url) => Response.json(nip11(relay, url.host), { headers: { "content-type": "application/nostr+json", ...CORS } }),

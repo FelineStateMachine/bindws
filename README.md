@@ -60,6 +60,7 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 ### Draft NIPs
 
 - [NIP-5A static websites](docs/20-nip-5a-static-websites.md): publish and serve static sites from signed Nostr manifests.
+- [NIP-AD web addresses](docs/23-nip-ad-web-addresses.md): resolve relay, article and site URLs to their Nostr counterparts.
 - [GRASP-01 Git hosting](docs/22-grasp-01-git-hosting.md): host bounded NIP-34 repositories through Git Smart HTTP.
 
 ### Protocol guides

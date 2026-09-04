@@ -7,7 +7,11 @@ audience: integrator
 
 Every path the worker and a relay answer. Paths are on `https://<name>.bind.ws` unless marked apex. One read rule covers every door that shows events, files, names or presence: where the auth column says "the read rule", a relay whose reads are *anyone* answers without a signature, one whose reads are *signed in* takes any valid signature, and one whose reads are *members* takes a member's. Auth column: "NIP-98" is a signed request (see [Scripts and agents](13-scripts-and-agents.md)); "Blossom" is a kind 24242 token in the Authorization header; "none" is public. JSON errors carry `{ "error": "<prefix>: reason" }`; Blossom and NIP-96 errors also set an `X-Reason` header.
 
-Any request with `Accept: application/nostr+json` answers the NIP-11 document, whatever the path. A websocket upgrade on any path opens the relay. A blocked address is refused with 403 on the socket and on the doors that write, read or serve files; the page, NIP-11 and management stay open.
+Requests with `Accept: application/nostr+json` answer the NIP-11 document,
+except explicit NIP-AD path discovery. A websocket upgrade on any relay
+path opens the relay. A blocked address is refused with 403 on the socket
+and on the doors that write, read or serve files; the page, NIP-11 and
+management stay open.
 
 ## Apex
 
@@ -27,6 +31,7 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 | `/` | GET with `Accept: application/nostr+json` | none | NIP-11: rules, limits, retention, `self`, `lease` while leased, `succession_pending` while warning | 200 |
 | `/` | POST, `content-type: application/nostr+json+rpc` | NIP-98 | NIP-86 management, `{ result }` or `{ error }` | 200; 400 invalid; 401 bad signature; 403 not allowed; 409 conflict; 429 active relay operation |
 | `/people` | GET | none | `{ public, self, host, people }`, the members when the directory is public | 200 |
+| `/.well-known/nostr.json?path=<pathname>` | GET, HEAD; OPTIONS preflight | the read rule for the group; public pages only | NIP-AD path-keyed `{ filter, relays }`, or `{}` without a mapping; [NIP-AD web addresses](23-nip-ad-web-addresses.md) | 200; 400 invalid pathname; 401/403 group read rule; 405 other methods |
 | `/terms` | GET | none | the join terms as a page | 200; 404 none set |
 | `/signer.js` | GET | none | the NIP-46 client bundle, cached a week | 200 |
 | `/favicon.svg` | GET | none | the icon | 200 |
@@ -53,6 +58,7 @@ follows the `sites` feature and the relay's read rule.
 | `/` or a site path | other methods or websocket upgrade | none | method error | 405 |
 | `/.well-known/nsite/auth` | GET | none, or NIP-98 when continuing an API session | NIP-07 sign-in HTML with a five-minute challenge | 401; 429 too many outstanding challenges |
 | `/.well-known/nsite/auth` | POST | exact NIP-98 for this URL, method and body; body contains the signed kind 22242 challenge response | sets the seven-day `__Host-nsite` cookie | 204; 401 invalid or expired proof; 403 read rule; 413 body over 32 KiB |
+| `/.well-known/nostr.json?path=<pathname>` | GET, HEAD; OPTIONS preflight | the site's read rule | NIP-AD mapping to the live manifest with its hosting relay hint; no file fetch | 200; 204 preflight; 400 invalid pathname; 401/403 read rule; 404 unavailable site; 405 other methods |
 
 Site responses include `Content-Type`, `Content-Length` when supplied by the
 source, an ETag equal to the file hash, `X-Content-Type-Options: nosniff`, and

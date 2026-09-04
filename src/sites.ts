@@ -12,6 +12,7 @@ import { denyStatus } from "./auth.ts";
 import { featureOn } from "./settings.ts";
 import { remoteSiteBlob } from "./site-mirror.ts";
 import { blobBlocked, type Blob } from "./blossom.ts";
+import { eventFilter, isWebAddressRequest, requestedPath, webAddressResponse } from "./nipad.ts";
 
 export const SITE_KINDS = [KIND_SITE, KIND_NAMED_SITE, KIND_SITE_SNAPSHOT];
 const HEX = /^[0-9a-f]{64}$/;
@@ -153,33 +154,74 @@ const SITE_TYPES: Record<string, string> = {
 };
 export const siteType = (path: string) => SITE_TYPES[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
 const siteError = (req: Request, status: number, message: string) => new Response(req.method === "HEAD" ? null : message, { status, headers: { "cache-control": "private, no-store", "content-type": "text/plain; charset=utf-8" } });
+const discoveryError = (req: Request, status: number, message: string) => {
+  const response = siteError(req, status, message);
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", "*");
+  return new Response(response.body, { status: response.status, headers });
+};
+
+// siteRelayURL gives a discovery document the relay address behind a hosted
+// site. A custom site hostname must never become the relay hint.
+const siteRelayURL = (relay: Relay, url: URL): string => {
+  const host = url.hostname.endsWith(".localhost")
+    ? `${relay.slug}.localhost${url.port ? ":" + url.port : ""}`
+    : `${relay.slug}.${relay.domain}`;
+  return relay.relayURL(host);
+};
+
+// sitePath selects the browser's exact escaped filename before its decoded
+// counterpart. Discovery follows a directory's redirect to its index page.
+function sitePath(e: Event, pathname: string): { redirect: boolean; mapping: string[] | undefined } | null {
+  let decoded: string;
+  try { decoded = decodeURIComponent(pathname); } catch { return null; }
+  const directory = !/[^/]+\.[^/.]+$/.test(decoded);
+  const redirect = directory && !decoded.endsWith("/");
+  if (redirect) { pathname += "/"; decoded += "/"; }
+  if (directory) decoded += "index.html";
+  const paths = sitePaths(e);
+  return { redirect, mapping: paths.find((t) => t[1] === pathname) ?? paths.find((t) => t[1] === decoded) };
+}
 
 // serveSite answers the site origin, under the read rule. Relay handlers
 // and content negotiation never run here, even on paths the relay uses.
 export async function serveSite(relay: Relay, req: Request, label: string): Promise<Response> {
   const site = parseSite(label);
-  const host = new URL(req.url).hostname;
-  const canonical = host === `${label}.${relay.domain.toLowerCase()}` || host === `${label}.localhost`;
-  if (!canonical && relay.settings.policy.customHosts?.find((h) => h.host === host)?.site !== label) return siteError(req, 404, "Not found");
-  if (!site || !featureOn(relay.settings.policy, "sites") || relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return siteError(req, 404, "Not found");
-  if (req.headers.get("upgrade") || (!["GET", "HEAD"].includes(req.method) && !(new URL(req.url).pathname === SITE_AUTH_PATH && req.method === "POST"))) return siteError(req, 405, "Method not allowed");
-  const who = await siteIdentity(relay, req, label);
-  if (who instanceof Response) return who;
-  const gate = relay.settings.mayRead(who.pubkeys);
-  if (gate) return siteError(req, denyStatus(gate), gate);
-  const e = manifest(relay, site);
-  if (!e) return siteError(req, 404, "Not found");
   const url = new URL(req.url);
-  let path: string;
-  try { path = decodeURIComponent(url.pathname); } catch { return siteError(req, 404, "Not found"); }
-  const directory = !/[^/]+\.[^/.]+$/.test(path);
-  if (directory && !path.endsWith("/")) {
+  const discovery = isWebAddressRequest(url);
+  const fail = (status: number, message: string) => discovery ? discoveryError(req, status, message) : siteError(req, status, message);
+  const host = url.hostname;
+  const canonical = host === `${label}.${relay.domain.toLowerCase()}` || host === `${label}.localhost`;
+  if (!canonical && relay.settings.policy.customHosts?.find((h) => h.host === host)?.site !== label) return fail(404, "Not found");
+  if (!site || !featureOn(relay.settings.policy, "sites") || relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return fail(404, "Not found");
+  if (discovery && req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, HEAD, OPTIONS", "cache-control": "no-store" } });
+  }
+  if (req.headers.get("upgrade") || (!["GET", "HEAD"].includes(req.method) && !(url.pathname === SITE_AUTH_PATH && req.method === "POST"))) {
+    return discovery ? webAddressResponse(req, null, null, siteRelayURL(relay, url), 405) : siteError(req, 405, "Method not allowed");
+  }
+  const who = await siteIdentity(relay, req, label);
+  if (who instanceof Response) return discovery ? (() => { const headers = new Headers(who.headers); headers.set("access-control-allow-origin", "*"); return new Response(who.body, { status: who.status, headers }); })() : who;
+  const gate = relay.settings.mayRead(who.pubkeys);
+  if (gate) return fail(denyStatus(gate), gate);
+  const e = manifest(relay, site);
+  if (!e) return discovery ? webAddressResponse(req, requestedPath(url), null, siteRelayURL(relay, url), 404) : siteError(req, 404, "Not found");
+  if (discovery) {
+    if (!featureOn(relay.settings.policy, "sites") || relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return fail(404, "Not found");
+    if (!canonical && relay.settings.policy.customHosts?.find((h) => h.host === host)?.site !== label) return fail(404, "Not found");
+    const path = requestedPath(url);
+    if (path === null) return webAddressResponse(req, null, null, siteRelayURL(relay, url), 400);
+    const mapping = sitePath(e, path)?.mapping;
+    return webAddressResponse(req, path, mapping && !blobBlocked(relay, mapping[2]) ? eventFilter(e) : null, siteRelayURL(relay, url));
+  }
+  const selected = sitePath(e, url.pathname);
+  if (!selected) return siteError(req, 404, "Not found");
+  if (selected.redirect) {
     url.pathname += "/";
     return new Response(null, { status: 308, headers: { location: url.href, "cache-control": "private, no-store" } });
   }
-  if (directory) path += "index.html";
   const paths = sitePaths(e);
-  let mapping = paths.find((t) => t[1] === url.pathname) ?? paths.find((t) => t[1] === path);
+  let mapping = selected.mapping;
   let status = 200;
   if (!mapping) { mapping = paths.find((t) => t[1] === "/404.html"); status = 404; }
   if (!mapping || blobBlocked(relay, mapping[2])) return siteError(req, 404, "Not found");
