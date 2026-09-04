@@ -14,7 +14,12 @@ src/
   names.ts      valid names, reserved names, lease names
   pull.ts       copy another relay in: NIP-77 as the initiator, one round per connection
   jobs.ts       the alarm's job list: pulls, backfills, rebroadcasts, once or standing
-  relay.ts      the Durable Object: sockets, policy, fuel plumbing, NIP-11
+  relay.ts      the Durable Object: sockets, the alarm, members and bans, jobs, usage
+  gates.ts      the write gate and the read gate
+  routes.ts     the HTTP doors, in the order they are tried, each saying whether a blocked address may use it
+  nip11.ts      the information document and the supported-NIP list
+  succession.ts an heir and a dead-man's switch
+  kinds.ts      every event kind the relay treats specially, by NIP
   store.ts      SQLite schema and queries
   settings.ts   policy, members, bans, kind rules, retention, export/import
   roles.ts      who may do what: owner, moderator; one table for NIP-86 and NIP-29
@@ -84,19 +89,19 @@ CI runs typecheck and the object tests on every push; the conformance suite agai
 
 ## Add a NIP
 
-Most NIPs land as their own module, wired in from `relay.ts` with one import and one route or one call. That is the pattern to follow:
+Most NIPs land as their own module, wired in with one import and one row in `routes.ts` or one call from `relay.ts`. That is the pattern to follow:
 
 | NIP | Module | Wired from |
 |---|---|---|
-| 29 groups | `groups.ts` | the write gate in `relay.ts`, before the client policy |
+| 29 groups | `groups.ts` | `acceptGroup` in `relay.ts`, after the write gate (`gates.ts`) |
 | 43 roster | `identity.ts` | `publishMembership` in `relay.ts` |
 | 66 discovery | `nip66.ts` | `publishDiscovery` in `relay.ts`, from `publishMembership` and the alarm |
-| 46 transport | one kind in the write gate and the read gate | `relay.ts` |
+| 46 transport | one kind in the write gate and the read gate | `gates.ts` |
 | 86 methods | `manage.ts` with `roles.ts` | the RPC route |
-| 96 files | `nip96.ts` over `blossom.ts` | one path line in `fetch` |
-| 11 extras | `settings.ts` fields, `info()` | `relay.ts` |
+| 96 files | `nip96.ts` over `blossom.ts` | one row in `routes.ts` |
+| 11 extras | `settings.ts` fields, `nip11.ts` | the NIP-11 row in `routes.ts` |
 
-A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a file named after the NIP in `test/conformance` so the behavior is checked from outside, and a Durable Object test in `test/object`, named after the module it exercises; a NIP number names a test file only where the feature has no other name (`nip05`, `nip11`, `nip66`).
+A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` in `nip11.ts` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a file named after the NIP in `test/conformance` so the behavior is checked from outside, and a Durable Object test in `test/object`, named after the module it exercises; a NIP number names a test file only where the feature has no other name (`nip05`, `nip11`, `nip66`).
 
 ## The signer bundle
 
