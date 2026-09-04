@@ -6,10 +6,51 @@ import { generateSecretKey } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import { KIND_REPO, KIND_REPO_STATE } from "../../src/kinds.ts";
 import { gitRepositoryPath } from "../../src/grasp-policy.ts";
-import { ev, pk, rpc } from "../helpers/relay.ts";
+import { ev, nip98, pk, rpc } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 describe("GRASP coordination", () => {
+  it("keeps admission free while a management body is incomplete", async () => {
+    const host = "grasp-management-body.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "applypreset", "grasp");
+    const path = gitRepositoryPath(npubEncode(pk(owner)), "body");
+    const connection = await WS.connect(host);
+    expect((await connection.ok(ev(owner, KIND_REPO, "", [["d", "body"], ["clone", `https://${host}${path}`], ["relays", `wss://${host}`]]))).ok).toBe(true);
+    connection.ws.close();
+    await runInDurableObject(env.RELAY.getByName("grasp-management-body"), async (relay) => {
+      const url = `http://${host}/`;
+      const payload = { method: "setpolicy", params: [{ name: "body completed" }] };
+      const authorization = await nip98(owner, url, "POST", payload);
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+      const active = relay.fetch(new Request(url, { method: "POST", headers: { authorization, "content-type": "application/nostr+json+rpc" }, body }));
+      let closed = false;
+      try {
+        await Promise.resolve();
+        expect(relay.repositoryAccess.busy).toBe(false);
+        const git = await relay.fetch(new Request(`http://${host}${path}`));
+        expect(git.status).toBe(200);
+        await git.arrayBuffer();
+        const admitted = await relay.acceptAny(ev(owner, 1, "while the body waits"), relay.virtualConn(host, pk(owner)));
+        expect(admitted.ok).toBe(true);
+        expect(relay.settings.policy.name).not.toBe("body completed");
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(payload)));
+        controller.close();
+        closed = true;
+        const response = await active;
+        expect(response.status).toBe(200);
+        await response.arrayBuffer();
+        expect(relay.settings.policy.name).toBe("body completed");
+        expect(relay.repositoryAccess.busy).toBe(false);
+      } finally {
+        if (!closed) { controller.enqueue(new TextEncoder().encode(JSON.stringify(payload))); controller.close(); }
+        await active;
+      }
+    });
+  });
+
   it.each([
     { mode: "http", outcome: "success" }, { mode: "http", outcome: "failure" },
     { mode: "alarm", outcome: "success" }, { mode: "alarm", outcome: "failure" },

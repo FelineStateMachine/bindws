@@ -42,6 +42,7 @@ const is = (...paths: string[]) => (url: URL) => paths.includes(url.pathname);
 const under = (prefix: string) => (url: URL) => url.pathname.startsWith(prefix);
 const get = (when: (url: URL) => boolean) => (url: URL, req: Request) => req.method === "GET" && when(url);
 const post = (when: (url: URL) => boolean) => (url: URL, req: Request) => req.method === "POST" && when(url);
+export const isManagementRequest = (req: Request) => req.method === "POST" && (req.headers.get("content-type")?.includes("application/nostr+json+rpc") ?? false);
 
 export const ROUTES: Route[] = [
   { when: isGitPath, gated: true, answer: grasp },
@@ -51,7 +52,7 @@ export const ROUTES: Route[] = [
     answer: (relay, _, url) => Response.json(nip11(relay, url.host), { headers: { "content-type": "application/nostr+json", ...CORS } }),
   },
   // NIP-86 management, by the content type.
-  { when: (_, req) => req.method === "POST" && (req.headers.get("content-type")?.includes("application/nostr+json+rpc") ?? false), answer: manage },
+  { when: (_, req) => isManagementRequest(req), answer: manage },
   // The HTTP bridge (bridge.ts).
   { when: post(is("/events", "/query", "/count")), gated: true, answer: bridge },
   // NIP-05 names, under the read rule for whoever asks.

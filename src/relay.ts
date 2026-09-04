@@ -18,7 +18,7 @@ import { Settings, isReplaceable, isProtected, featureOn } from "./settings.ts";
 import { blobBytes, type Blob } from "./blossom.ts";
 import { DIGEST_DAYS, digestText, notify, fuelLow, fuelText } from "./notify.ts";
 import { Succession } from "./succession.ts";
-import { isGated, route } from "./routes.ts";
+import { isGated, isManagementRequest, route } from "./routes.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
 import { Fuel, fuelConfig, acceptReceipt, type Fetcher, type LnurlParams } from "./fuel.ts";
 import { Identity } from "./identity.ts";
@@ -795,6 +795,8 @@ export class Relay extends DurableObject<Env> {
     if (site) return serveSite(this, req, site);
     if (upgrade) return this.acceptWebSocket(req);
     if (isGitPath(url)) return route(this, req, url);
+    // Management parses and verifies the request before acquiring authority.
+    if (isManagementRequest(req)) return completed(await route(this, req, url));
     if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
       return completed(await this.repositoryAccess.run("control", () => route(this, req, url), () => new Response(JSON.stringify({ error: "restricted: relay operation in progress; retry" }), { status: 429, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "retry-after": "1" } })));
     }

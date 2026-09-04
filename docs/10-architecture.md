@@ -169,6 +169,8 @@ ingestion and direct lease, adoption and teardown paths use the same admission
 seam; nested work owned by the active token proceeds, while another live
 operation receives a retry response. Async context carries the token, so the
 fence replaces separate Git and control flags without becoming a durable lock.
+Management reads and verifies the request before taking ownership, so an
+incomplete unauthenticated body cannot hold the relay's admission token.
 It does not coordinate a crashed instance, another R2 client or another object
 using the prefix, and it never authorizes garbage collection.
 

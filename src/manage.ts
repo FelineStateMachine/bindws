@@ -744,36 +744,38 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
 
   const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, bodyText);
   if (typeof auth === "string") return reply({ error: auth }, 401);
-  const s = relay.settings;
-  const p = s.policy;
-  const t = now();
-  const caller = auth.pubkey;
+  return relay.repositoryAccess.run("control", async () => {
+    const s = relay.settings;
+    const p = s.policy;
+    const t = now();
+    const caller = auth.pubkey;
 
-  const role = s.roleOf(caller);
-  const outranks = (pk: string) => role !== "owner" && (s.isOwner(pk) || s.roleOf(pk) === "moderator");
-  const str = (i: number) => (typeof params[i] === "string" ? (params[i] as string) : "");
-  const num = (i: number) => (Number.isInteger(params[i]) ? (params[i] as number) : parseInt(str(i), 10));
-  const hex64 = (v: string) => /^[0-9a-f]{64}$/.test(v);
-  const call: Call = { relay, req, s, p, t, caller, role, method, params, str, num, hex64, reply, outranks };
-  if (m.action === "open") return m.run(call);
-  // The heir may read the succession status: a member, with no console otherwise.
-  if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.succession.status() });
-  // A plain member reaches their own invites when the owner opened the
-  // invite tree (memberInvites); the invite methods keep them to their own.
-  const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
-  if (role === "owner") void relay.succession.seen(caller);
-  if (!ownInvites && !can(role, m.action)) {
-    const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
-    return reply({ error: why }, 403);
-  }
-  // Every method that changed something and answered 200 goes in the
-  // moderation log with who called it (audit.ts). deleterelay took the
-  // table with it.
-  const resp = await m.run(call);
-  const dryRun = method === "importconfig" && (params[1] as { dryRun?: unknown } | undefined)?.dryRun === true;
-  if (resp.status === 200 && !m.reads && !dryRun && method !== "deleterelay") {
-    const { target, detail } = detailOf(method, params);
-    relay.audit.record(t, caller, method, target, detail);
-  }
-  return resp;
+    const role = s.roleOf(caller);
+    const outranks = (pk: string) => role !== "owner" && (s.isOwner(pk) || s.roleOf(pk) === "moderator");
+    const str = (i: number) => (typeof params[i] === "string" ? (params[i] as string) : "");
+    const num = (i: number) => (Number.isInteger(params[i]) ? (params[i] as number) : parseInt(str(i), 10));
+    const hex64 = (v: string) => /^[0-9a-f]{64}$/.test(v);
+    const call: Call = { relay, req, s, p, t, caller, role, method, params, str, num, hex64, reply, outranks };
+    if (m.action === "open") return m.run(call);
+    // The heir may read the succession status: a member, with no console otherwise.
+    if (method === "successionstatus" && p.succession && p.succession.heir === caller) return reply({ result: await relay.succession.status() });
+    // A plain member reaches their own invites when the owner opened the
+    // invite tree (memberInvites); the invite methods keep them to their own.
+    const ownInvites = role === "member" && p.memberInvites.depth > 0 && (method === "createinvite" || method === "listinvites" || method === "revokeinvite");
+    if (role === "owner") void relay.succession.seen(caller);
+    if (!ownInvites && !can(role, m.action)) {
+      const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
+      return reply({ error: why }, 403);
+    }
+    // Every method that changed something and answered 200 goes in the
+    // moderation log with who called it (audit.ts). deleterelay took the
+    // table with it.
+    const resp = await m.run(call);
+    const dryRun = method === "importconfig" && (params[1] as { dryRun?: unknown } | undefined)?.dryRun === true;
+    if (resp.status === 200 && !m.reads && !dryRun && method !== "deleterelay") {
+      const { target, detail } = detailOf(method, params);
+      relay.audit.record(t, caller, method, target, detail);
+    }
+    return resp;
+  }, () => new Response(JSON.stringify({ error: "restricted: relay operation in progress; retry" }), { status: 429, headers: { ...cors, "retry-after": "1" } }));
 }
