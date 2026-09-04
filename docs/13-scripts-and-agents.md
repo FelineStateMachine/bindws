@@ -164,6 +164,23 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 - `deleterelay name`: the relay's own name, typed, is the confirmation.
 
+## The configuration file
+
+`exportconfig` is a document, and a document can live in a repository. The format is `bind.ws/relay-config/2`: `policy`, `members`, `bans`, `addresses`, `banned_events`, `kinds` and `retention`, each a section, and a section the file leaves out is left alone when it is applied, so a file may carry the rules and nothing about people. The schema is at `https://bind.ws/relay-config.schema.json`; put it in `$schema` and the editor checks the file as you type. JSONC is fine: comments and trailing commas.
+
+Four verbs, in `scripts/ops/relay.mjs`, with `RELAY_SK` holding the owner's key as hex or nsec:
+
+```
+node scripts/ops/relay.mjs check relay.jsonc                      # the schema and the relay's own parser, offline
+node scripts/ops/relay.mjs plan  relay.jsonc wss://name.bind.ws   # what applying would change; touches nothing
+node scripts/ops/relay.mjs push  relay.jsonc wss://name.bind.ws   # the plan, then the change
+node scripts/ops/relay.mjs pull  wss://name.bind.ws relay.json    # the relay as it is, into a file
+```
+
+`check` fails on anything a relay would drop, since a silently dropped entry is a mistake in a file under source control. `plan` is `importconfig` with `{ dryRun: true }`: the answer lists the changes section by section with a `summary` line each, plus the entries the relay would not take. `pull` then `git diff` shows drift between the file and the relay.
+
+The templates in the repository's `relay-templates/` folder are files in this format with a `template` block for the title and the blurb; the console offers them as presets. A template is a good start for a file of your own.
+
 ## Limits worth knowing
 
 - Leases: five a minute per address and 60 a minute overall at the apex.

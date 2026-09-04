@@ -64,6 +64,7 @@ scripts/
   check/   check-console.mjs check-celld.mjs check-config.mjs   run by npm run typecheck; check-config also checks any file
   dev/     dev-signer.mjs seed.mjs stage.mjs junk.mjs shot.mjs zaptest.mjs   for a dev relay
   ops/     margin.mjs                         fuel prices against Cloudflare's rates, weekly in CI
+           relay.mjs                          check, plan, push or pull a relay's configuration file
 wrangler.jsonc        the Worker on Cloudflare
 wrangler.celld.jsonc  the same Worker on celld (docs/16)
 ```
