@@ -63,6 +63,9 @@ export interface Env {
   SATS_PER_GB_MONTH_MEDIA?: string;
   SATS_PER_ACTIVE_HOUR?: string;
   SATS_PER_MILLION_ROWS?: string;
+  // Metrics (optional): a Workers Analytics Engine dataset that takes one
+  // data point per usage flush, next to the meter log line (flushUsage).
+  METRICS?: AnalyticsEngineDataset;
 }
 
 // The less obvious numbers: 43 is added by info() once the relay has an
@@ -128,8 +131,10 @@ export class Relay extends DurableObject<Env> {
   private buckets = new Map<WebSocket, { events: Bucket; reqs: Bucket }>();
   // Per-address buckets, in memory only: they reset when the object sleeps.
   private ipBuckets = new Map<string, { events: Bucket; reqs: Bucket }>();
-  // Usage counters, flushed to the usage table in batches.
-  private meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0 };
+  // Usage counters, flushed to the usage table in batches. The last three
+  // are for the meter log line only: events accepted, events refused with
+  // an OK false, and REQ or COUNT messages served.
+  private meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
   // When the object last did work, for the active-time meter (ms). Zero after a wake.
   private lastActive = 0;
   private lnurl: LnurlParams | null = null;
@@ -524,7 +529,7 @@ export class Relay extends DurableObject<Env> {
     this.syncs.clear();
     this.buckets.clear();
     this.ipBuckets.clear();
-    this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0 };
+    this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
     this.lnurl = null;
     this.store = new Store(this.sql);
     this.settings = new Settings(this.sql);
@@ -836,12 +841,24 @@ export class Relay extends DurableObject<Env> {
     if (this.meter.bytesIn + this.meter.bytesOut > FLUSH_BYTES || this.meter.rowsRead + this.meter.rowsWritten > 5000) this.flushUsage();
   }
 
+  // flushUsage moves the counters to the usage table, and reports the same
+  // numbers outward: one JSON line on the console, which Workers Logs and
+  // any OTLP logs destination carry with the relay's name in it, and one
+  // Analytics Engine data point when the host bound a dataset. Both are
+  // deltas since the last flush; a destination sums them.
   flushUsage() {
     const m = this.meter;
     if (m.bytesIn + m.bytesOut + m.rowsRead + m.rowsWritten + m.activeMs === 0) return;
-    this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0 };
+    this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
     this.fuel.record(now(), m);
     this.store.drain();
+    const connections = this.connections();
+    console.log(JSON.stringify({ msg: "meter", relay: this.slug, ...m, connections }));
+    this.env.METRICS?.writeDataPoint({
+      indexes: [this.slug],
+      blobs: ["meter"],
+      doubles: [m.bytesIn, m.bytesOut, m.rowsRead, m.rowsWritten, m.activeMs, m.accepted, m.refused, m.reqs, connections],
+    });
   }
 
   // Events live in the object's SQLite database; media in R2. Priced apart.
@@ -1201,6 +1218,7 @@ export class Relay extends DurableObject<Env> {
         if (arr.length < 3) return this.send(ws, "NOTICE", `error: ${typ} needs an id and at least one filter`);
         const limited = this.bucket(ws).reqs.take(p.reqsPerMinute) || this.ipLimit(s.ip, "reqs");
         if (limited) return this.send(ws, "CLOSED", typeof arr[1] === "string" ? arr[1] : "", limited);
+        this.meter.reqs++;
         return this.handleReq(ws, s, typ, arr[1], arr.slice(2));
       }
       case "CLOSE":
@@ -1246,6 +1264,8 @@ export class Relay extends DurableObject<Env> {
       return;
     }
     const r = await this.acceptAny(e, s);
+    if (r.ok) this.meter.accepted++;
+    else this.meter.refused++;
     this.send(ws, "OK", e.id, r.ok, r.msg);
     if (r.stored) this.broadcast(e);
   }

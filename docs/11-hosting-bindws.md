@@ -57,6 +57,32 @@ Nothing else is required: no origin, no certificates, no servers. An idle relay 
 - The `usage` table grows one row per relay per month. No cleanup is needed.
 - To take a relay down as the operator, use the owner's typed-name `deleterelay` call or the console.
 
+## Observe
+
+Nothing runs between requests, so there is no process to scrape. What the platform offers instead is logs and traces, exported to any OpenTelemetry endpoint, and a metrics store queried with SQL.
+
+**The meter line.** Every relay writes one JSON line to the console each time it flushes its usage counters: on a socket closing, on the daily alarm, and whenever the counters pass a threshold in between. The line is `{ "msg": "meter", "relay": <name>, "bytesIn", "bytesOut", "rowsRead", "rowsWritten", "activeMs", "accepted", "refused", "reqs", "connections" }`. All but the last are deltas since the previous line; a destination sums them per relay. `accepted` and `refused` count events answered with an OK, `reqs` counts REQ and COUNT messages, `activeMs` is the awake time fuel meters. `wrangler tail` shows the lines live, and the Workers Logs page keeps them for the plan's retention.
+
+**Logs and traces elsewhere.** In the dashboard, Workers Observability, add a destination of type Logs and one of type Traces with the provider's OTLP endpoint and its auth header. Then name them in `wrangler.jsonc`:
+
+```
+"observability": {
+  "enabled": true,
+  "logs": { "enabled": true, "destinations": ["my-logs"] },
+  "traces": { "enabled": true, "head_sampling_rate": 0.1, "destinations": ["my-traces"] }
+}
+```
+
+Traces cover the Worker's own fetches and binding calls, the Durable Object invocations included; there are no custom spans yet. `persist: false` on either sends it out without keeping a copy in the dashboard. Export needs Workers Paid; Cloudflare bills it per event from October 2026, ten million a month included. Metrics cannot be exported this way yet, which is why the meter line exists: a Grafana or Honeycomb query over it gives per-relay rates.
+
+**Analytics Engine.** For a metrics store on Cloudflare itself, bind a dataset and every flush also writes one data point:
+
+```
+"analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "bindws_relays" }]
+```
+
+The point's index is the relay's name, `blob1` is `meter`, and `double1` to `double9` are the meter line's numbers in the same order. Query it with the SQL API or the Grafana plugin, for example `SELECT index1 AS relay, sum(double6) AS accepted FROM bindws_relays WHERE timestamp > now() - interval '1' day GROUP BY relay`. Ten million points a month are included on Workers Paid; without the binding nothing is written.
+
 ## Custom domains
 
 Owners can put a relay under a hostname they control, such as `relay.example.com`, through [Cloudflare for SaaS custom hostnames](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/getting-started/). The feature is off until the one-time setup below is done; the console says so until then.

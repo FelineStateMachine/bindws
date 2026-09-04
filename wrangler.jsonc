@@ -4,7 +4,19 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
+  // Logs and traces go to Workers Observability, and to any OTLP endpoint
+  // named in `destinations` once it is created in the dashboard
+  // (docs/11-hosting-bindws.md, Observe). Each relay writes one JSON meter
+  // line per usage flush; traces cover the Worker's own fetches and
+  // binding calls. Sampling keeps the trace bill in check.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 },
+  },
+  // Metrics: uncomment to write the same meter numbers as Analytics Engine
+  // data points, queried with SQL or the Grafana plugin. Workers Paid only.
+  // "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "bindws_relays" }],
   // Production: the apex as a custom domain, every subdomain routed by the
   // wildcard. The wildcard needs proxied placeholder DNS records for *.bind.ws.
   // The third route catches custom domains: with Cloudflare for SaaS a
