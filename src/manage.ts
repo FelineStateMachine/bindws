@@ -481,7 +481,7 @@ export const METHODS: Record<string, Method> = {
   },
   applypreset: {
     action: "rules",
-    run: async ({ relay, s, params, str, reply }) => {
+    run: async ({ relay, s, t, params, str, reply }) => {
       // (name, {source?}): writes, reads, directory, kind rules and keep-for
       // rules in one go. A replica preset also gets a standing pull of its
       // kinds from the source; an earlier replica job is replaced.
@@ -495,7 +495,7 @@ export const METHODS: Record<string, Method> = {
         const bad = checkPullURL(source, relay.slug, relay.domain);
         if (bad) return reply({ error: bad }, 400);
       }
-      const err = applyPreset(s, preset.name);
+      const err = applyPreset(s, preset.name, t);
       if (err) return reply({ error: err }, 400);
       relay.enforceReads();
       for (const j of await relay.jobs()) if (j.label === "replica") await relay.removeJob(j.id);

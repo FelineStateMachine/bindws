@@ -1,0 +1,24 @@
+// Haven's outbox: the owner's public notes, readable by all, blasted
+// elsewhere. Private kinds are blocked so a misconfigured client cannot park
+// DMs on a public relay; everything else is fair game.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Outbox",
+    "about": "Only you write, anyone reads. Your public notes and articles, kept forever. Private kinds are refused."
+  },
+  "policy": {
+    "writes": "owner",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [],
+    "block": [
+      4,
+      1059
+    ]
+  },
+  "retention": []
+}

@@ -1,0 +1,30 @@
+// Haven's chat relay, adapted: this relay already has members and a NIP-29
+// group, so chat is the members-only group. Members write, members read, and
+// the kinds are gift wraps for private messages, group chat messages and
+// threads, comments, reactions and profiles. Join, leave and moderation events
+// are not subject to kind rules.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Chat",
+    "about": "Members write, members read. Private messages and the group's chat, kept forever. The directory is hidden."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "members",
+    "directoryPublic": false
+  },
+  "kinds": {
+    "allow": [
+      0,
+      7,
+      9,
+      11,
+      1059,
+      1111
+    ],
+    "block": []
+  },
+  "retention": []
+}

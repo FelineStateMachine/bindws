@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://bind.ws/relay-config.schema.json",
+  "title": "bind.ws relay configuration",
+  "description": "A relay's rules, identity, people and lists as one document: what exportconfig writes and importconfig reads. A section left out is left alone. The relay's parser (src/config.ts) is the last word; this schema is for the editor.",
+  "type": "object",
+  "required": ["format"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "enum": ["bind.ws/relay-config/1", "bind.ws/relay-config/2"] },
+    "exported_at": { "type": "integer", "description": "when the relay wrote it; ignored on import" },
+    "name": { "type": "string", "maxLength": 64, "description": "the relay's name at export; ignored on import" },
+    "template": {
+      "type": "object",
+      "description": "present on a template in relay-templates/: how the console presents it",
+      "required": ["title", "about"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "maxLength": 80 },
+        "about": { "type": "string", "maxLength": 400 },
+        "source": { "enum": ["required", "optional"], "description": "a replica pulls from a source relay: required, or optional" },
+        "every": { "type": "integer", "minimum": 1, "description": "hours between pulls" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "maxLength": 2000 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "icon": { "type": "string", "maxLength": 2000 },
+        "banner": { "type": "string" },
+        "contact": { "type": "string", "maxLength": 2000 },
+        "postingPolicy": { "type": "string" },
+        "privacyPolicy": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "languageTags": { "type": "array", "items": { "type": "string" } },
+        "relayCountries": { "type": "array", "items": { "type": "string" } },
+        "notify": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "writes": { "enum": ["open", "allowlist", "wot", "owner"] },
+        "openKinds": { "type": "array", "items": { "$ref": "#/definitions/kind" } },
+        "guestReplies": { "type": "boolean" },
+        "blockedWords": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
+        "blockedWordsInTags": { "type": "boolean" },
+        "reportThreshold": { "type": "integer", "minimum": 0 },
+        "reads": { "enum": ["open", "auth", "members"] },
+        "joinTerms": { "type": "string", "maxLength": 20000 },
+        "directoryPublic": { "type": "boolean" },
+        "maxBlobMB": { "type": "integer", "minimum": 1, "maximum": 95 },
+        "eventsPerMinute": { "type": "integer", "minimum": 1 },
+        "reqsPerMinute": { "type": "integer", "minimum": 1 },
+        "minPow": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "maxFuture": { "type": "integer", "minimum": 0 },
+        "maxLimit": { "type": "integer", "minimum": 1, "maximum": 5000 },
+        "maxSubs": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "maxMessageKB": { "type": "integer", "minimum": 16, "maximum": 1024 },
+        "dumps": { "enum": ["off", "daily", "weekly"] },
+        "dumpsKeep": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "memberInvites": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "depth": { "type": "integer", "minimum": 0 }, "quota": { "type": "integer", "minimum": 0 } }
+        },
+        "views": { "type": "object", "additionalProperties": { "type": "boolean" }, "description": "a view named here with false is off; the rest are on" },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "search": { "enum": ["full", "prose", "off"] },
+            "sync": { "type": "boolean" },
+            "count": { "type": "boolean" },
+            "discovery": { "type": "boolean" },
+            "names": { "type": "boolean" },
+            "files": { "type": "boolean" },
+            "pages": { "type": "boolean" },
+            "signer": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pubkey"],
+        "additionalProperties": false,
+        "properties": {
+          "pubkey": { "$ref": "#/definitions/hex64" },
+          "name": { "type": ["string", "null"] },
+          "note": { "type": "string", "maxLength": 2000 },
+          "role": { "enum": ["member", "moderator"] },
+          "keepDays": { "type": "integer", "minimum": 1 },
+          "maxBytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "bans": { "type": "array", "items": { "$ref": "#/definitions/pubkeyEntry" } },
+    "banned_events": {
+      "type": "array",
+      "items": { "type": "object", "required": ["id"], "additionalProperties": false, "properties": { "id": { "$ref": "#/definitions/hex64" }, "reason": { "type": "string", "maxLength": 200 } } }
+    },
+    "addresses": {
+      "type": "array",
+      "items": { "type": "object", "required": ["ip"], "additionalProperties": false, "properties": { "ip": { "type": "string" }, "reason": { "type": "string", "maxLength": 200 } } }
+    },
+    "kinds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "allow": { "type": "array", "items": { "$ref": "#/definitions/kind" } }, "block": { "type": "array", "items": { "$ref": "#/definitions/kind" } } }
+    },
+    "retention": {
+      "type": "array",
+      "items": { "type": "object", "required": ["kind", "days"], "additionalProperties": false, "properties": { "kind": { "oneOf": [{ "$ref": "#/definitions/kind" }, { "type": "null" }] }, "days": { "type": "integer", "minimum": 1, "maximum": 36500 } } }
+    }
+  },
+  "definitions": {
+    "hex64": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "kind": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "pubkeyEntry": { "type": "object", "required": ["pubkey"], "additionalProperties": false, "properties": { "pubkey": { "$ref": "#/definitions/hex64" }, "reason": { "type": "string", "maxLength": 200 } } }
+  }
+}

@@ -8,9 +8,11 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "test:conformance": "vitest run --config vitest.conformance.config.ts",
-    "typecheck": "tsc --noEmit && node scripts/build/build-signer.mjs --check && node scripts/build/build-console.mjs --check && node scripts/check/check-console.mjs && node scripts/check/check-celld.mjs",
+    "typecheck": "tsc --noEmit && node scripts/build/build-signer.mjs --check && node scripts/build/build-console.mjs --check && node scripts/build/build-templates.mjs --check && node scripts/check/check-console.mjs && node scripts/check/check-celld.mjs && node scripts/check/check-config.mjs relay-templates/*.jsonc",
     "build:signer": "node scripts/build/build-signer.mjs",
-    "build:console": "node scripts/build/build-console.mjs"
+    "build:console": "node scripts/build/build-console.mjs",
+    "check:config": "node scripts/check/check-config.mjs",
+    "build:templates": "node scripts/build/build-templates.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
@@ -20,6 +22,7 @@
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260902.1",
     "@types/ws": "^8.18.0",
+    "ajv": "^8.20.0",
     "jsqr": "^1.4.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.0",

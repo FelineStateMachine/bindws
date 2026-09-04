@@ -1,0 +1,39 @@
+// Haven's inbox: where people reach the owner, so anyone may write, but only
+// the kinds that mean "for you": notes and replies, reposts, reactions,
+// comments, highlights, reports, zap receipts, plus profiles so the senders
+// render. Haven also checks that the owner is tagged; kind rules cannot, so a
+// short keep-for rule bounds what spam costs. The owner's own lists always
+// land regardless of the allow list.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Inbox",
+    "about": "Anyone writes notes, replies, reactions and zaps meant for you; anyone reads. Everything is kept 90 days."
+  },
+  "policy": {
+    "writes": "open",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [
+      0,
+      1,
+      6,
+      7,
+      16,
+      1111,
+      1984,
+      9735,
+      9802
+    ],
+    "block": []
+  },
+  "retention": [
+    {
+      "kind": null,
+      "days": 90
+    }
+  ]
+}

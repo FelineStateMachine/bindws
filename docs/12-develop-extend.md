@@ -25,7 +25,8 @@ src/
   roles.ts      who may do what: owner, moderator; one table for NIP-86 and NIP-29
   groups.ts     NIP-29, one group per relay: joins, leaves, moderation events
   audit.ts      the moderation log: one row per change from manage.ts or groups.ts
-  presets.ts    rule bundles, one click each, some with a standing pull
+  presets.ts    the templates as one-click presets, some with a standing pull
+  config.ts     the configuration document: parse, plan, apply, export
   manage.ts     NIP-86 methods over NIP-98
   domains.ts    custom hostnames: the Cloudflare client and the KV mapping
   dumps.ts      scheduled JSONL dumps to R2
@@ -46,6 +47,7 @@ src/
   dashboard.ts  the console's page, from the three files in console/
   console/      console.html, console.css, console.js: the console as written
   gen/signer.ts generated: the NIP-46 client library the console loads from /signer.js
+  gen/templates.ts generated from relay-templates/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
@@ -53,10 +55,13 @@ test/
   object/       Durable Object tests in workerd, one file per feature or module
   helpers/      the socket client, the management call, media tokens, the QR reader
   conformance/  black-box suite for any relay URL, one file per NIP, files included
+relay-templates/      one relay configuration per template, the presets the console offers
+relay-config.schema.json  the configuration file's schema, served at the apex
 scripts/
   build/   build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
            build-console.mjs                  fold src/console into src/gen/console.ts
-  check/   check-console.mjs check-celld.mjs  run by npm run typecheck
+           build-templates.mjs                fold relay-templates/ into src/gen/templates.ts
+  check/   check-console.mjs check-celld.mjs check-config.mjs   run by npm run typecheck; check-config also checks any file
   dev/     dev-signer.mjs seed.mjs stage.mjs junk.mjs shot.mjs zaptest.mjs   for a dev relay
   ops/     margin.mjs                         fuel prices against Cloudflare's rates, weekly in CI
 wrangler.jsonc        the Worker on Cloudflare

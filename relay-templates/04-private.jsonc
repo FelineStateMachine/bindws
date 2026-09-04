@@ -1,0 +1,21 @@
+// Haven's private relay: drafts, ecash, app data, anything the owner wants
+// nowhere else. Only the owner writes and only members read, so a second
+// device or a trusted person can be let in without opening it.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Private",
+    "about": "Only you write, only members read. Drafts, wallets and app data, every kind, kept forever."
+  },
+  "policy": {
+    "writes": "owner",
+    "reads": "members",
+    "directoryPublic": false
+  },
+  "kinds": {
+    "allow": [],
+    "block": []
+  },
+  "retention": []
+}

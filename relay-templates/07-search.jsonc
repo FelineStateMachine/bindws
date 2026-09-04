@@ -1,0 +1,32 @@
+// A search replica, alice-search: a standing pull of the searchable kinds (the
+// full-text index's kinds minus drafts) from a source relay every six hours,
+// readable by all, written only by the owner, so a client can point search at
+// it without the source relay ever being asked.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Search replica",
+    "about": "A read-only copy of another relay's notes, threads, comments, highlights, articles and wiki pages, refreshed every six hours. Anyone reads.",
+    "source": "required",
+    "every": 6
+  },
+  "policy": {
+    "writes": "owner",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [
+      0,
+      1,
+      11,
+      1111,
+      9802,
+      30023,
+      30818
+    ],
+    "block": []
+  },
+  "retention": []
+}

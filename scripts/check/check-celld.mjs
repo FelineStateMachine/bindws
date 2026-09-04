@@ -4,32 +4,8 @@
 // accepts. Runs as part of `npm run typecheck`, so a change to one file that
 // forgets the other fails the build instead of quietly dropping the host.
 import { readFileSync } from "node:fs";
+import { stripComments } from "./jsonc.mjs";
 
-// stripComments removes // and /* */ comments outside strings, and the
-// trailing commas JSONC allows, so JSON.parse takes what wrangler takes.
-function stripComments(text) {
-  let out = "";
-  let inString = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      out += c;
-      if (c === "\\") out += text[++i];
-      else if (c === '"') inString = false;
-    } else if (c === '"') {
-      inString = true;
-      out += c;
-    } else if (c === "/" && text[i + 1] === "/") {
-      while (i < text.length && text[i] !== "\n") i++;
-      out += "\n";
-    } else if (c === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      if (end === -1) throw new Error("unterminated comment");
-      i = end + 1;
-    } else out += c;
-  }
-  return out.replace(/,(\s*[}\]])/g, "$1");
-}
 const load = (path) => JSON.parse(stripComments(readFileSync(new URL("../../" + path, import.meta.url), "utf8")));
 
 const cf = load("wrangler.jsonc");

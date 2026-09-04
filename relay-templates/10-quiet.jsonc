@@ -1,0 +1,32 @@
+// A quiet name: every feature that reads the whole store, writes an index,
+// opens a door or tells the world is off, so the relay costs what its events
+// cost and shows nothing but its page. Switch features back on one at a time
+// as they earn their keep.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Quiet",
+    "about": "A small private relay with nothing that costs or announces. Members write and read; search, sync, counts, the discovery record, names, files, pages and signer traffic are off."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "members",
+    "directoryPublic": false,
+    "features": {
+      "search": "off",
+      "sync": false,
+      "count": false,
+      "discovery": false,
+      "names": false,
+      "files": false,
+      "pages": false,
+      "signer": false
+    }
+  },
+  "kinds": {
+    "allow": [],
+    "block": []
+  },
+  "retention": []
+}

@@ -1,0 +1,26 @@
+// An articles name: long-form only, with the profiles that render the bylines.
+// Pulls from a source when one is given, otherwise the owner publishes here
+// directly.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Articles",
+    "about": "Long-form articles and the profiles behind them, nothing else. Only you write, anyone reads. Give a source relay to mirror its articles daily.",
+    "source": "optional",
+    "every": 24
+  },
+  "policy": {
+    "writes": "owner",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [
+      0,
+      30023
+    ],
+    "block": []
+  },
+  "retention": []
+}

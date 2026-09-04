@@ -1,0 +1,19 @@
+// The rules a fresh claim starts with.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Default",
+    "about": "Anyone writes, anyone reads, every kind, kept forever. The rules a fresh claim starts with."
+  },
+  "policy": {
+    "writes": "open",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [],
+    "block": []
+  },
+  "retention": []
+}

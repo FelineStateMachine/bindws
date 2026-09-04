@@ -1,0 +1,25 @@
+// A Blossom-only name, alice-media: the files live here, the notes do not.
+// Members write, so their uploads pass the upload gate, but the only events
+// they may post are profiles and Blossom server lists, so the name stays a
+// media host and nothing else.
+{
+  "$schema": "../relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Media",
+    "about": "A media host. Members upload files; the only events accepted are profiles and Blossom server lists. Anyone reads."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "open",
+    "directoryPublic": true
+  },
+  "kinds": {
+    "allow": [
+      0,
+      10063
+    ],
+    "block": []
+  },
+  "retention": []
+}
