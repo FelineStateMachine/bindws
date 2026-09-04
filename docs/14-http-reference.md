@@ -34,6 +34,47 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 
 A door that belongs to a feature the owner switched off (Relay configuration, Rules) answers 404: names, files (Blossom and NIP-96), pages and the feed. `supported_nips` drops the numbers of features that are off.
 
+## NIP-5A sites
+
+Site hostnames are `https://<npub>.<domain>`,
+`https://<pubkeyB36><dTag>.<domain>` and
+`https://v<snapshotIdB36>.<domain>`. The label is resolved to the relay that
+holds the manifest, and the request reaches only the site door. Site hosting
+follows the `sites` feature and the relay's read rule.
+
+| Path | Method | Auth | Answers | Status |
+|---|---|---|---|---|
+| `/` or a site path | GET, HEAD | the read rule | the manifest's file; directory paths select `index.html` | 200; 304 with a matching ETag; 401/403 by the read rule; 404 missing manifest, path or blob |
+| `/` or a site path | other methods or websocket upgrade | none | method error | 405 |
+| `/.well-known/nsite/auth` | GET | none, or NIP-98 when continuing an API session | NIP-07 sign-in HTML with a five-minute challenge | 401; 429 too many outstanding challenges |
+| `/.well-known/nsite/auth` | POST | exact NIP-98 for this URL, method and body; body contains the signed kind 22242 challenge response | sets the seven-day `__Host-nsite` cookie | 204; 401 invalid or expired proof; 403 read rule; 413 body over 32 KiB |
+
+Site responses include `Content-Type`, `Content-Length` when supplied by the
+source, an ETag equal to the file hash, `X-Content-Type-Options: nosniff`, and
+a cache policy based on the read rule. A missing path uses `/404.html` when
+the manifest contains it; a missing manifest, unavailable file, or failed
+hash check returns a plain 404. On a local cache miss the door may proxy the
+file from up to ten manifest servers followed by up to ten author kind 10063
+servers, subject to a cap of `min(maxBlobMB, 32 MiB)`. Only public HTTPS URLs
+and checked redirects are used, and caller credentials are not forwarded.
+
+The sign-in cookie is Secure, HttpOnly and SameSite=Lax. The site door checks
+it against the current read rule on every request. A caller can use exact
+NIP-98 directly instead of a cookie.
+
+## Custom domains
+
+These NIP-86 methods are owner-only and use the relay's normal NIP-98 RPC
+endpoint. The optional site label uses the same root, named-site and snapshot
+grammar as the hostname forms above. An omitted or empty label targets the
+relay itself. `listdomains` includes the current `site` field.
+
+| Method | Parameters | Answers | Status |
+|---|---|---|---|
+| `adddomain` | `host`, optional `site` label | creates the custom hostname and maps it to the relay or selected site | 200; 400 invalid or duplicate; 403; 502 Cloudflare failure |
+| `setdomainsite` | `host`, optional `site` label | changes an existing hostname's destination | 200; 400 invalid host or site; 403 |
+| `listdomains` | none | custom host records, including `site` when selected | 200; 403 |
+
 ## Bridge
 
 Signed with NIP-98 over the exact URL, method and body. Same gates as a socket: the signer's bans, the read rule and the write rules apply, and the address is rate limited at four times the per-connection allowance.

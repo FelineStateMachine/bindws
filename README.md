@@ -53,6 +53,10 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console, the templates.
 - [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
 
+### Draft NIPs
+
+- [NIP-5A static websites](docs/20-nip-5a-static-websites.md): publish and serve static sites from signed Nostr manifests.
+
 ## Quick start
 
 ```

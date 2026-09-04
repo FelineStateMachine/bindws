@@ -9,7 +9,7 @@ audience: developer
 
 ```
 src/
-  index.ts      worker entry: hostname → object, POST /lease
+  index.ts      worker entry: hostname -> object, POST /lease
   edge.ts       what the edge provides, with and without Cloudflare: the client's address, the lease limit, the hostname map
   names.ts      valid names, reserved names, lease names
   pull.ts       copy another relay in: NIP-77 as the initiator, one round per connection
@@ -32,6 +32,9 @@ src/
   dumps.ts      scheduled JSONL dumps to R2
   notify.ts     NIP-17 messages from the relay to its owner
   pages.ts      notes and articles as pages, the Atom feed
+  sites.ts      NIP-5A manifest validation, label parsing and site serving
+  site-mirror.ts proxy and alarm-driven copies of missing site blobs
+  site-auth.ts  NIP-07 challenge and relay-signed site cookie
   card.ts       the status card, signed and as SVG
   qr.ts         a QR encoder for the card and the console
   fuel.ts       meters, prices, receipts, LNURL
@@ -107,6 +110,12 @@ Most NIPs land as their own module, wired in with one import and one row in `rou
 | 86 methods | `manage.ts` with `roles.ts` | the RPC route |
 | 96 files | `nip96.ts` over `blossom.ts` | one row in `routes.ts` |
 | 11 extras | `settings.ts` fields, `nip11.ts` | the NIP-11 row in `routes.ts` |
+
+A draft NIP implemented ahead of upstream also gets a `docs/20-nip-<name>.md`
+file. Record the upstream commit and date it tracks, its user-facing usage,
+the relay-specific additions and limits, and what to watch upstream. Draft
+NIPs remain out of `supported_nips` unless the NIP explicitly defines relay
+advertising for them.
 
 A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` in `nip11.ts` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a file named after the NIP in `test/conformance` so the behavior is checked from outside, and a Durable Object test in `test/object`, named after the module it exercises; a NIP number names a test file only where the feature has no other name (`nip05`, `nip11`, `nip66`).
 
