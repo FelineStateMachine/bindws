@@ -4,6 +4,9 @@
 import { bytesToHex } from "./negentropy.ts";
 import { page, escapeHTML } from "./ui.ts";
 import type { Settings } from "./settings.ts";
+import type { Relay } from "./relay.ts";
+import { verifyNIP98 } from "./auth.ts";
+import { now } from "./event.ts";
 
 export type Invite = {
   code: string;
@@ -133,4 +136,27 @@ p.lead { margin-top: 1.2rem; }
   <footer class="pg"><p>a bind.ws relay</p><a href="https://github.com/FelineStateMachine/bindws">source</a></footer>
 </main>`;
   return page("join " + relayName, body, css);
+}
+
+// claimInviteRequest joins the NIP-98 signer through an invite code. It is
+// open to non-members by design; that is what an invite is for.
+export async function claimInviteRequest(relay: Relay, req: Request): Promise<Response> {
+  const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
+  const body = await req.text();
+  const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, body);
+  if (typeof auth === "string") return json({ error: auth }, 401);
+  let code = "";
+  try {
+    code = String((JSON.parse(body) as { code?: unknown }).code ?? "");
+  } catch {
+    return json({ error: "invalid: body is not JSON" }, 400);
+  }
+  if (relay.settings.policy.owner === "") return json({ error: "invite_invalid" }, 403);
+  if (relay.settings.isBanned(auth.pubkey)) return json({ error: "blocked: this pubkey is banned from this relay" }, 403);
+  if (relay.settings.isAllowed(auth.pubkey)) return json({ status: "already_member", role: relay.settings.isOwner(auth.pubkey) ? "owner" : "member" });
+  const r = claimInvite(relay.sql, code, now());
+  if (r !== "ok") return json({ error: r }, 403);
+  relay.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8), invitedBy: inviteCreator(relay.sql, code) }, now());
+  await relay.publishMembership({ pubkey: auth.pubkey, added: true });
+  return json({ status: "joined", role: "member" });
 }

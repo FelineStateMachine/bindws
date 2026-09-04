@@ -25,7 +25,7 @@ import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
 import { importBytes, importUpload } from "./imports.ts";
 import { DIGEST_DAYS, digestText } from "./notify.ts";
 import { claimFromProfile, nip05Document } from "./nip05.ts";
-import { checkInvite, claimInvite, inviteCreator, invitePage, termsPage } from "./invites.ts";
+import { checkInvite, claimInviteRequest, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98, whoAsks } from "./auth.ts";
 import { FAVICON_SVG } from "./ui.ts";
 import type { PullFilter, PullJob, PullResult } from "./pull.ts";
@@ -824,29 +824,6 @@ export class Relay extends DurableObject<Env> {
     if (cur === null || cur > latest * 1000) await this.ctx.storage.setAlarm(latest * 1000);
   }
 
-  // claimInviteRequest joins the NIP-98 signer through an invite code. It is
-  // open to non-members by design; that is what an invite is for.
-  private async claimInviteRequest(req: Request): Promise<Response> {
-    const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
-    const body = await req.text();
-    const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, body);
-    if (typeof auth === "string") return json({ error: auth }, 401);
-    let code = "";
-    try {
-      code = String((JSON.parse(body) as { code?: unknown }).code ?? "");
-    } catch {
-      return json({ error: "invalid: body is not JSON" }, 400);
-    }
-    if (this.settings.policy.owner === "") return json({ error: "invite_invalid" }, 403);
-    if (this.settings.isBanned(auth.pubkey)) return json({ error: "blocked: this pubkey is banned from this relay" }, 403);
-    if (this.settings.isAllowed(auth.pubkey)) return json({ status: "already_member", role: this.settings.isOwner(auth.pubkey) ? "owner" : "member" });
-    const r = claimInvite(this.sql, code, now());
-    if (r !== "ok") return json({ error: r }, 403);
-    this.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8), invitedBy: inviteCreator(this.sql, code) }, now());
-    await this.publishMembership({ pubkey: auth.pubkey, added: true });
-    return json({ status: "joined", role: "member" });
-  }
-
   async fetch(req: Request): Promise<Response> {
     this.touch();
     const name = req.headers.get("x-relay-name");
@@ -900,7 +877,7 @@ export class Relay extends DurableObject<Env> {
     if (url.pathname === "/api/join-policy" && req.method === "GET") {
       return Response.json({ terms: this.settings.policy.joinTerms }, { headers: { "access-control-allow-origin": "*" } });
     }
-    if (url.pathname === "/api/invites/claim" && req.method === "POST") return this.claimInviteRequest(req);
+    if (url.pathname === "/api/invites/claim" && req.method === "POST") return claimInviteRequest(this, req);
     if (url.pathname.startsWith("/dumps/") && req.method === "GET") return dumpDownload(this, req);
     if (url.pathname.startsWith("/view/") && req.method === "GET") return serveView(this, req, verifyNIP98);
     if (url.pathname === "/import" && req.method === "PUT") return importUpload(this, req);
