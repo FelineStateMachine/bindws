@@ -68,7 +68,7 @@ export async function remoteSiteBlob(relay: Relay, e: Event, mapping: string[]):
   return null;
 }
 
-// The SQL queue survives a full job list, a failed alarm and hibernation.
+// queueMirrors drains the SQL queue, which survives full jobs and hibernation.
 // Turning mirroring off discards pending work; proxy reads still work.
 export async function queueMirrors(relay: Relay): Promise<void> {
   if (!featureOn(relay.settings.policy, "sites") || !relay.settings.policy.features.sites.mirror) {

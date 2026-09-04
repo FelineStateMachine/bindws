@@ -4,6 +4,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { validate, tagValues, type Event } from "./event.ts";
 import { now } from "./event.ts";
+import { KIND_AUTH } from "./kinds.ts";
 import { page, FONTS } from "./ui.ts";
 import type { Relay } from "./relay.ts";
 
@@ -47,7 +48,7 @@ function authPage(origin: string, action: string, returnUrl: string, nonce: stri
   const js = `const challenge=${jsq(nonce)}, action=${jsq(action)}, returnUrl=${jsq(returnUrl)};
 async function sign(){
  if(!window.nostr){document.querySelector('#msg').textContent='Install a NIP-07 signer first';return}
- const e=await window.nostr.signEvent({kind:22242,created_at:Math.floor(Date.now()/1000),tags:[['relay',${jsq(origin)}],['challenge',challenge]],content:'bind.ws site sign-in'});
+ const e=await window.nostr.signEvent({kind:${KIND_AUTH},created_at:Math.floor(Date.now()/1000),tags:[['relay',${jsq(origin)}],['challenge',challenge]],content:'bind.ws site sign-in'});
  const body=JSON.stringify({event:e}); const p=await window.nostr.signEvent({kind:27235,created_at:Math.floor(Date.now()/1000),tags:[['u',action],['method','POST'],['payload',await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)).then(x=>[...new Uint8Array(x)].map(x=>x.toString(16).padStart(2,'0')).join(''))]],content:''});
  const r=await fetch(action,{method:'POST',headers:{'content-type':'application/json','authorization':'Nostr '+btoa(JSON.stringify(p))},body}); if(r.ok) location.assign(returnUrl); else document.querySelector('#msg').textContent=await r.text(); }
 document.querySelector('button').onclick=()=>sign().catch(e=>document.querySelector('#msg').textContent=String(e));`;
@@ -58,7 +59,7 @@ document.querySelector('button').onclick=()=>sign().catch(e=>document.querySelec
 }
 
 function cookieEvent(relay: AuthRelay, label: string, origin: string, pubkey: string, expires: number): Event {
-  return relay.identity.sign(22242, [["site", label], ["origin", origin], ["pubkey", pubkey], ["expiration", String(expires)], ["purpose", "nsite-cookie"]], "bind.ws site cookie");
+  return relay.identity.sign(KIND_AUTH, [["site", label], ["origin", origin], ["pubkey", pubkey], ["expiration", String(expires)], ["purpose", "nsite-cookie"]], "bind.ws site cookie");
 }
 
 async function challengePage(relay: AuthRelay, req: Request, label: string): Promise<Response> {
@@ -83,7 +84,7 @@ async function challengePage(relay: AuthRelay, req: Request, label: string): Pro
 function readCookie(relay: AuthRelay, value: string, label: string, origin: string): { pubkey: string; expires: number } | null {
   try {
     const e = JSON.parse(unb64(value)) as Event;
-    if (validate(e) || e.kind !== 22242 || e.pubkey !== relay.identity.pubkey) return null;
+    if (validate(e) || e.kind !== KIND_AUTH || e.pubkey !== relay.identity.pubkey) return null;
     if (tagValues(e, "purpose").length !== 1 || tagValues(e, "purpose")[0] !== "nsite-cookie") return null;
     if (tagValues(e, "site")[0] !== label || tagValues(e, "origin")[0] !== origin) return null;
     const pubkey = tagValues(e, "pubkey")[0] ?? "";
@@ -155,7 +156,7 @@ export async function siteIdentity(relay: AuthRelay, req: Request, label: string
   const proof = exactNIP98(req.headers.get("authorization") ?? "", req.url, req.method, rawBody);
   if (typeof proof === "string" || !input || !input.event) return reject(req, "Invalid sign-in proof");
   const e = input.event; const bad = validate(e); const t = now();
-  if (bad || e.kind !== 22242 || Math.abs(t - e.created_at) > 120 || e.pubkey !== proof.pubkey || tagValues(e, "challenge").length !== 1 || tagValues(e, "relay").length !== 1) return reject(req, "Invalid sign-in proof");
+  if (bad || e.kind !== KIND_AUTH || Math.abs(t - e.created_at) > 120 || e.pubkey !== proof.pubkey || tagValues(e, "challenge").length !== 1 || tagValues(e, "relay").length !== 1) return reject(req, "Invalid sign-in proof");
   const nonce = tagValues(e, "challenge")[0] ?? "";
   relay.sql.exec(`CREATE TABLE IF NOT EXISTS nsite_auth_challenges (nonce TEXT PRIMARY KEY, label TEXT NOT NULL, origin TEXT NOT NULL, return_url TEXT NOT NULL, expires INTEGER NOT NULL)`);
   const stored = relay.sql.exec<{ label: string; origin: string; return_url: string; expires: number }>(`DELETE FROM nsite_auth_challenges WHERE nonce=? AND expires>? RETURNING label,origin,return_url,expires`, nonce, t).toArray()[0];

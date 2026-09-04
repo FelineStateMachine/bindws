@@ -18,7 +18,7 @@ const HEX = /^[0-9a-f]{64}$/;
 export const SITE_NAME = /^[a-z0-9-]{1,13}(?<!-)$/;
 export type Site = { kind: typeof KIND_SITE; pubkey: string } | { kind: typeof KIND_NAMED_SITE; pubkey: string; d: string } | { kind: typeof KIND_SITE_SNAPSHOT; id: string };
 
-// Fixed width preserves all 32 bytes, including leading zero bytes. The
+// base36 preserves all 32 bytes at a fixed width, including leading zeros. The
 // draft's "no padding" and "always exactly 50" conflict for small integers;
 // the parser and DNS boundary require the latter (see docs/20).
 export function base36(hex: string): string {
@@ -95,11 +95,11 @@ export function manifest(relay: Relay, site: Site): Event | null {
 export const SITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS site_mirror_queue (event_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS site_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, raw TEXT NOT NULL, removed INTEGER NOT NULL);
-CREATE TRIGGER IF NOT EXISTS site_added AFTER INSERT ON events WHEN new.kind IN (15128,35128,5128) BEGIN
+CREATE TRIGGER IF NOT EXISTS site_added AFTER INSERT ON events WHEN new.kind IN (${SITE_KINDS.join(",")}) BEGIN
   INSERT INTO site_outbox(raw,removed) VALUES(new.raw,0);
   INSERT OR IGNORE INTO site_mirror_queue(event_id) VALUES(new.id);
 END;
-CREATE TRIGGER IF NOT EXISTS site_removed AFTER DELETE ON events WHEN old.kind IN (15128,35128,5128) BEGIN
+CREATE TRIGGER IF NOT EXISTS site_removed AFTER DELETE ON events WHEN old.kind IN (${SITE_KINDS.join(",")}) BEGIN
   INSERT INTO site_outbox(raw,removed) VALUES(old.raw,1);
   DELETE FROM site_mirror_queue WHERE event_id=old.id;
 END;
@@ -128,7 +128,7 @@ export async function syncSiteIndex(relay: Relay): Promise<boolean> {
 
 export async function forgetSites(relay: Relay): Promise<void> {
   if (!relay.hosts) return;
-  relay.sql.exec(`INSERT INTO site_outbox(raw,removed) SELECT raw,1 FROM events WHERE kind IN (15128,35128,5128)`);
+  relay.sql.exec(`INSERT INTO site_outbox(raw,removed) SELECT raw,1 FROM events WHERE kind IN (${SITE_KINDS.join(",")})`);
   do { await relay.syncSites(); } while (relay.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length);
 }
 

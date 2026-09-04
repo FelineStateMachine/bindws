@@ -5,6 +5,7 @@
 import type { Relay } from "./relay.ts";
 import { now } from "./event.ts";
 import { SUCCESSION_WARN_DAYS, featureOn, FEATURE_NAMES, type Feature } from "./settings.ts";
+import { SITE_KINDS } from "./sites.ts";
 import { nip11Views } from "./views.ts";
 
 // The less obvious numbers: 43 is added once the relay has an identity; 62
@@ -67,7 +68,7 @@ export function nip11(relay: Relay, host: string) {
   if (relay.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
   if (featureOn(p, "sites")) doc.nsites = {
     host: relay.domain,
-    kinds: [15128, 35128, 5128],
+    kinds: SITE_KINDS,
     root: "https://<npub>." + relay.domain,
     named: "https://<pubkeyB36><dTag>." + relay.domain,
     snapshot: "https://v<snapshotIdB36>." + relay.domain,
