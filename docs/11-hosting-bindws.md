@@ -5,7 +5,7 @@ audience: developer
 
 # Hosting bind.ws
 
-How to run your own copy on your own domain. You need a Cloudflare account with Workers Paid, a zone for the domain and `wrangler` logged in.
+How to run your own copy on your own domain. You need a Cloudflare account with Workers Paid, a zone for the domain and `wrangler` logged in. To run it on your own machines instead, with no Cloudflare in the path, see [Hosting without Cloudflare](16-hosting-without-cloudflare.md).
 
 ## Configure
 

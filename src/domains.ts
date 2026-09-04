@@ -134,13 +134,14 @@ function save(relay: Relay, hosts: CustomHost[]) {
 // remembers it. KV is written only after Cloudflare accepted the hostname.
 export async function addDomain(relay: Relay, raw: string): Promise<DomainView | string> {
   const api = relay.hostnames;
-  if (!api) return UNSUPPORTED;
+  const kv = relay.hosts;
+  if (!api || !kv) return UNSUPPORTED;
   const c = checkHostname(raw, relay.domain);
   if ("error" in c) return c.error;
   const hosts = stored(relay);
   if (hosts.some((h) => h.host === c.host)) return "duplicate: that hostname is already on this relay";
   if (hosts.length >= MAX_CUSTOM_HOSTS) return `restricted: at most ${MAX_CUSTOM_HOSTS} custom domains per relay`;
-  const taken = await relay.hosts.get(c.host);
+  const taken = await kv.get(c.host);
   if (taken && taken !== relay.slug) return "restricted: that hostname points at another relay";
   let state: HostnameState;
   try {
@@ -148,7 +149,7 @@ export async function addDomain(relay: Relay, raw: string): Promise<DomainView |
   } catch (err) {
     return "error: " + (err instanceof Error ? err.message : String(err));
   }
-  await relay.hosts.put(c.host, relay.slug);
+  await kv.put(c.host, relay.slug);
   const h: CustomHost = { host: c.host, id: state.id, at: Math.floor(Date.now() / 1000), status: state.status, sslStatus: state.sslStatus };
   save(relay, [...hosts, h]);
   return view(h, relay.cnameTarget, state);
@@ -187,7 +188,8 @@ export async function removeDomain(relay: Relay, raw: string): Promise<string> {
   } catch (err) {
     return "error: " + (err instanceof Error ? err.message : String(err));
   }
-  if ((await relay.hosts.get(host)) === relay.slug) await relay.hosts.delete(host);
+  const kv = relay.hosts;
+  if (kv && (await kv.get(host)) === relay.slug) await kv.delete(host);
   save(relay, hosts.filter((x) => x.host !== host));
   return "";
 }
@@ -206,7 +208,8 @@ export async function forgetDomains(relay: Relay): Promise<void> {
       console.log(`custom hostname ${h.host} not removed at Cloudflare: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      if ((await relay.hosts.get(h.host)) === relay.slug) await relay.hosts.delete(h.host);
+      const kv = relay.hosts;
+      if (kv && (await kv.get(h.host)) === relay.slug) await kv.delete(h.host);
     } catch (err) {
       console.log(`custom hostname ${h.host} not removed from KV: ${err instanceof Error ? err.message : String(err)}`);
     }

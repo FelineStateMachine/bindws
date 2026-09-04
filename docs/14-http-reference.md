@@ -16,6 +16,7 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 | `/` | GET | none | the landing page | 200 |
 | `/lease` | POST | NIP-98 optional | `{ name, url, console, expires_at, days, holder?, claim }`; a signature reserves the claim for that key | 201; 401 bad signature; 429 rate limited, five a minute per address, 60 overall; 503 no free name |
 | `/favicon.svg` | GET | none | the icon | 200 |
+| `/.well-known/bindws/hostname?domain=<host>` | GET, on any host | none | whether the hostname is one of ours: the apex, a valid name under it, or a mapped custom hostname; no body. For a proxy issuing certificates on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)) | 200 ours; 404 not |
 
 ## Relay page and information
 

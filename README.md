@@ -26,7 +26,7 @@ That answers with a relay at a memorable name, open to anyone for 14 days. Claim
 
 <p align="center"><img src="docs/img/console.png" alt="The console's People tab" width="720"></p>
 
-It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it and R2 beside it.
+It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it and R2 beside it. The same code runs without Cloudflare, on [celld](https://celld.dev) with an S3 bucket of your own; that path is checked in CI and [documented](docs/16-hosting-without-cloudflare.md).
 
 ## Docs
 
@@ -48,6 +48,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 
 - [Architecture](docs/10-architecture.md): routing, the object, storage, alarm, jobs, identity, groups.
 - [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
+- [Hosting without Cloudflare](docs/16-hosting-without-cloudflare.md): the same Worker on celld, with your own bucket and proxy, and what "supported" promises.
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console.
 - [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
 

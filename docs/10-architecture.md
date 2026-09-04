@@ -18,7 +18,7 @@ client ──wss/https──▶ worker ──host→object──▶ durable obje
 
 ## Routing and states
 
-`src/index.ts` maps the hostname to a name. `<name>.<domain>` goes to the object `getByName(name)`. The apex serves the landing page and `POST /lease`. Reserved names and invalid names redirect to the apex. Any other hostname is looked up in the `HOSTS` KV namespace, which maps a custom hostname to a relay name, with a one-minute cache per isolate; a miss is cached too. In `wrangler dev`, `<name>.localhost` plays the same role. The worker stamps every forwarded request with `x-relay-name` and with `x-relay-ip` from Cloudflare's `cf-connecting-ip`, overwriting anything a client sent.
+`src/index.ts` maps the hostname to a name. `<name>.<domain>` goes to the object `getByName(name)`. The apex serves the landing page and `POST /lease`. Reserved names and invalid names redirect to the apex. Any other hostname is looked up in the `HOSTS` KV namespace, which maps a custom hostname to a relay name, with a one-minute cache per isolate; a miss is cached too. In `wrangler dev`, `<name>.localhost` plays the same role. The worker stamps every forwarded request with `x-relay-name` and with `x-relay-ip`, overwriting anything a client sent: from Cloudflare's `cf-connecting-ip`, or, on a host without Cloudflare, from the header `CLIENT_IP_HEADER` names, which the operator's proxy sets. What the edge provides, and what stands in when there are no Cloudflare bindings, is `edge.ts`; the whole Worker also runs on celld, [Hosting without Cloudflare](16-hosting-without-cloudflare.md).
 
 A relay is in one of three states:
 

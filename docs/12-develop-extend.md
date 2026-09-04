@@ -10,6 +10,7 @@ audience: developer
 ```
 src/
   index.ts      worker entry: hostname → object, POST /lease
+  edge.ts       what the edge provides, with and without Cloudflare: the client's address, the lease limit, the hostname map
   names.ts      valid names, reserved names, lease names
   pull.ts       copy another relay in: NIP-77 as the initiator, one round per connection
   jobs.ts       the alarm's job list: pulls, backfills, rebroadcasts, once or standing
@@ -43,10 +44,13 @@ src/
   ui.ts         the shared look
 test/
   *.test.ts     Durable Object tests in workerd, one file per feature
-  conformance/                               black-box suite for any relay URL
+  conformance/                               black-box suite for any relay URL, files included
 scripts/
   dev-signer.mjs seed.mjs junk.mjs zaptest.mjs shot.mjs
   build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
+  check-celld.mjs                    wrangler.celld.jsonc stays in step with wrangler.jsonc
+wrangler.jsonc        the Worker on Cloudflare
+wrangler.celld.jsonc  the same Worker on celld (docs/16)
 ```
 
 ## Run the tests
@@ -63,7 +67,9 @@ The conformance suite needs a claimed relay. Against a dev server:
 CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 ```
 
-CI runs typecheck and the object tests on every push. Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
+CI runs typecheck and the object tests on every push, and, in a second job, the conformance suite against the Worker on `celld dev` ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
+
+The entry module `src/index.ts` exports the handler and the object and nothing else: workerd refuses an exported constant there, and the test pool does not, so a helper that tests import lives in its own module.
 
 ## Add a management method
 

@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "test:conformance": "vitest run --config vitest.conformance.config.ts",
-    "typecheck": "tsc --noEmit && node scripts/build-signer.mjs --check && node scripts/check-console.mjs",
+    "typecheck": "tsc --noEmit && node scripts/build-signer.mjs --check && node scripts/check-console.mjs && node scripts/check-celld.mjs",
     "build:signer": "node scripts/build-signer.mjs"
   },
   "dependencies": {

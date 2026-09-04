@@ -1,0 +1,43 @@
+{
+  // The same Worker on celld (https://celld.dev), for hosting without
+  // Cloudflare: `celld dev wrangler.celld.jsonc` locally, `celld deploy
+  // wrangler.celld.jsonc --bucket ...` to a fleet. celld accepts a subset of
+  // the Wrangler keys and stops on any other, so this file has no routes,
+  // rate limits, observability or environments. `node scripts/check-celld.mjs`
+  // keeps it in step with wrangler.jsonc. See docs/16-hosting-without-cloudflare.md.
+  "name": "bindws-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "DOMAIN": "bind.ws",
+    "DEV_RELAY": "dev",
+    // The header a trusted proxy puts the client's address in: x-forwarded-for
+    // for Caddy, x-real-ip for nginx. Empty means no address is known, so
+    // per-address limits are off. Set it only behind a proxy that overwrites
+    // the header on every request.
+    "CLIENT_IP_HEADER": "",
+    // Cloudflare for SaaS is not available here; custom hostnames are the
+    // proxy's job (see the doc). These stay empty.
+    "ZONE_ID": "",
+    "CNAME_TARGET": "",
+    "LIGHTNING_ADDRESS": "",
+    "SERVICE_PUBKEY": "",
+    "FREE_EVENTS_MB": "100",
+    "FREE_MEDIA_MB": "1024",
+    "FREE_ACTIVE_HOURS": "100",
+    "FREE_ROWS_WRITTEN": "250000",
+    "SATS_PER_GB_MONTH_EVENTS": "400",
+    "SATS_PER_GB_MONTH_MEDIA": "30",
+    "SATS_PER_ACTIVE_HOUR": "11",
+    "SATS_PER_MILLION_ROWS": "2000"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
+  },
+  // Media lives in the fleet bucket under r2/bindws-media/.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "bindws-media" }],
+  // Custom hostname to relay name; filled by hand with `celld kv put HOSTS`.
+  "kv_namespaces": [{ "binding": "HOSTS", "id": "hosts" }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }]
+}

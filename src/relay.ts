@@ -46,11 +46,16 @@ export interface Env {
   DOMAIN: string;
   DEV_RELAY: string;
   LEASE_DAYS?: string; // how long a temporary relay lives; 14 by default
-  LEASE_LIMIT_IP: RateLimit; // leases per address per minute
-  LEASE_LIMIT_ALL: RateLimit; // leases per minute, everyone together
+  // Cloudflare's rate limit bindings; without them (celld) edge.ts keeps
+  // token buckets in memory instead.
+  LEASE_LIMIT_IP?: RateLimit; // leases per address per minute
+  LEASE_LIMIT_ALL?: RateLimit; // leases per minute, everyone together
+  // The header the client's address arrives in; cf-connecting-ip if unset,
+  // no address at all if empty (edge.ts, clientIP).
+  CLIENT_IP_HEADER?: string;
   // Custom domains (see domains.ts): hostname to relay name, and the
   // Cloudflare for SaaS credentials. Without the token the feature is off.
-  HOSTS: KVNamespace;
+  HOSTS?: KVNamespace;
   CF_API_TOKEN?: string;
   ZONE_ID?: string;
   CNAME_TARGET?: string; // what owners point their CNAME at; customers.<DOMAIN> if unset
@@ -171,7 +176,7 @@ export class Relay extends DurableObject<Env> {
     this.fuel = new Fuel(ctx.storage.sql, fuelConfig(env as unknown as Record<string, unknown>));
     this.identity = new Identity(ctx.storage);
     this.audit = new Audit(ctx.storage.sql, () => this.slug);
-    this.hostnames = env.CF_API_TOKEN && env.ZONE_ID ? new Hostnames(env.CF_API_TOKEN, env.ZONE_ID, (u, i) => this.fetcher(u, i)) : null;
+    this.hostnames = env.CF_API_TOKEN && env.ZONE_ID && env.HOSTS ? new Hostnames(env.CF_API_TOKEN, env.ZONE_ID, (u, i) => this.fetcher(u, i)) : null;
     ctx.blockConcurrencyWhile(async () => {
       this.store.init();
       this.settings.load();
@@ -196,8 +201,9 @@ export class Relay extends DurableObject<Env> {
     return this.env.DOMAIN;
   }
 
-  // hosts is the custom domain map the worker routes by.
-  get hosts(): KVNamespace {
+  // hosts is the custom domain map the worker routes by; absent on a host
+  // without the namespace, where hostnames is null too.
+  get hosts(): KVNamespace | undefined {
     return this.env.HOSTS;
   }
 

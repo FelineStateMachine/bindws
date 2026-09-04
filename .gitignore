@@ -4,3 +4,4 @@ node_modules
 .service-key
 .playwright-cli
 .crush
+.celld

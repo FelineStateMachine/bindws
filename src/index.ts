@@ -7,28 +7,12 @@ import { FAVICON_SVG } from "./ui.ts";
 import { verifyNIP98 } from "./manage.ts";
 import { leaseNames, leaseDays, validName } from "./names.ts";
 import { now } from "./event.ts";
+import { clientIP, customHost, hostnameKnown, leaseAllowed } from "./edge.ts";
 
+// The entry module exports the handler and the object only: workerd
+// refuses any other kind of export here.
 export { Relay };
 export { NAME_RE, RESERVED, validName } from "./names.ts";
-
-// Custom domains map to relay names through KV. Looked up once a minute per
-// hostname per isolate; a miss is cached too, so an unknown host does not
-// cost a read on every request.
-const HOST_TTL_MS = 60_000;
-const hostCache = new Map<string, { name: string | null; at: number }>();
-async function customHost(env: Env, host: string): Promise<string | null> {
-  const hit = hostCache.get(host);
-  if (hit && Date.now() - hit.at < HOST_TTL_MS) return hit.name;
-  let name: string | null = null;
-  try {
-    name = env.HOSTS ? await env.HOSTS.get(host) : null;
-  } catch {
-    name = null;
-  }
-  if (hostCache.size > 10_000) hostCache.clear();
-  hostCache.set(host, { name, at: Date.now() });
-  return name;
-}
 
 // lease hands out a temporary relay at a memorable name: open to everyone
 // for a while, wiped after unless claimed. Anyone may ask, no key needed;
@@ -39,9 +23,7 @@ async function lease(req: Request, env: Env, apex: URL): Promise<Response> {
   const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: cors });
   // Each lease is an object with storage, so the door is narrow: a few per
   // address per minute, and a ceiling for everyone together.
-  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
-  const [perIP, all] = await Promise.all([env.LEASE_LIMIT_IP.limit({ key: ip }), env.LEASE_LIMIT_ALL.limit({ key: "all" })]);
-  if (!perIP.success || !all.success) return json({ error: "rate-limited: too many leases, try again in a minute" }, 429);
+  if (!(await leaseAllowed(env, clientIP(req, env)))) return json({ error: "rate-limited: too many leases, try again in a minute" }, 429);
   const body = await req.text();
   let holder = "";
   const authz = req.headers.get("authorization");
@@ -77,6 +59,12 @@ export default {
     const url = new URL(req.url);
     const host = url.hostname.toLowerCase();
     const domain = env.DOMAIN.toLowerCase();
+    // A proxy issuing certificates on demand asks whether a hostname is
+    // ours before it asks the certificate authority (docs/16). Any host,
+    // no body: 200 or 404.
+    if (url.pathname === "/.well-known/bindws/hostname" && req.method === "GET") {
+      return new Response(null, { status: (await hostnameKnown(env, url.searchParams.get("domain") ?? "")) ? 200 : 404 });
+    }
     let name: string | null;
     if (host === domain || host === "www." + domain || host === domain + ".localhost") name = null; // apex (<domain>.localhost in wrangler dev)
     else if (host.endsWith("." + domain)) name = host.slice(0, -(domain.length + 1));
@@ -97,9 +85,9 @@ export default {
     const stub = env.RELAY.getByName(name);
     const headers = new Headers(req.headers);
     headers.set("x-relay-name", name);
-    // The client's address, as Cloudflare saw it. Set here, never read from
+    // The client's address, as the edge saw it. Set here, never read from
     // the client's own headers, so nothing a caller sends can spoof it.
-    headers.set("x-relay-ip", req.headers.get("cf-connecting-ip") ?? "unknown");
+    headers.set("x-relay-ip", clientIP(req, env));
     return stub.fetch(new Request(req, { headers }));
   },
 } satisfies ExportedHandler<Env>;
