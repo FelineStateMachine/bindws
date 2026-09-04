@@ -88,12 +88,15 @@ export function manifest(relay: Relay, site: Site): Event | null {
 }
 
 export const SITE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS site_mirror_queue (event_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS site_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, raw TEXT NOT NULL, removed INTEGER NOT NULL);
 CREATE TRIGGER IF NOT EXISTS site_added AFTER INSERT ON events WHEN new.kind IN (15128,35128,5128) BEGIN
   INSERT INTO site_outbox(raw,removed) VALUES(new.raw,0);
+  INSERT OR IGNORE INTO site_mirror_queue(event_id) VALUES(new.id);
 END;
 CREATE TRIGGER IF NOT EXISTS site_removed AFTER DELETE ON events WHEN old.kind IN (15128,35128,5128) BEGIN
   INSERT INTO site_outbox(raw,removed) VALUES(old.raw,1);
+  DELETE FROM site_mirror_queue WHERE event_id=old.id;
 END;
 `;
 
@@ -127,6 +130,7 @@ export async function forgetSites(relay: Relay): Promise<void> {
 // negotiation or management API is reachable here, even at the same path.
 import { whoAsks, denyStatus } from "./auth.ts";
 import { featureOn } from "./settings.ts";
+import { remoteSiteBlob } from "./site-mirror.ts";
 import { blobBlocked, type Blob } from "./blossom.ts";
 
 const SITE_TYPES: Record<string, string> = {
@@ -163,31 +167,49 @@ export async function serveSite(relay: Relay, req: Request, label: string): Prom
   if (!mapping || blobBlocked(relay, mapping[2])) return siteError(req, 404, "Not found");
   const sha = mapping[2];
   const blob = relay.sql.exec<Blob>(`SELECT * FROM blobs WHERE sha256=?`, sha).toArray()[0];
-  if (!blob) return siteError(req, 404, "Not found");
-  const obj = await relay.media.get(`${relay.slug}/${sha}`);
-  if (!obj) return siteError(req, 404, "Not found");
-  // Verify in a streaming pass, then serve the same immutable R2 version.
-  // This avoids buffering even a relay's largest allowed file in memory.
-  const hash = sha256.create();
-  const reader = obj.body.getReader();
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    hash.update(value);
+  const obj = blob ? await relay.media.get(`${relay.slug}/${sha}`) : null;
+  let remote: Awaited<ReturnType<typeof remoteSiteBlob>> = null;
+  if (obj) {
+    // Verify in a streaming pass, then serve the same immutable R2 version.
+    const hash = sha256.create();
+    const reader = obj.body.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      hash.update(value);
+    }
+    if (bytesToHex(hash.digest()) !== sha) return siteError(req, 404, "Not found");
+  } else {
+    remote = await remoteSiteBlob(relay, e, mapping);
+    if (!remote) return siteError(req, 404, "Not found");
   }
-  if (bytesToHex(hash.digest()) !== sha) return siteError(req, 404, "Not found");
+  // Every asynchronous fetch is followed by the live policy and manifest
+  // check, including HEAD and conditional responses.
+  if (!featureOn(relay.settings.policy, "sites") || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
   const headers = new Headers({
-    "content-type": blob.type || siteType(mapping[1]), "content-length": String(obj.size), etag: `"${sha}"`,
+    etag: `"${sha}"`,
     // Revalidate every request so policy changes and expiry cannot be
     // bypassed by a fresh cache entry, including on snapshot URLs.
     "cache-control": relay.settings.policy.reads === "open" ? "public, no-cache, must-revalidate" : "private, no-store",
     "x-content-type-options": "nosniff", "referrer-policy": "same-origin",
   });
+  if (obj && blob) {
+    headers.set("content-type", blob.type || siteType(mapping[1]));
+    headers.set("content-length", String(obj.size));
+  } else if (remote) {
+    if (remote.type) headers.set("content-type", remote.type);
+    if (remote.length !== null) headers.set("content-length", remote.length);
+  }
   if (status === 200 && req.headers.get("if-none-match")?.split(",").some((v) => v.trim().replace(/^W\//, "") === headers.get("etag") || v.trim() === "*")) {
     headers.delete("content-length");
     return new Response(null, { status: 304, headers });
   }
   if (req.method === "HEAD") return new Response(null, { status, headers });
+  if (remote) {
+    relay.meterBytes(0, remote.bytes.length);
+    return new Response(remote.bytes, { status, headers });
+  }
+  if (!obj) return siteError(req, 404, "Not found");
   const verified = await relay.media.get(`${relay.slug}/${sha}`, { onlyIf: { etagMatches: obj.etag } });
   if (!verified || !("body" in verified) || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
   relay.meterBytes(0, verified.size);

@@ -113,7 +113,7 @@ export function blobBytes(sql: SqlStorage): number {
 // fetchOrigin gets a blob for mirroring. Our own relays are reached through
 // their object, which also works in wrangler dev and tests; anything else is
 // fetched over https. Returns a Response or a reason.
-async function fetchOrigin(relay: Relay, raw: string): Promise<Response | string> {
+export async function fetchOrigin(relay: Relay, raw: string, init?: RequestInit): Promise<Response | string> {
   let u: URL;
   try {
     u = new URL(raw);
@@ -124,14 +124,14 @@ async function fetchOrigin(relay: Relay, raw: string): Promise<Response | string
   try {
     if (local) return await relay.relays.getByName(local).fetch(u.href, { headers: { "x-relay-name": local } });
     if (u.protocol !== "https:") return "invalid: only https urls can be mirrored";
-    return await fetch(u.href, { redirect: "follow" });
+    return await relay.fetcher(u.href, { redirect: "follow", ...init });
   } catch (err) {
     return "error: could not fetch the origin: " + (err instanceof Error ? err.message : String(err));
   }
 }
 
 // readCapped collects a body, giving up as soon as it passes max bytes.
-async function readCapped(body: ReadableStream<Uint8Array> | null, max: number): Promise<Uint8Array | "too big"> {
+export async function readCapped(body: ReadableStream<Uint8Array> | null, max: number): Promise<Uint8Array | "too big"> {
   if (!body) return new Uint8Array();
   const parts: Uint8Array[] = [];
   let total = 0;

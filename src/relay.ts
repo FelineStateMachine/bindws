@@ -1,6 +1,7 @@
 // The relay: one Durable Object per name, holding its SQLite database and
 // its live websockets (hibernating while idle). Protocol handling mirrors
 // relay.go; policy is per relay and owner-managed (see manage.ts).
+import { queueMirrors } from "./site-mirror.ts";
 import { syncSiteIndex, forgetSites, serveSite } from "./sites.ts";
 import { DurableObject } from "cloudflare:workers";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -497,7 +498,7 @@ export class Relay extends DurableObject<Env> {
       } catch (err) {
         console.log("site index sync failed: " + String(err));
       }
-      await this.ensureAlarm();
+      await this.ensureAlarm(now() + 1);
     }));
   }
 
@@ -1070,6 +1071,8 @@ export class Relay extends DurableObject<Env> {
       await this.teardown();
       return;
     }
+    await this.syncSites();
+    await queueMirrors(this);
     if (await this.jobsTick()) {
       await this.ctx.storage.setAlarm(Date.now() + 250);
       return;
@@ -1116,6 +1119,7 @@ export class Relay extends DurableObject<Env> {
     }
     // ---- end dumps ----
     let at = t + 86400;
+    if (this.sql.exec(`SELECT 1 FROM site_mirror_queue LIMIT 1`).toArray().length) at = Math.min(at, t + 60);
     if (next > 0 && next < at) at = next;
     const lease = this.settings.policy.lease;
     if (this.settings.isLeased() && lease && lease.until < at) at = lease.until;
