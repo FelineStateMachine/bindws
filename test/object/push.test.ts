@@ -22,38 +22,42 @@ async function trustAndCapture(name: string, capture: (req: Request) => Response
 }
 
 describe("NIP-9a push engine", () => {
-  it("delivers a filtered event with either an id-only or complete payload", async () => {
-    const host = "push-engine.bind.ws";
+  it.each([{ order: "older", offset: -1 }, { order: "newer", offset: 1 }])("delivers both payloads when the id-only registration is $order", async ({ order, offset }) => {
+    const name = "push-engine-" + order;
+    const host = name + ".bind.ws";
+    const registeredAt = now() - 10;
     const owner = generateSecretKey();
     await enable(host, owner);
     const socket = await WS.connect(host);
     await socket.auth(owner, host);
     const seen: { url: string; body: string }[] = [];
-    await trustAndCapture("push-engine", async (req) => { seen.push({ url: req.url, body: await req.text() }); return new Response(null, { status: 204 }); });
+    await trustAndCapture(name, async (req) => { seen.push({ url: req.url, body: await req.text() }); return new Response(null, { status: 204 }); });
     const registration = ev(owner, KIND_PUSH_REGISTRATION, "", [
       ["d", "one"], ["relay", "wss://" + host], ["filter", JSON.stringify({ kinds: [1] })], ["callback", callback], ["include_event"],
-    ]);
+    ], registeredAt);
     expect((await socket.ok(registration)).ok).toBe(true);
     const note = ev(owner, 1, "hello");
     expect((await socket.ok(note)).ok).toBe(true);
-    await runInDurableObject(env.RELAY.getByName("push-engine"), async (r: Relay) => { await r.alarm(); });
+    await runInDurableObject(env.RELAY.getByName(name), async (r: Relay) => { await r.alarm(); });
     expect(seen).toHaveLength(1);
     expect(seen[0].url).toBe(callback);
-    const body = JSON.parse(seen[0].body) as { id: string; relay: string; event: { id: string; content: string } };
-    expect(body.id).toBe(note.id);
-    expect(body.relay).toBe("wss://" + host + "/");
-    expect(body.event).toMatchObject({ id: note.id, content: "hello" });
+    expect(JSON.parse(seen[0].body)).toEqual({ id: note.id, relay: "wss://" + host + "/", event: JSON.parse(JSON.stringify(note)) });
     const idsOnly = ev(owner, KIND_PUSH_REGISTRATION, "", [
       ["d", "two"], ["relay", "wss://" + host], ["filter", JSON.stringify({ kinds: [1] })], ["callback", callback],
-    ]);
+    ], registeredAt + offset);
     expect((await socket.ok(idsOnly)).ok).toBe(true);
     const second = ev(owner, 1, "id only");
-    await socket.ok(second);
-    await runInDurableObject(env.RELAY.getByName("push-engine"), async (r: Relay) => { await r.alarm(); });
+    expect((await socket.ok(second)).ok).toBe(true);
+    await runInDurableObject(env.RELAY.getByName(name), async (r: Relay) => { await r.alarm(); });
     expect(seen).toHaveLength(3);
-    const idBody = JSON.parse(seen[2].body) as { id: string; event?: unknown };
-    expect(idBody.id).toBe(second.id);
-    expect(idBody.event).toBeUndefined();
+    const deliveries = seen.map(({ url, body }) => ({ url, payload: JSON.parse(body) })).filter(({ payload }) => payload.id === second.id);
+    expect(deliveries).toHaveLength(2);
+    // Registration timestamps exercise both selection orders; notification
+    // identity and payload content establish correctness, not arrival position.
+    expect(deliveries).toEqual(expect.arrayContaining([
+      { url: callback, payload: { id: second.id, relay: "wss://" + host + "/", event: JSON.parse(JSON.stringify(second)) } },
+      { url: callback, payload: { id: second.id, relay: "wss://" + host + "/" } },
+    ]));
   });
 
   it("does not deliver ignored events, duplicate broadcasts, or events after member removal", async () => {
