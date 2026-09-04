@@ -15,7 +15,7 @@ import { manage } from "./manage.ts";
 import { Succession } from "./succession.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
 import { dashboard } from "./dashboard.ts";
-import { Fuel, fuelConfig, fetchLnurl, requestInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
+import { Fuel, fuelConfig, acceptReceipt, fuelInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
 import { Identity } from "./identity.ts";
 import { Bucket } from "./ratelimit.ts";
 import { bridge } from "./bridge.ts";
@@ -32,6 +32,7 @@ import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { Hostnames, forgetDomains } from "./domains.ts";
+import { hostOf } from "./edge.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
@@ -114,7 +115,6 @@ export const IP_LIMIT_MULTIPLE = 4;
 function clientIP(req: Request): string {
   return req.headers.get("x-relay-ip") || "unknown";
 }
-const LNURL_TTL = 24 * 3600;
 // How long Cloudflare keeps an idle object awake before hibernating it.
 const IDLE_GRACE_MS = 10_000;
 
@@ -136,7 +136,6 @@ export class Relay extends DurableObject<Env> {
   private meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
   // When the object last did work, for the active-time meter (ms). Zero after a wake.
   private lastActive = 0;
-  private lnurl: LnurlParams | null = null;
   // Outbound HTTP to the lightning provider and to Cloudflare; tests substitute a fake.
   fetcher: Fetcher = (u, i) => fetch(u, i);
   // The heir and the dead-man's switch (succession.ts).
@@ -168,7 +167,7 @@ export class Relay extends DurableObject<Env> {
     this.store.hidden = this.settings.hiddenEvents;
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
-      this.lnurl = (await ctx.storage.get<LnurlParams>("lnurl")) ?? null;
+      this.fuel.lnurl = (await ctx.storage.get<LnurlParams>("lnurl")) ?? null;
       await this.succession.load();
       await this.identity.load();
     });
@@ -560,7 +559,6 @@ export class Relay extends DurableObject<Env> {
     this.buckets.clear();
     this.ipBuckets.clear();
     this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
-    this.lnurl = null;
     this.store = new Store(this.sql);
     this.settings = new Settings(this.sql);
     this.fuel = new Fuel(this.sql, this.fuel.cfg);
@@ -819,45 +817,11 @@ export class Relay extends DurableObject<Env> {
 
   // ensureAlarm keeps a daily tick scheduled for storage charging and usage
   // flushes, without pre-empting a sooner NIP-40 expiry.
-  private async ensureAlarm(latest = now() + 86400) {
+  async ensureAlarm(latest = now() + 86400) {
     const lease = this.settings.policy.lease;
     if (this.settings.isLeased() && lease && lease.until < latest) latest = lease.until;
     const cur = await this.ctx.storage.getAlarm();
     if (cur === null || cur > latest * 1000) await this.ctx.storage.setAlarm(latest * 1000);
-  }
-
-  // lnurlParams fetches and caches the provider's LNURL-pay parameters.
-  async lnurlParams(): Promise<LnurlParams> {
-    const t = now();
-    if (this.lnurl && this.lnurl.address === this.fuel.cfg.lightningAddress && t - this.lnurl.fetchedAt < LNURL_TTL) return this.lnurl;
-    const p = await fetchLnurl(this.fuel.cfg.lightningAddress, this.fetcher);
-    this.lnurl = p;
-    await this.ctx.storage.put("lnurl", p);
-    return p;
-  }
-
-  // acceptReceipt handles a kind 9735 that credits this relay. It stores the
-  // receipt regardless of write policy (the provider is nobody's member) and
-  // records the credit once. Returns null if the event is not fuel for us.
-  private async acceptReceipt(e: Event, host: string): Promise<{ ok: boolean; msg: string; stored: boolean } | null> {
-    if (!this.fuel.cfg.lightningAddress || !this.fuel.cfg.servicePubkey || this.settings.policy.owner === "") return null;
-    let provider = "";
-    try {
-      provider = (await this.lnurlParams()).nostrPubkey;
-    } catch {
-      return null;
-    }
-    const v = this.fuel.validateReceipt(e, provider, host);
-    if (typeof v === "string") {
-      console.log(`receipt ${e.id.slice(0, 8)} from ${e.pubkey.slice(0, 8)} not credited: ${v}`);
-      return null;
-    }
-    console.log(`receipt ${e.id.slice(0, 8)} credits ${Math.floor(v.msats / 1000)} sats from ${v.payer.slice(0, 8)}`);
-    const err = this.store.save(e, now());
-    if (err && err !== ERR_DUPLICATE) return { ok: false, msg: err, stored: false };
-    const fresh = this.fuel.credit(e.id, v.msats, v.payer, now());
-    await this.ensureAlarm();
-    return { ok: true, msg: fresh ? `fuel: credited ${Math.floor(v.msats / 1000)} sats` : ERR_DUPLICATE, stored: !err };
   }
 
   // claimInviteRequest joins the NIP-98 signer through an invite code. It is
@@ -881,37 +845,6 @@ export class Relay extends DurableObject<Env> {
     this.settings.upsertMember(auth.pubkey, { via: "invite " + code.slice(0, 8), invitedBy: inviteCreator(this.sql, code) }, now());
     await this.publishMembership({ pubkey: auth.pubkey, added: true });
     return json({ status: "joined", role: "member" });
-  }
-
-  // fuelInvoice turns a signed zap request into an invoice via the provider.
-  private async fuelInvoice(req: Request): Promise<Response> {
-    const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
-    if (!this.fuel.cfg.lightningAddress || !this.fuel.cfg.servicePubkey) return json({ error: "unsupported: this service does not take zaps" }, 400);
-    let body: { zapRequest?: unknown };
-    try {
-      body = await req.json();
-    } catch {
-      return json({ error: "invalid: body is not JSON" }, 400);
-    }
-    const zr = body.zapRequest as Event;
-    const bad = validate(zr);
-    if (bad) return json({ error: bad }, 400);
-    if (zr.kind !== 9734) return json({ error: "invalid: zap request must be kind 9734" }, 400);
-    if (tagValues(zr, "p")[0] !== this.fuel.cfg.servicePubkey) return json({ error: "invalid: zap request must name the service pubkey" }, 400);
-    const host = new URL(req.url).host.toLowerCase();
-    const relays = zr.tags.filter((t) => t[0] === "relays").flatMap((t) => t.slice(1));
-    if (!relays.some((r) => hostOf(r) === hostOf("ws://" + host))) return json({ error: "invalid: zap request must list this relay in its relays tag" }, 400);
-    const msats = Number(tagValues(zr, "amount")[0]);
-    if (!Number.isInteger(msats) || msats < 1000) return json({ error: "invalid: amount tag must be at least 1000 msats" }, 400);
-    try {
-      const params = await this.lnurlParams();
-      if (!params.allowsNostr || !params.nostrPubkey) return json({ error: "unsupported: the lightning provider does not support zaps" }, 502);
-      if (msats < params.minSendable || (params.maxSendable && msats > params.maxSendable)) return json({ error: `invalid: amount must be between ${params.minSendable} and ${params.maxSendable} msats` }, 400);
-      const invoice = await requestInvoice(params, zr, msats, this.fetcher);
-      return json({ invoice, providerPubkey: params.nostrPubkey, msats });
-    } catch (err) {
-      return json({ error: "error: " + (err instanceof Error ? err.message : String(err)) }, 502);
-    }
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -978,7 +911,7 @@ export class Relay extends DurableObject<Env> {
       // owner's, in the stats method.
       return Response.json(this.fuelStatus(), { headers: { "access-control-allow-origin": "*" } });
     }
-    if (url.pathname === "/fuel/invoice" && req.method === "POST") return this.fuelInvoice(req);
+    if (url.pathname === "/fuel/invoice" && req.method === "POST") return fuelInvoice(this, req);
     if (url.pathname === "/card.json" || url.pathname === "/card.nostr" || url.pathname === "/card.svg" || url.pathname === "/qr.svg") return card(this, req);
     if (req.method === "OPTIONS") {
       return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } });
@@ -1220,7 +1153,7 @@ export class Relay extends DurableObject<Env> {
   // falls back to the ordinary write path. Callers broadcast when stored.
   async acceptAny(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
     if (e.kind === 9735) {
-      const r = await this.acceptReceipt(e, conn.host);
+      const r = await acceptReceipt(this, e, conn.host);
       if (r) return r;
     }
     if (e.kind === KIND_REPORT) return this.acceptReport(e, conn.host);
@@ -1590,14 +1523,5 @@ export class Relay extends DurableObject<Env> {
       if (s.syncs?.[id]) remember(null);
       this.send(ws, "NEG-ERR", id, "invalid: " + (err instanceof Error ? err.message : String(err)));
     }
-  }
-}
-
-// hostOf lower-cases the hostname of a URL, ignoring scheme, port and path.
-export function hostOf(s: string): string {
-  try {
-    return new URL(s.trim()).hostname.toLowerCase();
-  } catch {
-    return "";
   }
 }

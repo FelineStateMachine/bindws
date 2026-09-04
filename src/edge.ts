@@ -82,3 +82,12 @@ export async function hostnameKnown(env: Pick<Env, "DOMAIN" | "HOSTS">, raw: str
   }
   return host !== "" && (await customHost(env, host)) !== null;
 }
+
+// hostOf lower-cases the hostname of a URL, ignoring scheme, port and path.
+export function hostOf(s: string): string {
+  try {
+    return new URL(s.trim()).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}

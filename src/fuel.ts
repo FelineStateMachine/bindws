@@ -8,8 +8,13 @@
 // the ledger: signed by the lightning provider, stored like any event, and
 // re-validated by the same rules whenever the balance is computed.
 import { sha256 } from "@noble/hashes/sha2.js";
-import { tag, tagValues, validate, type Event } from "./event.ts";
+import { now, tag, tagValues, validate, type Event } from "./event.ts";
 import { bytesToHex } from "./negentropy.ts";
+import { ERR_DUPLICATE } from "./store.ts";
+import { hostOf } from "./edge.ts";
+import type { Relay } from "./relay.ts";
+
+const LNURL_TTL = 24 * 3600;
 
 export interface FuelConfig {
   lightningAddress: string; // "" disables top-ups (allowances still apply)
@@ -108,6 +113,9 @@ export interface FuelStatus {
 }
 
 export class Fuel {
+  // The provider's LNURL-pay parameters, cached in storage for a day (lnurlParams).
+  lnurl: LnurlParams | null = null;
+
   constructor(private sql: SqlStorage, public cfg: FuelConfig) {}
 
   init() {
@@ -303,3 +311,68 @@ export function zapRequestHash(req: Event): string {
 }
 
 export { tagValues };
+
+// lnurlParams fetches and caches the provider's LNURL-pay parameters.
+export async function lnurlParams(relay: Relay): Promise<LnurlParams> {
+  const t = now();
+  if (relay.fuel.lnurl && relay.fuel.lnurl.address === relay.fuel.cfg.lightningAddress && t - relay.fuel.lnurl.fetchedAt < LNURL_TTL) return relay.fuel.lnurl;
+  const p = await fetchLnurl(relay.fuel.cfg.lightningAddress, relay.fetcher);
+  relay.fuel.lnurl = p;
+  await relay.storage.put("lnurl", p);
+  return p;
+}
+
+// acceptReceipt handles a kind 9735 that credits this relay. It stores the
+// receipt regardless of write policy (the provider is nobody's member) and
+// records the credit once. Returns null if the event is not fuel for us.
+export async function acceptReceipt(relay: Relay, e: Event, host: string): Promise<{ ok: boolean; msg: string; stored: boolean } | null> {
+  if (!relay.fuel.cfg.lightningAddress || !relay.fuel.cfg.servicePubkey || relay.settings.policy.owner === "") return null;
+  let provider = "";
+  try {
+    provider = (await lnurlParams(relay)).nostrPubkey;
+  } catch {
+    return null;
+  }
+  const v = relay.fuel.validateReceipt(e, provider, host);
+  if (typeof v === "string") {
+    console.log(`receipt ${e.id.slice(0, 8)} from ${e.pubkey.slice(0, 8)} not credited: ${v}`);
+    return null;
+  }
+  console.log(`receipt ${e.id.slice(0, 8)} credits ${Math.floor(v.msats / 1000)} sats from ${v.payer.slice(0, 8)}`);
+  const err = relay.store.save(e, now());
+  if (err && err !== ERR_DUPLICATE) return { ok: false, msg: err, stored: false };
+  const fresh = relay.fuel.credit(e.id, v.msats, v.payer, now());
+  await relay.ensureAlarm();
+  return { ok: true, msg: fresh ? `fuel: credited ${Math.floor(v.msats / 1000)} sats` : ERR_DUPLICATE, stored: !err };
+}
+
+// fuelInvoice turns a signed zap request into an invoice via the provider.
+export async function fuelInvoice(relay: Relay, req: Request): Promise<Response> {
+  const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
+  if (!relay.fuel.cfg.lightningAddress || !relay.fuel.cfg.servicePubkey) return json({ error: "unsupported: this service does not take zaps" }, 400);
+  let body: { zapRequest?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "invalid: body is not JSON" }, 400);
+  }
+  const zr = body.zapRequest as Event;
+  const bad = validate(zr);
+  if (bad) return json({ error: bad }, 400);
+  if (zr.kind !== 9734) return json({ error: "invalid: zap request must be kind 9734" }, 400);
+  if (tagValues(zr, "p")[0] !== relay.fuel.cfg.servicePubkey) return json({ error: "invalid: zap request must name the service pubkey" }, 400);
+  const host = new URL(req.url).host.toLowerCase();
+  const relays = zr.tags.filter((t) => t[0] === "relays").flatMap((t) => t.slice(1));
+  if (!relays.some((r) => hostOf(r) === hostOf("ws://" + host))) return json({ error: "invalid: zap request must list this relay in its relays tag" }, 400);
+  const msats = Number(tagValues(zr, "amount")[0]);
+  if (!Number.isInteger(msats) || msats < 1000) return json({ error: "invalid: amount tag must be at least 1000 msats" }, 400);
+  try {
+    const params = await lnurlParams(relay);
+    if (!params.allowsNostr || !params.nostrPubkey) return json({ error: "unsupported: the lightning provider does not support zaps" }, 502);
+    if (msats < params.minSendable || (params.maxSendable && msats > params.maxSendable)) return json({ error: `invalid: amount must be between ${params.minSendable} and ${params.maxSendable} msats` }, 400);
+    const invoice = await requestInvoice(params, zr, msats, relay.fetcher);
+    return json({ invoice, providerPubkey: params.nostrPubkey, msats });
+  } catch (err) {
+    return json({ error: "error: " + (err instanceof Error ? err.message : String(err)) }, 502);
+  }
+}
