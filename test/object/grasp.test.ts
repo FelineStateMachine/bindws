@@ -422,6 +422,12 @@ describe("GRASP", () => {
     const replay = await runInDurableObject(stub, async (relay) => {
       const bucket = relay.media;
       let roots = 0;
+      const published: string[] = [];
+      const broadcast = relay.broadcast.bind(relay);
+      Object.defineProperty(relay, "broadcast", { configurable: true, value: (event: Parameters<typeof relay.broadcast>[0]) => {
+        published.push(event.id);
+        broadcast(event);
+      } });
       const observed = new Proxy(bucket, { get(target, name) {
         if (name === "get") return (key: string, options?: R2GetOptions) => {
           // The replay loads the WAL, then promotion loads it again. Change
@@ -443,15 +449,23 @@ describe("GRASP", () => {
           body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
         }));
         expect(roots).toBeGreaterThanOrEqual(2);
+        expect(published).toContain(announcement.id);
+        expect(published).toContain(state.id);
+        expect(published).not.toContain(pr.id);
         return await response.text();
-      } finally { Reflect.deleteProperty(relay, "media"); }
+      } finally {
+        Reflect.deleteProperty(relay, "media");
+        Reflect.deleteProperty(relay, "broadcast");
+      }
     });
     expect(replay).toContain("ok refs/heads/main");
     await runInDurableObject(stub, async (relay) => {
       const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
       expect((await wal.load()).sequence).toBe(1);
       expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toEqual([]);
-      expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id=?", pr.id).toArray()).toHaveLength(1);
+      // Expiry cleanup can remove the event and its pending row between
+      // requests. If the event survives, it must still be held from readers.
+      expect(relay.sql.exec("SELECT id FROM events WHERE id=? AND NOT EXISTS (SELECT 1 FROM grasp_pending WHERE grasp_pending.id=events.id)", pr.id).toArray()).toEqual([]);
     });
     const reader = await WS.connect(host);
     expect((await reader.query({ ids: [announcement.id, state.id] })).events).toHaveLength(2);
