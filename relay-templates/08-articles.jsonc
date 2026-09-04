@@ -2,7 +2,7 @@
 // Pulls from a source when one is given, otherwise the owner publishes here
 // directly.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Articles",

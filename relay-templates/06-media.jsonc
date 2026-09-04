@@ -3,7 +3,7 @@
 // they may post are profiles and Blossom server lists, so the name stays a
 // media host and nothing else.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Media",

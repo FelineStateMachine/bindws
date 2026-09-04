@@ -2,7 +2,7 @@
 // read them. Wraps carry no author, so an allow list of just the wrap kind and
 // profiles keeps everything else out.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "DM inbox",

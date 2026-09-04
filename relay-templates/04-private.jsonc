@@ -2,7 +2,7 @@
 // nowhere else. Only the owner writes and only members read, so a second
 // device or a trusted person can be let in without opening it.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Private",

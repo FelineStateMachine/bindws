@@ -2,7 +2,7 @@
 // elsewhere. Private kinds are blocked so a misconfigured client cannot park
 // DMs on a public relay; everything else is fair game.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Outbox",

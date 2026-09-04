@@ -23,7 +23,8 @@ it mirrors, and why its kinds are what they are.
 
 ## The files
 
-A template is a relay configuration (`../relay-config.schema.json`) with a
+A template is a relay configuration (`$schema` names the copy served at
+`https://bind.ws/relay-config.schema.json`, the same file as `../relay-config.schema.json`) with a
 `template` block for the title and the blurb, and the rules sections only:
 policy, kinds and retention. People, bans and addresses are never in a
 template, and a section a template leaves out is left alone when it is

@@ -4,7 +4,7 @@
 // threads, comments, reactions and profiles. Join, leave and moderation events
 // are not subject to kind rules.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Chat",

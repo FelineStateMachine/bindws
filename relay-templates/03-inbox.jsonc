@@ -5,7 +5,7 @@
 // short keep-for rule bounds what spam costs. The owner's own lists always
 // land regardless of the allow list.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Inbox",

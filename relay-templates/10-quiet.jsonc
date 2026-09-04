@@ -3,7 +3,7 @@
 // cost and shows nothing but its page. Switch features back on one at a time
 // as they earn their keep.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Quiet",

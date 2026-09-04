@@ -3,7 +3,7 @@
 // readable by all, written only by the owner, so a client can point search at
 // it without the source relay ever being asked.
 {
-  "$schema": "../relay-config.schema.json",
+  "$schema": "https://bind.ws/relay-config.schema.json",
   "format": "bind.ws/relay-config/2",
   "template": {
     "title": "Search replica",
