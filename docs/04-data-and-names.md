@@ -46,6 +46,9 @@ Names are cheap, so a relay does not have to do everything. On the Rules tab, **
 | search | only you | anyone | a copy of another relay's searchable kinds, refreshed every six hours |
 | articles | only you | anyone | long-form articles and profiles; mirrored daily from a source if you give one |
 | dm | anyone | members | private messages only; directory hidden |
+| quiet | members | members | every kind, forever; search, sync, counts, discovery, names, files, pages and signer traffic off |
+
+Each preset is a file in the repository's `relay-templates/` folder: a relay configuration with the rules sections only, which is also what a file of your own looks like ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)). A preset that names features sets them too.
 
 The search and articles presets take a source relay URL in the field next to the buttons. Applying one adds a standing pull of its kinds from that source. Applying any preset again replaces that pull rather than adding another, and applying one with no source removes it. The pull appears in the Jobs table.
 

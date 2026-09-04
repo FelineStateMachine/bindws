@@ -63,7 +63,7 @@ The line to look for is `ok bucket conditional write: create, reject-create, upd
 | `LIGHTNING_ADDRESS`, `SERVICE_PUBKEY` | as on Cloudflare ([Service key](11-hosting-bindws.md#service-key)) |
 | `FREE_*`, `SATS_PER_*` | your allowances and prices |
 
-`ZONE_ID` and `CNAME_TARGET` stay empty. A node can also override any var at start with `CELLD_VAR_<NAME>=value` or a `CELLD_VARS_FILE`, which is where a value you would rather not commit goes.
+The presets are the files in `relay-templates/`, folded into the code before a deploy ([Presets](11-hosting-bindws.md#presets)); the configuration schema is served at your apex the same way. `ZONE_ID` and `CNAME_TARGET` stay empty. A node can also override any var at start with `CELLD_VAR_<NAME>=value` or a `CELLD_VARS_FILE`, which is where a value you would rather not commit goes.
 
 ## Install celld, deploy, run a node
 

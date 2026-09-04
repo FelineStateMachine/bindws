@@ -15,11 +15,12 @@ That answers with a relay at a memorable name, open to anyone for 14 days. Claim
 
 ## What a name gives you
 
-- **A relay.** The standard protocol plus search, counts, sync, expiry, deletion, proof of work, a discovery record for relay directories and an HTTP door for scripts. Works with every client.
+- **A relay.** The standard protocol plus search, counts, sync, expiry, deletion, proof of work, a discovery record for relay directories and an HTTP door for scripts. Works with every client. Everything past the core, search, sync, counts, the discovery record, names, files, pages and signer traffic, switches off per relay.
 - **A community.** Members, invite links, an invite tree, moderators with a log of what they did, a signed roster and one NIP-29 group per relay, so group-aware clients show it as a place.
 - **A site.** Notes and articles as pages with link previews, an Atom feed, and a card with a QR of the group address.
 - **A file host.** Blossom and NIP-96 on the same bucket, with mirroring, pre-flight checks and file reports.
-- **A console.** Nine tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica or a media host in one click.
+- **A console.** Nine tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica, a media host or a quiet relay with every costly feature off, in one click.
+- **A file.** Everything the console sets, as one document with a schema: check it offline, see what applying would change, apply it, pull it back. Keep your relay in your repository. The presets are the same files, in `relay-templates/`.
 - **Jobs.** Pull another relay in, keep a standing mirror, fetch your own history from your relay list, rebroadcast to other relays, and dump everything to a file on a schedule.
 - **Your own domain.** `wss://relay.example.com` onto your relay with one CNAME.
 - **Succession.** Name an heir. If your key goes silent, the relay warns you for a month and then hands itself over.
@@ -41,7 +42,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 
 **For scripts and agents**
 
-- [Scripts and agents](docs/13-scripts-and-agents.md): a relay end to end with a key and curl, and every management method.
+- [Scripts and agents](docs/13-scripts-and-agents.md): a relay end to end with a key and curl, every management method, and the relay as a configuration file.
 - [HTTP reference](docs/14-http-reference.md): every path, method, auth and answer.
 
 **For developers**
@@ -49,7 +50,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 - [Architecture](docs/10-architecture.md): routing, the object, storage, alarm, jobs, identity, groups.
 - [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
 - [Hosting without Cloudflare](docs/16-hosting-without-cloudflare.md): the same Worker on celld, with your own bucket and proxy, and what "supported" promises.
-- [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console.
+- [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console, the templates.
 - [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
 
 ## Quick start
@@ -58,12 +59,13 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 npm install
 npm run dev      # http://<name>.localhost:8787
 npm test
+npm run typecheck  # types, generated files, the configs, every template
 npm run deploy
 ```
 
 ## Protocol surface
 
-NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 04, 06, 08, 09.
+NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
 
 ## License
 

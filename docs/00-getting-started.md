@@ -62,6 +62,19 @@ A fresh relay lets anyone write. To keep it to your people, set **Rules > Writes
 
 Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it in their row, or they set it in their profile.
 
+## From a file
+
+Everything the console sets can live in a file in your own repository: the rules, the features, the kinds and keep-for rules, the members, the bans. Pull the relay as it is, edit the file, see what applying it would change, then apply:
+
+```
+export RELAY_SK=<your key, hex or nsec>
+node scripts/ops/relay.mjs pull wss://<name>.bind.ws relay.json
+node scripts/ops/relay.mjs plan relay.json wss://<name>.bind.ws
+node scripts/ops/relay.mjs push relay.json wss://<name>.bind.ws
+```
+
+The file has a schema, so an editor checks it as you type, and `plan` never touches the relay. A template from the repository's `relay-templates/` folder is a good start: `10-quiet.jsonc` is a small private relay with every costly feature off. See [Scripts and agents](13-scripts-and-agents.md#the-configuration-file).
+
 ## What it costs
 
 Nothing until the relay passes its monthly free allowance. Past that, use is paid in sats, and anyone can zap the relay to top it up. See [Understanding fuel](02-understanding-fuel.md).
@@ -71,4 +84,5 @@ Nothing until the relay passes its monthly free allowance. Past that, use is pai
 - [Relay configuration](01-relay-configuration.md): the console, tab by tab.
 - [People and groups](03-people-and-groups.md): invites, moderators, groups in clients, handing the relay over.
 - [Data and names](04-data-and-names.md): pulls, mirrors, dumps, presets and forks.
+- [Scripts and agents](13-scripts-and-agents.md): the relay from a key and curl, and as a file.
 - [Your relay on the web](05-your-relay-on-the-web.md): pages, the feed, the card, your own domain and media.

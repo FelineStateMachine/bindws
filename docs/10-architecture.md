@@ -130,7 +130,7 @@ Rate limits are token buckets per connection (`ratelimit.ts`) and, beside them, 
 
 ## Presets
 
-`presets.ts` holds the rule bundles: writes, reads, the directory, kind rules and keep-for rules in one go, applied through the same Settings methods the console uses one at a time. Limits, identity, people and bans stay. The `search` and `articles` presets also keep a standing pull labelled `replica` of their kinds from a source relay; applying any preset removes the earlier replica job first, so a name holds at most one. The owner's own replaceable kinds pass the kind rules, so a relay can always hold its owner's lists.
+`config.ts` is the configuration document: `parseConfig` says what a relay would take and, line by line, what it would drop; `planConfig` says what applying would change; `applyConfig` writes, section by section, and a section the document lacks is left alone. `importconfig` runs all three, or the first two with `dryRun`. `presets.ts` derives the presets from `relay-templates/`, folded into `src/gen/templates.ts`: each is a document with the rules sections, applied through `applyConfig`. Limits, identity, people and bans stay. The `search` and `articles` presets also keep a standing pull labelled `replica` of their kinds from a source relay; applying any preset removes the earlier replica job first, so a name holds at most one. The owner's own replaceable kinds pass the kind rules, so a relay can always hold its owner's lists.
 
 Wiring the relay into the owner's lists (kinds 10002, 10050, 10007, 10063) happens in the console: it fetches the newest copy from this relay over the NIP-98 bridge and from a few indexers over websockets, merges, signs once and publishes to every relay the list names.
 

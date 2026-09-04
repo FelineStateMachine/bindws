@@ -50,6 +50,10 @@ npm run deploy
 
 Nothing else is required: no origin, no certificates, no servers. An idle relay costs nothing; a busy one is billed per Cloudflare's Durable Object and R2 rates.
 
+## Presets
+
+The presets the console offers are the files in `relay-templates/`, one relay configuration per template with a `template` block for its title and blurb. Add, edit or remove files there, run `npm run build:templates`, and deploy. `npm run typecheck` checks every file against the schema and the relay's own parser, and fails while the generated module is stale. The schema is served at `https://<domain>/relay-config.schema.json`, for editors and for owners who keep their relays as files ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)).
+
 ## Operate
 
 - `wrangler tail` streams logs, including receipt validation.
@@ -122,4 +126,4 @@ npm run dev
 
 `wrangler dev --env dev` serves `http://<name>.localhost:8787` as the relay named `<name>`, `http://<domain>.localhost:8787` as the apex and anything else as `DEV_RELAY`. The dev environment has no routes, so hostnames pass through.
 
-To use the console without a browser extension, run `node scripts/dev/dev-signer.mjs` and paste the snippet from that file into the devtools console before clicking sign in. `node scripts/seed.mjs <name>` publishes sample events.
+To use the console without a browser extension, run `node scripts/dev/dev-signer.mjs` and paste the snippet from that file into the devtools console before clicking sign in. `node scripts/dev/seed.mjs <name>` publishes sample events. `npm run dev` folds the console's files into their generated module first; the templates need `npm run build:templates` after a change.
