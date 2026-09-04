@@ -3,9 +3,7 @@
 // bucket, so a host whose bucket is not R2 (docs/16) is checked here.
 import { describe, it, expect } from "vitest";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { HTTP_URL, newEvent, newKey, now, pub, rand } from "./helpers.ts";
-
-const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+import { newEvent, newKey, pub, now, rand, hex, HTTP_URL } from "./helpers.ts";
 
 // A Blossom token: kind 24242 with the verb and the hash, base64 in the header.
 function token(sk: Uint8Array, verb: "upload" | "get" | "list" | "delete", sha?: string): string {

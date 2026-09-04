@@ -1,6 +1,7 @@
 // Shared client for the black-box conformance suite. It speaks plain
 // NIP-01 over a websocket to whatever relay RELAY_URL names.
 import WebSocket from "ws";
+import { afterEach } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent, type EventTemplate } from "nostr-tools/pure";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { Negentropy, hexToBytes, type SyncItem } from "../../src/negentropy.ts";
@@ -191,4 +192,16 @@ export function randHex(n = 64): string {
   let s = "";
   while (s.length < n) s += Math.floor(Math.random() * 16).toString(16);
   return s;
+}
+
+// sockets returns a connect that keeps its clients and closes them after
+// each test.
+export function sockets() {
+  const open: Client[] = [];
+  afterEach(() => open.splice(0).forEach((c) => c.close()));
+  return async () => {
+    const c = await Client.connect();
+    open.push(c);
+    return c;
+  };
 }
