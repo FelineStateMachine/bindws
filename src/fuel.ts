@@ -1,7 +1,8 @@
 // Fuel: quotas on what a relay costs to run, topped up by zaps. Four things
-// are metered and priced, each mirroring a line on the Cloudflare bill:
-// events stored (SQLite), media stored (R2), time awake (Durable Object
-// duration) and rows written. Traffic is metered but free, as it is for us.
+// are metered and priced using related Cloudflare resource rates:
+// events stored (SQLite), media stored (R2), estimated time awake and
+// metered rows written. Traffic has no fuel price; provider operations
+// attached to traffic remain host costs. These meters are not an invoice.
 // Every relay gets a free monthly allowance of each; beyond it, usage burns
 // sats credited by NIP-57 zap receipts that arrive at the relay itself as
 // ordinary events. Receipts are
@@ -21,8 +22,8 @@ export interface FuelConfig {
   servicePubkey: string; // recipient pubkey zap requests must name
   // Free per relay per month.
   freeEventsMB: number; // SQLite: events, tags, search index
-  freeMediaMB: number; // R2: Blossom blobs
-  freeActiveHours: number; // wall-clock time the object is awake
+  freeMediaMB: number; // R2: blobs, dumps, imports and retained Git objects
+  freeActiveHours: number; // the relay's entrypoint-based awake estimate
   freeRowsWritten: number; // SQLite rows written
   // Beyond the allowances. Each tracks what Cloudflare bills for the same
   // thing, so the prices in wrangler.jsonc are set from those rates.

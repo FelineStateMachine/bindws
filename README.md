@@ -55,7 +55,7 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 - [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
 - [Hosting without Cloudflare](docs/16-hosting-without-cloudflare.md): the same Worker on celld, with your own bucket and proxy, and what "supported" promises.
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console, the templates.
-- [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
+- [Costs and margins](docs/15-costs-and-margins.md): tenant meters, host accounting gaps, margin scenarios and the proposed maintenance budget contract.
 
 ### Draft NIPs
 
