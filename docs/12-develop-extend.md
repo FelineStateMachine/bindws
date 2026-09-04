@@ -67,7 +67,7 @@ The conformance suite needs a claimed relay. Against a dev server:
 CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 ```
 
-CI runs typecheck and the object tests on every push, and, in a second job, the conformance suite against the Worker on `celld dev` ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
+CI runs typecheck and the object tests on every push; the conformance suite against the Worker on `celld dev` is a separate workflow run on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
 
 ## Add a management method
 

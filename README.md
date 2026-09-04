@@ -26,7 +26,7 @@ That answers with a relay at a memorable name, open to anyone for 14 days. Claim
 
 <p align="center"><img src="docs/img/console.png" alt="The console's People tab" width="720"></p>
 
-It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it and R2 beside it. The same code runs without Cloudflare, on [celld](https://celld.dev) with an S3 bucket of your own; that path is checked in CI and [documented](docs/16-hosting-without-cloudflare.md).
+It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it and R2 beside it. The same code runs without Cloudflare, on [celld](https://celld.dev) with an S3 bucket of your own; that path is checked on demand and [documented](docs/16-hosting-without-cloudflare.md).
 
 ## Docs
 
