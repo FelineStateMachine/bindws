@@ -3,6 +3,7 @@
 // the custom hostname map, and the answer to a proxy asking whether a
 // hostname belongs here. Hosting without Cloudflare is
 // docs/16-hosting-without-cloudflare.md.
+import { customTarget } from "./domains.ts";
 import type { Env } from "./relay.ts";
 import { Bucket } from "./ratelimit.ts";
 import { parseSite, siteKey } from "./sites.ts";
@@ -91,7 +92,7 @@ export async function hostnameKnown(env: Pick<Env, "DOMAIN" | "HOSTS">, raw: str
     const name = host.slice(0, -(domain.length + 1));
     return validName(name) || RESERVED.has(name) || (await siteHost(env, name)) !== null;
   }
-  return host !== "" && (await customHost(env, host)) !== null;
+  return host !== "" && customTarget(await customHost(env, host)) !== null;
 }
 
 // hostOf lower-cases the hostname of a URL, ignoring scheme, port and path.

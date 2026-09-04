@@ -724,24 +724,31 @@
   });
 
   // ---- custom domains: this relay under a hostname the owner controls ----
+  let domainSites = [];
+  const domainOptions = (current = "") => [{ label: "", title: "This relay" }, ...domainSites.map((s) => ({ label: s.label, title: (s.d || (s.kind === 5128 ? "snapshot" : "root")) + " / " + key(s.author) })), ...(current && !domainSites.some((s) => s.label === current) ? [{ label: current, title: "Site " + current }] : [])].map((s) => '<option value="' + esc(s.label) + '"' + (s.label === current ? " selected" : "") + ">" + esc(s.title) + "</option>").join("");
   let domains = null; // null: not enabled on this host
   function renderDomains() {
     $("#domains").innerHTML = (domains || []).map((d) => {
       const state = d.ready ? "active" : "hostname " + d.status.replace(/_/g, " ") + ", certificate " + d.sslStatus.replace(/_/g, " ");
       const btn = (act, cls, label) => '<button class="btn ' + cls + '" data-domain="' + esc(d.host) + '" data-do="' + act + '">' + label + "</button>";
       const rows = d.ready ? "" : '<div class="scroll"><table class="events"><thead><tr><th>Type</th><th>Name</th><th>Value</th><th></th></tr></thead><tbody>' + d.records.map((r) => "<tr><td>" + esc(r.type) + '</td><td class="mono">' + esc(r.name) + '</td><td class="mono">' + esc(r.value) + "</td><td>" + esc(r.note) + "</td></tr>").join("") + "</tbody></table></div>";
-      return '<div class="row"><b class="mono">' + esc(d.host) + '</b><span class="note">' + esc(state) + "</span>" + btn("check", "", "Check") + btn("remove", "danger", "Remove") + "</div>" + rows;
+      return '<div class="row"><b class="mono">' + esc(d.host) + '</b><span class="note">' + esc(state) + "</span>" + btn("check", "", "Check") + btn("remove", "danger", "Remove") + '</div><label class="row"><span>Destination</span><select class="txt" data-domain-site="' + esc(d.host) + '">' + domainOptions(d.site || "") + "</select></label>" + rows;
     }).join("");
   }
   async function loadDomains() {
-    try { domains = await rpc("listdomains"); $("#domainnote").textContent = domains.length ? "" : "No custom domain yet."; $("#adddomain").classList.remove("hidden"); }
+    try { [domains, domainSites] = await Promise.all([rpc("listdomains"), rpc("listsites")]); $("#adddomain select[name=site]").innerHTML = domainOptions(); $("#domainnote").textContent = domains.length ? "" : "No custom domain yet."; $("#adddomain").classList.remove("hidden"); }
     catch (e) { domains = null; $("#domainnote").textContent = /^unsupported/.test(e.message) ? "Custom domains are not enabled on this host." : e.message; $("#adddomain").classList.add("hidden"); }
     renderDomains();
   }
   $("#adddomain").onsubmit = guard(async (ev) => {
     const f = ev.target;
-    await rpc("adddomain", f.host.value.trim()); f.reset(); toast("Domain added; now create the CNAME"); await loadDomains();
+    await rpc("adddomain", f.host.value.trim(), f.site.value); f.reset(); toast("Domain added; now create the CNAME"); await loadDomains();
   });
+  $("#domains").addEventListener("change", guard(async (ev) => {
+    const select = ev.target.closest("select[data-domain-site]"); if (!select) return;
+    await rpc("setdomainsite", select.dataset.domainSite, select.value);
+    toast("Domain destination saved"); await loadDomains();
+  }));
   $("#domains").addEventListener("click", async (ev) => {
     const b = ev.target.closest("button[data-domain]"); if (!b) return;
     const host = b.dataset.domain;

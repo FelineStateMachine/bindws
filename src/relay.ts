@@ -765,13 +765,17 @@ export class Relay extends DurableObject<Env> {
     const url = new URL(req.url);
     // Relays claimed before identities existed get theirs on first contact.
     if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
+    // The local custom-domain record wins over a cached edge mapping, so
+    // changing a relay domain into a site never exposes the old relay door.
+    const domainSite = this.settings.policy.customHosts?.find((h) => h.host === url.hostname)?.site;
+    const site = domainSite || req.headers.get("x-relay-site");
     // A blocked address gets no socket and no gated door (routes.ts).
     const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
-    if ((req.headers.has("x-relay-site") || upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
+    if ((site || upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
       const msg = "blocked: this address is blocked from this relay";
       return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
     }
-    if (req.headers.has("x-relay-site")) return serveSite(this, req, req.headers.get("x-relay-site")!);
+    if (site) return serveSite(this, req, site);
     if (upgrade) return this.acceptWebSocket(req);
     return route(this, req, url);
   }

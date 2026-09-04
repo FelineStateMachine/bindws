@@ -8,6 +8,7 @@ import { verifyNIP98 } from "./auth.ts";
 import { leaseNames, leaseDays, validName } from "./names.ts";
 import { now } from "./event.ts";
 import { clientIP, customHost, hostnameKnown, leaseAllowed, siteHost } from "./edge.ts";
+import { customTarget } from "./domains.ts";
 import schema from "../relay-config.schema.json";
 
 // The entry module exports the handler and the object only: workerd
@@ -67,12 +68,15 @@ export default {
       return new Response(null, { status: (await hostnameKnown(env, url.searchParams.get("domain") ?? "")) ? 200 : 404 });
     }
     let name: string | null;
+    let site = "";
     if (host === domain || host === "www." + domain || host === domain + ".localhost") name = null; // apex (<domain>.localhost in wrangler dev)
     else if (host.endsWith("." + domain)) name = host.slice(0, -(domain.length + 1));
     else if (host.endsWith(".localhost")) name = host.slice(0, -".localhost".length); // wrangler dev: <name>.localhost
-    else name = (await customHost(env, host)) ?? env.DEV_RELAY; // a custom domain, or wrangler dev without a subdomain
-
-    let site = "";
+    else {
+      const target = customTarget(await customHost(env, host));
+      name = target?.name ?? env.DEV_RELAY;
+      site = target?.site ?? "";
+    }
     if (name !== null && name.length > 32) {
       site = name;
       name = await siteHost(env, site);

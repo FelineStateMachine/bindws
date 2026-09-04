@@ -254,8 +254,8 @@
       </form>
       <div class="block">
         <h3>Your own domain</h3>
-        <p class="note">Point a hostname you control at this relay, such as <span class="mono">relay.example.com</span>. Add it here, then create the record shown at your DNS. The certificate is issued on its own once the record resolves.</p>
-        <form id="adddomain" class="addrow"><input class="txt mono" name="host" placeholder="relay.example.com" required><button class="btn">Add</button></form>
+        <p class="note">Your hostname serves this relay or one of its sites once its CNAME resolves and its certificate is issued.</p>
+        <form id="adddomain"><div class="form"><label><span>Hostname</span><input class="txt mono" name="host" placeholder="relay.example.com" required></label><label><span>Destination</span><select class="txt" name="site"><option value="">This relay</option></select></label></div><div class="actions"><button class="btn">Add domain</button></div></form>
         <div id="domains"></div>
         <p class="note" id="domainnote"></p>
       </div>

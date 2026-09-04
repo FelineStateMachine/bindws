@@ -135,3 +135,106 @@ describe("sites", () => {
   });
 
 });
+
+async function publishForIndex(host: string, sk: Uint8Array, ...events: ReturnType<typeof ev>[]) {
+  const c = await WS.connect(host);
+  for (const e of events) expect((await c.ok(e)).ok).toBe(true);
+  c.ws.close();
+}
+
+async function syncIndex(name: string) {
+  await runInDurableObject(env.RELAY.getByName(name), (r) => r.syncSites());
+}
+
+describe("site hostname index cleanup", () => {
+  it("clears a mapping when management deletes its manifest", async () => {
+    const name = "idx-manage";
+    const sk = generateSecretKey();
+    await rpc(name + ".bind.ws", sk, "claim");
+    const e = ev(sk, 15128, "", paths);
+    await publishForIndex(name + ".bind.ws", sk, e);
+    await syncIndex(name);
+    const key = siteKey(siteLabel(e));
+    expect(await env.HOSTS.get(key)).toContain(name);
+    expect((await rpc(name + ".bind.ws", sk, "deleteevent", e.id)).result).toBe(true);
+    await syncIndex(name);
+    expect(await env.HOSTS.get(key)).toBeNull();
+  });
+
+  it("clears root and named mappings through NIP-09 a tags", async () => {
+    const name = "idx-nip09";
+    const sk = generateSecretKey();
+    await rpc(name + ".bind.ws", sk, "claim");
+    const root = ev(sk, 15128, "", paths);
+    const named = ev(sk, 35128, "", [...paths, ["d", "docs"]]);
+    await publishForIndex(name + ".bind.ws", sk, root, named);
+    await syncIndex(name);
+    const rootKey = siteKey(siteLabel(root));
+    const namedKey = siteKey(siteLabel(named));
+    expect(await env.HOSTS.get(rootKey)).toContain(name);
+    expect(await env.HOSTS.get(namedKey)).toContain(name);
+    const deletion = ev(sk, 5, "", [["a", `15128:${pk(sk)}:`], ["a", `35128:${pk(sk)}:docs`]]);
+    await publishForIndex(name + ".bind.ws", sk, deletion);
+    await syncIndex(name);
+    expect(await env.HOSTS.get(rootKey)).toBeNull();
+    expect(await env.HOSTS.get(namedKey)).toBeNull();
+  });
+
+  it("clears mappings when retention and vanish delete manifests", async () => {
+    const retentionName = "idx-retain";
+    const retentionKey = generateSecretKey();
+    await rpc(retentionName + ".bind.ws", retentionKey, "claim");
+    const old = ev(retentionKey, 15128, "", paths, now() - 3 * 86400);
+    await publishForIndex(retentionName + ".bind.ws", retentionKey, old);
+    await syncIndex(retentionName);
+    const oldKey = siteKey(siteLabel(old));
+    expect(await env.HOSTS.get(oldKey)).toContain(retentionName);
+    await rpc(retentionName + ".bind.ws", retentionKey, "setretention", 15128, 1);
+    await runInDurableObject(env.RELAY.getByName(retentionName), (r) => r.sweepRetention(now()));
+    await syncIndex(retentionName);
+    expect(await env.HOSTS.get(oldKey)).toBeNull();
+
+    const vanishName = "idx-vanish";
+    const vanishKey = generateSecretKey();
+    await rpc(vanishName + ".bind.ws", vanishKey, "claim");
+    const e = ev(vanishKey, 15128, "", paths);
+    await publishForIndex(vanishName + ".bind.ws", vanishKey, e);
+    await syncIndex(vanishName);
+    const key = siteKey(siteLabel(e));
+    expect(await env.HOSTS.get(key)).toContain(vanishName);
+    await publishForIndex(vanishName + ".bind.ws", vanishKey, ev(vanishKey, 62, "", [["relay", "ALL_RELAYS"]]));
+    await syncIndex(vanishName);
+    expect(await env.HOSTS.get(key)).toBeNull();
+  });
+
+  it("clears only its own mapping when another relay has the same site", async () => {
+    const sk = generateSecretKey();
+    const first = "idx-copy-a";
+    const second = "idx-copy-b";
+    await rpc(first + ".bind.ws", sk, "claim");
+    await rpc(second + ".bind.ws", sk, "claim");
+    const e = ev(sk, 15128, "", paths);
+    await publishForIndex(first + ".bind.ws", sk, e);
+    await syncIndex(first);
+    await publishForIndex(second + ".bind.ws", sk, e);
+    await syncIndex(second);
+    const key = siteKey(siteLabel(e));
+    expect(JSON.parse((await env.HOSTS.get(key))!).name).toBe(second);
+    expect((await rpc(first + ".bind.ws", sk, "deleteevent", e.id)).result).toBe(true);
+    await syncIndex(first);
+    expect(JSON.parse((await env.HOSTS.get(key))!).name).toBe(second);
+  });
+
+  it("clears site mappings during relay teardown", async () => {
+    const name = "idx-teardown";
+    const sk = generateSecretKey();
+    await rpc(name + ".bind.ws", sk, "claim");
+    const e = ev(sk, 15128, "", paths);
+    await publishForIndex(name + ".bind.ws", sk, e);
+    await syncIndex(name);
+    const key = siteKey(siteLabel(e));
+    expect(await env.HOSTS.get(key)).toContain(name);
+    expect((await rpc(name + ".bind.ws", sk, "deleterelay", name)).result).toEqual({ deleted: true, name });
+    expect(await env.HOSTS.get(key)).toBeNull();
+  });
+});

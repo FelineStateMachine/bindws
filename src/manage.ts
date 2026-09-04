@@ -22,7 +22,7 @@ import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dum
 import { can, type Action, type Role } from "./roles.ts";
 import { detailOf } from "./audit.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
-import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
+import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from "./domains.ts";
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 
@@ -680,9 +680,16 @@ export const METHODS: Record<string, Method> = {
   adddomain: {
     action: "identity",
     run: async ({ relay, str, reply }) => {
-      const r = await addDomain(relay, str(0));
+      const r = await addDomain(relay, str(0), str(1) || undefined);
       if (typeof r === "string") return reply({ error: r }, r.startsWith("error:") ? 502 : 400);
       return reply({ result: r });
+    },
+  },
+  setdomainsite: {
+    action: "identity",
+    run: async ({ relay, str, reply }) => {
+      const r = await setDomainSite(relay, str(0), str(1) || undefined);
+      return typeof r === "string" ? reply({ error: r }, 400) : reply({ result: r });
     },
   },
   checkdomain: {

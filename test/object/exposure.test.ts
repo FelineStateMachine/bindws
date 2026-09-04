@@ -4,12 +4,13 @@
 // socket, and nothing that names her, her note or her file may come back.
 // Then she asks, and it all does. This is the test that keeps the next
 // door honest: add a path here when you add one to the relay.
-import { SELF } from "cloudflare:test";
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { npubEncode } from "nostr-tools/nip19";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "../../src/negentropy.ts";
+import { siteLabel } from "../../src/sites.ts";
 import { VIEWS } from "../../src/views.ts";
 import { ev, pk, nip98, rpc } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
@@ -17,6 +18,7 @@ import { blossomToken } from "../helpers/media.ts";
 
 interface Fixture {
   host: string;
+  siteHost: string;
   owner: Uint8Array;
   eve: Uint8Array;
   stranger: Uint8Array;
@@ -38,14 +40,20 @@ async function seed(host: string): Promise<Fixture> {
   const c = await WS.connect(host);
   const note = ev(eve, 1, "the numbers are in");
   expect((await c.ok(note)).ok).toBe(true);
+  const site = ev(eve, 15128, "", [["path", "/index.html", sha]]);
+  expect((await c.ok(site)).ok).toBe(true);
+  await runInDurableObject(env.RELAY.getByName(host.split(".")[0]), (r) => r.syncSites());
   c.ws.close();
   await rpc(host, owner, "setpolicy", { reads: "members", writes: "allowlist", directoryPublic: false });
-  return { host, owner, eve, stranger, sha, noteId: note.id, secrets: [pk(eve), npubEncode(pk(eve)), note.id, sha, "evelynq7"] };
+  return { host, siteHost: siteLabel(site) + ".bind.ws", owner, eve, stranger, sha, noteId: note.id, secrets: [pk(eve), npubEncode(pk(eve)), note.id, sha, "evelynq7"] };
 }
 
 // Every HTTP path a relay answers that could carry something of a member's.
-function doors(f: Fixture): { path: string; method?: string; gated: boolean; blossom?: string }[] {
+function doors(f: Fixture): { path: string; host?: string; method?: string; gated: boolean; blossom?: string }[] {
   return [
+    { host: f.siteHost, path: "/", gated: true },
+    { host: f.siteHost, path: "/index.html", method: "HEAD", gated: true },
+    { host: f.siteHost, path: "/.well-known/nsite/auth", gated: true },
     { path: "/", gated: false },
     { path: "/people", gated: false },
     { path: "/.well-known/nostr.json", gated: false },
@@ -75,7 +83,7 @@ describe("the read rule at every door", () => {
   it("shows a stranger nothing of a member, her note or her file", async () => {
     const f = await seed("exposure-stranger.bind.ws");
     for (const d of doors(f)) {
-      const resp = await SELF.fetch(`http://${f.host}${d.path}`, { method: d.method ?? "GET" });
+      const resp = await SELF.fetch(`http://${d.host ?? f.host}${d.path}`, { method: d.method ?? "GET" });
       const text = await resp.text();
       expect(leaks(text, f.secrets), `${d.method ?? "GET"} ${d.path} -> ${resp.status}`).toEqual([]);
       if (d.gated) expect(resp.status, d.path).toBe(401);
@@ -120,7 +128,7 @@ describe("the read rule at every door", () => {
   it("shows a signed-in non-member the same nothing, with 403 where the stranger got 401", async () => {
     const f = await seed("exposure-outsider.bind.ws");
     for (const d of doors(f)) {
-      const url = `http://${f.host}${d.path}`;
+      const url = `http://${d.host ?? f.host}${d.path}`;
       const method = d.method ?? "GET";
       const headers = { authorization: await nip98(f.stranger, url, method) };
       const resp = await SELF.fetch(url, { method, headers });
@@ -154,6 +162,10 @@ describe("the read rule at every door", () => {
       return { status: resp.status, text: await resp.text() };
     };
     const url = (path: string) => `http://${f.host}${path}`;
+    const siteURL = `http://${f.siteHost}/`;
+    const site = await SELF.fetch(siteURL, { headers: { authorization: await nip98(f.eve, siteURL) } });
+    expect(site.status).toBe(200);
+    expect(await site.text()).toBe("eve's quarterly numbers");
     // Her file, with a Blossom get token and with NIP-98.
     let r = await get(`/${f.sha}`, blossomToken(f.eve, "get", f.sha));
     expect(r.status).toBe(200);
@@ -177,7 +189,7 @@ describe("the read rule at every door", () => {
     expect(JSON.parse(r.text).people.map((m: any) => m.pubkey)).toContain(pk(f.eve));
     const c = await WS.connect(f.host);
     await c.auth(f.eve, f.host);
-    expect((await c.open("r", { authors: [pk(f.eve)] })).events.map((e) => e.id)).toEqual([f.noteId]);
+    expect((await c.open("r", { authors: [pk(f.eve)], kinds: [1] })).events.map((e) => e.id)).toEqual([f.noteId]);
   });
 
   it("closes the subscriptions a tightened read rule no longer admits", async () => {

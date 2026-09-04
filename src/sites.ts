@@ -7,6 +7,11 @@ import { bytesToHex } from "./negentropy.ts";
 import { KIND_SITE, KIND_NAMED_SITE, KIND_SITE_SNAPSHOT } from "./kinds.ts";
 import type { Filter } from "./filter.ts";
 import type { Relay } from "./relay.ts";
+import { SITE_AUTH_PATH, siteIdentity } from "./site-auth.ts";
+import { denyStatus } from "./auth.ts";
+import { featureOn } from "./settings.ts";
+import { remoteSiteBlob } from "./site-mirror.ts";
+import { blobBlocked, type Blob } from "./blossom.ts";
 
 export const SITE_KINDS = [KIND_SITE, KIND_NAMED_SITE, KIND_SITE_SNAPSHOT];
 const HEX = /^[0-9a-f]{64}$/;
@@ -60,13 +65,13 @@ function reference(s: string): boolean {
 export function checkSite(e: Event): string {
   if (!SITE_KINDS.includes(e.kind)) return "";
   const ds = e.tags.filter((t) => t[0] === "d");
-  if (e.kind === KIND_NAMED_SITE ? ds.length !== 1 || !SITE_NAME.test(ds[0][1] ?? "") : ds.length !== 0) return "invalid: site d tag must be a 1–13 character named-site identifier; root sites and snapshots have none";
+  if (e.kind === KIND_NAMED_SITE ? ds.length !== 1 || !SITE_NAME.test(ds[0][1] ?? "") : ds.length !== 0) return "invalid: site d tag must be a 1-13 character named-site identifier; root sites and snapshots have none";
   const paths = sitePaths(e);
   if (!paths.length) return "invalid: a site needs at least one path tag";
   const seen = new Set<string>();
   for (const t of paths) {
     const p = t[1] ?? "";
-    if (t.length !== 3 || !/^\/(?:[^/]+\/)*[^/]+\.[^/.]+$/.test(p) || /[\\?#\x00-\x20\x7f]/.test(p) || p.split("/").some((s) => s === "." || s === "..") || !HEX.test(t[2])) return "invalid: site paths must map absolute filenames with extensions to lowercase sha256 hashes";
+    if (t.length !== 3 || !/^\/(?:[^/]+\/)*[^/]+\.[^/.]+$/.test(p) || /[\\?#\x00-\x1f\x7f]/.test(p) || p.split("/").some((s) => s === "." || s === "..") || !HEX.test(t[2])) return "invalid: site paths must map absolute filenames with extensions to lowercase sha256 hashes";
     if (seen.has(p)) return "invalid: duplicate site path";
     seen.add(p);
   }
@@ -100,7 +105,7 @@ CREATE TRIGGER IF NOT EXISTS site_removed AFTER DELETE ON events WHEN old.kind I
 END;
 `;
 
-// Never clear another relay's mapping, or a newer publication's mapping.
+// syncSiteIndex never clears another relay's or publication's mapping.
 // A failed KV write leaves the SQL entry intact for the next alarm.
 export async function syncSiteIndex(relay: Relay): Promise<boolean> {
   if (!relay.hosts || !relay.slug) return false;
@@ -118,20 +123,14 @@ export async function syncSiteIndex(relay: Relay): Promise<boolean> {
     }
     relay.sql.exec(`DELETE FROM site_outbox WHERE seq=?`, row.seq);
   }
-  return rows.length === 100;
+  return relay.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length > 0;
 }
 
 export async function forgetSites(relay: Relay): Promise<void> {
+  if (!relay.hosts) return;
   relay.sql.exec(`INSERT INTO site_outbox(raw,removed) SELECT raw,1 FROM events WHERE kind IN (15128,35128,5128)`);
-  while (await relay.syncSites()) { /* bounded batches */ }
+  do { await relay.syncSites(); } while (relay.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length);
 }
-
-// Site origins have only this door. No relay handlers, websocket, NIP-11
-// negotiation or management API is reachable here, even at the same path.
-import { whoAsks, denyStatus } from "./auth.ts";
-import { featureOn } from "./settings.ts";
-import { remoteSiteBlob } from "./site-mirror.ts";
-import { blobBlocked, type Blob } from "./blossom.ts";
 
 const SITE_TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
@@ -141,12 +140,17 @@ const SITE_TYPES: Record<string, string> = {
 export const siteType = (path: string) => SITE_TYPES[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
 const siteError = (req: Request, status: number, message: string) => new Response(req.method === "HEAD" ? null : message, { status, headers: { "cache-control": "private, no-store", "content-type": "text/plain; charset=utf-8" } });
 
+// serveSite answers the site origin, under the read rule. Relay handlers
+// and content negotiation never run here, even on paths the relay uses.
 export async function serveSite(relay: Relay, req: Request, label: string): Promise<Response> {
   const site = parseSite(label);
+  const host = new URL(req.url).hostname;
+  const canonical = host === `${label}.${relay.domain.toLowerCase()}` || host === `${label}.localhost`;
+  if (!canonical && relay.settings.policy.customHosts?.find((h) => h.host === host)?.site !== label) return siteError(req, 404, "Not found");
   if (!site || !featureOn(relay.settings.policy, "sites") || relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return siteError(req, 404, "Not found");
-  if (req.headers.get("upgrade") || !["GET", "HEAD"].includes(req.method)) return siteError(req, 405, "Method not allowed");
-  const who = whoAsks(req, "", null);
-  if (typeof who === "string") return siteError(req, 401, who);
+  if (req.headers.get("upgrade") || (!["GET", "HEAD"].includes(req.method) && !(new URL(req.url).pathname === SITE_AUTH_PATH && req.method === "POST"))) return siteError(req, 405, "Method not allowed");
+  const who = await siteIdentity(relay, req, label);
+  if (who instanceof Response) return who;
   const gate = relay.settings.mayRead(who.pubkeys);
   if (gate) return siteError(req, denyStatus(gate), gate);
   const e = manifest(relay, site);
@@ -161,7 +165,7 @@ export async function serveSite(relay: Relay, req: Request, label: string): Prom
   }
   if (directory) path += "index.html";
   const paths = sitePaths(e);
-  let mapping = paths.find((t) => t[1] === path);
+  let mapping = paths.find((t) => t[1] === url.pathname) ?? paths.find((t) => t[1] === path);
   let status = 200;
   if (!mapping) { mapping = paths.find((t) => t[1] === "/404.html"); status = 404; }
   if (!mapping || blobBlocked(relay, mapping[2])) return siteError(req, 404, "Not found");
@@ -211,7 +215,7 @@ export async function serveSite(relay: Relay, req: Request, label: string): Prom
   }
   if (!obj) return siteError(req, 404, "Not found");
   const verified = await relay.media.get(`${relay.slug}/${sha}`, { onlyIf: { etagMatches: obj.etag } });
-  if (!verified || !("body" in verified) || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
+  if (!verified || !("body" in verified) || !featureOn(relay.settings.policy, "sites") || relay.settings.leaseExpired(now()) || blobBlocked(relay, sha) || manifest(relay, site)?.id !== e.id || relay.settings.mayRead(who.pubkeys)) return siteError(req, 404, "Not found");
   relay.meterBytes(0, verified.size);
   return new Response(verified.body, { status, headers });
 }
