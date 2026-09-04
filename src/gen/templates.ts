@@ -283,5 +283,34 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       },
       "retention": []
     }
+  },
+  {
+    "name": "marmot",
+    "document": {
+      "format": "bind.ws/relay-config/2",
+      "template": {
+        "title": "Marmot",
+        "about": "A relay for Marmot KeyPackages, opaque group messages and private welcomes. Group envelopes stay subject to the relay's write limits."
+      },
+      "policy": {
+        "writes": "open",
+        "reads": "open",
+        "directoryPublic": true,
+        "features": {
+          "marmot": true
+        }
+      },
+      "kinds": {
+        "allow": [
+          10002,
+          10050,
+          1059,
+          30443,
+          445
+        ],
+        "block": []
+      },
+      "retention": []
+    }
   }
 ];

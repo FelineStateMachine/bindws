@@ -51,6 +51,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 - [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
 - [Hosting without Cloudflare](docs/16-hosting-without-cloudflare.md): the same Worker on celld, with your own bucket and proxy, and what "supported" promises.
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console, the templates.
+- [Marmot transport](docs/17-marmot.md): carry KeyPackages and opaque MLS group messages through a relay.
 - [Costs and margins](docs/15-costs-and-margins.md): what a relay costs the host, what fuel charges, the weekly check against the bitcoin price.
 
 ### Draft NIPs
@@ -69,7 +70,7 @@ npm run deploy
 
 ## Protocol surface
 
-NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
+NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, Marmot transport and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
 
 ## License
 
