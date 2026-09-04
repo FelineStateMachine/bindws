@@ -62,3 +62,10 @@ export const KIND_SITE_SNAPSHOT = 5128;
 // Marmot Nostr transport: account KeyPackages and opaque MLS group messages.
 export const KIND_MARMOT_GROUP = 445;
 export const KIND_MARMOT_KEY_PACKAGE = 30443;
+// NIP-34 Git repository authority and collaboration events
+export const KIND_REPO = 30617;
+export const KIND_REPO_STATE = 30618;
+export const KIND_GIT_PATCH = 1617;
+export const KIND_GIT_PR = 1618;
+export const KIND_GIT_PR_UPDATE = 1619;
+export const KIND_GIT_ISSUE = 1621;
