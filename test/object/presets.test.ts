@@ -26,7 +26,7 @@ describe("presets", () => {
       expect((await rpc(host, owner, "listblockedkinds")).result).toEqual([...preset.block].sort((a, b) => a - b));
       expect((await rpc(host, owner, "listretention")).result).toEqual(preset.retention);
     }
-    // Back to default leaves no rules behind.
+    // Default clears kind and retention rules; omitted feature settings stay.
     await rpc(host, owner, "applypreset", "chat");
     const d = await rpc(host, owner, "applypreset", "default");
     expect(d.result.writes).toBe("open");

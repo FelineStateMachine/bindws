@@ -7,7 +7,7 @@ copy as the start of your own.
 
 | Template | Choose it when |
 |---|---|
-| [default](01-default.jsonc) | you want a plain relay: anyone writes, anyone reads, everything kept. What a fresh claim has. |
+| [default](01-default.jsonc) | you want a plain relay: anyone writes, anyone reads, everything kept. Feature settings stay as they are. |
 | [outbox](02-outbox.jsonc) | it is where your own public notes and articles live, for the world to read. |
 | [inbox](03-inbox.jsonc) | it is where people reach you: replies, reactions, zaps and reports, kept 90 days. |
 | [private](04-private.jsonc) | only you write and only your devices or a trusted few read: drafts, wallets, app data. |
@@ -31,7 +31,11 @@ A template is a relay configuration (`$schema` names the copy served at
 `template` block for the title and the blurb, and the rules sections only:
 policy, kinds and retention. People, bans and addresses are never in a
 template, and a section a template leaves out is left alone when it is
-applied. The number in the file name is the order the console shows them in.
+applied. Default resets the write, read, directory, kind and retention rules;
+it leaves feature settings alone. Applying Default after Quiet keeps the
+features switched off. It is a rules reset, not a full relay reset.
+
+The number in the file name is the order the console shows them in.
 
 `npm run build:templates` folds the folder into `src/gen/templates.ts`, which
 the relay serves as its presets; `npm run typecheck` checks every file here

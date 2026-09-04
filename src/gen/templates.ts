@@ -6,7 +6,7 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       "format": "bind.ws/relay-config/2",
       "template": {
         "title": "Default",
-        "about": "Anyone writes, anyone reads, every kind, kept forever. The rules a fresh claim starts with."
+        "about": "Anyone writes, anyone reads, every kind, kept forever. Feature settings stay as they are."
       },
       "policy": {
         "writes": "open",
