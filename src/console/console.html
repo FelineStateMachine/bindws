@@ -1,0 +1,410 @@
+<main>
+  <header class="mast">
+    <div class="banner hidden" id="banner"><img id="bannerimg" alt=""></div>
+    <div class="wordmark"><img id="iconimg" class="icon hidden" alt=""><h1 id="title"></h1></div>
+    <div class="left"><div class="care" id="care"></div></div>
+    <div class="right">
+      <span class="urlrow"><code class="pill" id="url"></code><button class="ib" id="copy" title="Copy relay URL" aria-label="Copy relay URL"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></span>
+      <span class="owner"><i class="av hidden" id="owner-av"></i><span id="ownerline"></span><em id="who"></em>
+        <button id="signin" class="btn hidden">Sign in with extension</button>
+        <button id="signin46" class="btn hidden">Remote signer</button>
+        <button id="signout" class="ib hidden" title="Sign out" aria-label="Sign out"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l5 4-5 4M20 12H9"/></svg></button>
+      </span>
+    </div>
+  </header>
+
+  <section id="unclaimed" class="hidden">
+    <h2>Nobody owns this relay yet.</h2>
+    <p class="lead">Claim it and it's yours: you decide who can post, who can read, and what stays. One signature with a nostr browser extension; no account, no email, no card.</p>
+    <div class="row"><button id="claim" class="btn pri">Claim this relay</button><button class="btn remote" data-note="claimnote">Use a remote signer</button><span class="note" id="claimnote"></span></div>
+  </section>
+
+  <section id="leased" class="hidden">
+    <h2>A temporary relay, for now.</h2>
+    <p class="lead">Anyone can read and write here until <b id="lease-until"></b>. Then everything on it is deleted and the name is freed. Claim it and it stays, events and files included: one signature with a nostr browser extension. Or claim a new name and pull this one into it from its Storage tab.</p>
+    <div class="row"><button id="claimlease" class="btn pri">Claim this relay</button><button class="btn remote" data-note="leasenote">Use a remote signer</button><span class="note" id="leasenote"></span></div>
+  </section>
+
+  <section id="remotesec" class="hidden">
+    <h2>Connect a remote signer.</h2>
+    <p class="lead">Your key stays in a signer app such as Amber or nsec.app; this page asks it to sign. On a phone, open the link and approve there. On a computer, paste the <span class="mono">bunker://</span> URL the app gives you.</p>
+    <div class="row"><a id="nclink" class="btn pri" href="#">Open in your signer app</a><button id="nccopy" class="btn">Copy link</button><span class="note" id="ncnote"></span></div>
+    <form id="bunkerform" class="addrow"><input class="txt mono" name="url" placeholder="bunker://…" required><button class="btn">Connect</button></form>
+    <img id="ncqr" class="hidden" alt="QR code of the signer link" width="180" height="180">
+    <p class="note" id="remotenote"></p>
+  </section>
+
+  <section id="foldsec" class="folds">
+    <div id="frontsec" class="hidden">
+      <p class="lead hidden" id="desc"></p>
+      <p class="metarow hidden" id="metarow"></p>
+    </div>
+    <details class="disclosure" id="aboutsec" name="page"><summary>About, for clients</summary><div id="about" class="about"></div></details>
+    <details class="disclosure" id="connectsec" name="page"><summary>Connect</summary>
+    <div class="doors">
+      <div class="door"><small>nostr relay</small><div class="v"><span id="d-ws"></span><button class="ib" data-copy="ws" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
+      <div class="door"><small>Blossom media</small><div class="v"><span id="d-blossom"></span><button class="ib" data-copy="blossom" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
+      <div class="door"><small>names</small><div class="v"><span id="d-nip05"></span></div></div>
+      <div class="door"><small>HTTP bridge, NIP-98</small><div class="v"><span>POST /events, /query, /count</span></div></div>
+    </div>
+    <div class="block">
+      <h3>Open it in an app</h3>
+      <p class="note">Relay apps open this relay as a place. Feed apps do not: they find the owner here through a profile link that carries this relay as the hint, and learn the relay from that. Either way, add <span class="mono" id="apps-ws"></span> under the app's relay settings to post here.</p>
+      <div class="apps" id="apps"></div>
+      <div class="phones" id="phones"></div>
+    </div>
+    </details>
+  </section>
+
+  <section id="peoplesec" class="hidden">
+    <h2>People <span class="count" id="people-count"></span></h2>
+    <p class="note hidden" id="people-note">Hidden from visitors. Only you see this list.</p>
+    <div class="dir" id="dir"></div>
+  </section>
+
+  <section id="fuelsec" class="hidden">
+    <h2>Fuel</h2>
+    <p class="lead">Free allowance first; past it, usage burns sats. Anyone can zap a top-up.</p>
+    <div class="gauges">
+      <div class="gauge"><small>Events stored</small><div class="bar"><i id="g-events"></i><b id="p-events"></b></div><span id="t-events"></span></div>
+      <div class="gauge"><small>Files stored</small><div class="bar"><i id="g-media"></i><b id="p-media"></b></div><span id="t-media"></span></div>
+      <div class="gauge"><small>Awake this month</small><div class="bar"><i id="g-active"></i><b id="p-active"></b></div><span id="t-active"></span></div>
+      <div class="gauge"><small>Rows written this month</small><div class="bar"><i id="g-rows"></i><b id="p-rows"></b></div><span id="t-rows"></span></div>
+    </div>
+    <p class="balance" id="fuel-balance"></p>
+    <form id="topup" class="topup hidden"><span class="sats"><input type="number" name="sats" min="1" value="1000"><span>sats</span></span><button class="btn pri">&#9889; Zap to top up</button><span class="note" id="topup-note"></span></form>
+    <div id="invoice" class="invoice hidden">
+      <p>Pay from any lightning wallet. The receipt lands on this relay and credits it automatically.</p>
+      <div class="row"><a id="inv-link" class="btn" href="#">Open in wallet</a><button id="inv-copy" class="ib" title="Copy invoice" aria-label="Copy invoice"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><span class="state" id="inv-state"></span></div>
+      <textarea id="inv-text" readonly></textarea>
+    </div>
+  </section>
+
+  <section id="myinvites" class="hidden">
+    <h2>Your invites</h2>
+    <p class="lead">The owner lets members bring people in. Each link admits one person and lasts three days.</p>
+    <div class="row"><button id="mintmine" class="btn pri">New invite link</button><span class="note" id="minenote"></span></div>
+    <ul id="mine" class="plain"></ul>
+  </section>
+
+
+  <div class="console hidden" id="console">
+    <nav class="tabs" id="tabs">
+      <a href="#people" data-tab="people">People<span class="count" id="tc-people"></span></a>
+      <a href="#moderation" data-tab="moderation">Moderation<span class="count" id="tc-reports"></span></a>
+      <a href="#rules" data-tab="rules">Rules</a>
+      <a href="#identity" data-tab="identity">Identity</a>
+      <a href="#data" data-tab="data">Data</a>
+      <a href="#sync" data-tab="sync">Sync</a>
+      <a href="#views" data-tab="views">Views</a>
+      <a href="#health" data-tab="health">Health</a>
+      <a href="#owner" data-tab="owner">Owner</a>
+    </nav>
+
+    <section class="panel" data-panel="people">
+      <h2>People</h2>
+      <p class="lead">The member list is published as a signed roster; a name makes someone <span class="mono" id="nip05-example"></span>.</p>
+      <div class="block">
+        <form id="addmember" class="addrow"><input class="txt mono" name="pubkey" placeholder="hex pubkey or npub" required><input class="txt" name="name" placeholder="name (optional)" pattern="[a-z0-9._-]{1,64}" style="max-width:9rem"><input class="txt" name="note" placeholder="note" style="max-width:9rem"><button class="ib pri" title="Add member" aria-label="Add member"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></form>
+        <div class="scroll"><table id="members" class="people-table"><thead><tr><th>Who</th><th>Name</th><th>Note</th><th>Limits</th><th>Joined</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <div class="two">
+          <div>
+          <h3>Invites</h3>
+          <form id="mintinvite" class="addrow"><select class="txt" name="ttl" style="max-width:8rem"><option value="3600">1 hour</option><option value="86400">1 day</option><option value="259200" selected>3 days</option><option value="2592000">30 days</option></select><input class="txt num" type="number" name="max" min="0" value="0" title="uses, 0 = unlimited" style="width:5rem;flex:0 0 auto"><input class="txt" name="note" placeholder="note"><button class="ib pri" title="New invite" aria-label="New invite"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></form>
+          <ul id="invites" class="plain"></ul>
+          <form id="treeform" class="addrow hidden" title="Members invite members: how many hops from you the tree reaches, and how many live invites each member may hold"><span class="dim">members invite</span><input class="txt num" type="number" name="depth" min="0" max="10" value="0" style="width:4rem;flex:0 0 auto"><span class="dim">hops deep,</span><input class="txt num" type="number" name="quota" min="0" max="100" value="0" style="width:4rem;flex:0 0 auto"><span class="dim">each</span><button class="btn">Save</button></form>
+          </div>
+          <div>
+            <h3>Joining</h3>
+            <form id="joinform">
+              <div class="form">
+                <label class="wide"><span>Shown before someone accepts an invite</span><textarea name="joinTerms" placeholder="House rules, expectations, anything a newcomer should agree to." maxlength="20000"></textarea></label>
+                <label class="wide switch"><input type="checkbox" name="directoryPublic"> Show the people directory to visitors</label>
+              </div>
+              <div class="actions"><button class="btn pri">Save</button></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="moderation">
+      <h2>Moderation</h2>
+      <p class="lead">Reports never show in the feed. Banning also deletes the reported thing.</p>
+      <div class="block">
+        <h3>Reports <span class="count" id="reports-count"></span></h3>
+        <form id="thresholdform" class="addrow"><span class="dim">hide an event once</span><input class="txt num" type="number" name="reportThreshold" min="0" max="100" style="width:4.5rem;flex:0 0 auto"><span class="dim">different people report it; 0 never</span><button class="btn">Save</button></form>
+        <div class="scroll"><table id="reports" class="events"><thead><tr><th>Time</th><th>Type</th><th>About</th><th>Reason</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3>Log</h3>
+        <p class="dim">Every change made here or by a moderation event, newest first, the last 5,000.</p>
+        <div class="scroll"><table id="audit" class="events"><thead><tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+        <button class="btn" id="audit-more" type="button">Older</button>
+      </div>
+      <div class="block two">
+        <div>
+          <h3>Bans</h3>
+          <form id="addban" class="addrow"><input class="txt mono" name="pubkey" placeholder="hex pubkey or npub" required><input class="txt" name="reason" placeholder="reason" style="max-width:8rem"><label class="note" title="Also delete everything they wrote and uploaded"><input type="checkbox" name="erase"> erase</label><button class="ib danger" title="Ban" aria-label="Ban"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></button></form>
+          <ul id="bans" class="plain"></ul>
+          <ul id="banned-events" class="plain"></ul>
+        </div>
+        <div>
+          <h3>Blocked addresses</h3>
+          <form id="addblock" class="addrow"><input class="txt mono" name="ip" placeholder="IP address" required><input class="txt" name="reason" placeholder="reason" style="max-width:8rem"><button class="ib danger" title="Block" aria-label="Block"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></button></form>
+          <ul id="blocks" class="plain"></ul>
+        </div>
+      </div>
+      <div class="block">
+        <h3>Recent events</h3>
+        <p class="note">Delete removes one thing. Ban also refuses it forever. Search covers notes, articles and profiles.</p>
+        <form id="searchform" class="addrow"><input class="txt" name="q" placeholder="search" maxlength="200"><button class="btn">Search</button><button type="button" id="searchclear" class="btn hidden">Clear</button></form>
+        <div class="scroll"><table id="events" class="events"><thead><tr><th>Time</th><th>Kind</th><th>Author</th><th>Content</th><th></th></tr></thead><tbody></tbody></table></div>
+        <div class="actions left"><button id="more" class="btn">Load more</button></div>
+      </div>
+      <div class="block">
+        <h3>Pinned <span class="count" id="pins-count"></span></h3>
+        <p class="note">Group clients show these at the top. Up to 20, in this order.</p>
+        <form id="pinform" class="addrow"><input class="txt mono" name="id" placeholder="event id or address kind:pubkey:d" required><button class="btn">Pin</button></form>
+        <ul id="pins" class="plain"></ul>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="rules">
+      <h2>Rules</h2>
+      <p class="lead">Bans apply regardless of these.</p>
+      <div class="block">
+        <h3>Presets</h3>
+        <p class="note">One click sets writes, reads, kinds and keep-for together. Limits, identity and people stay.</p>
+        <div id="presets"></div>
+        <div class="row hidden" id="presetsourcerow"><input class="txt mono" id="presetsource" placeholder="wss://source.relay to mirror" style="max-width:24rem"><span class="note">Replica presets keep a standing pull of their kinds from this relay.</span></div>
+        <p class="note" id="presetnote"></p>
+      </div>
+      <form id="access">
+        <div class="two">
+          <div><h3>Writes</h3><div class="choices">
+            <label><input type="radio" name="writes" value="open"><b>Anyone</b><small>Every valid event is accepted, unless banned.</small></label>
+            <label><input type="radio" name="writes" value="allowlist"><b>Members</b><small>Only people on the member list, and you.</small></label>
+            <label><input type="radio" name="writes" value="wot"><b>Members and their follows</b><small>Members, plus everyone in a member's contact list.</small></label>
+            <label><input type="radio" name="writes" value="owner"><b>Only me</b><small>Nobody else can post.</small></label>
+          </div></div>
+          <div><h3>Reads</h3><div class="choices">
+            <label><input type="radio" name="reads" value="open"><b>Anyone</b><small>DMs and gift wraps still go only to their parties.</small></label>
+            <label><input type="radio" name="reads" value="auth"><b>Authenticated only</b><small>Every query needs a NIP-42 sign-in first.</small></label>
+            <label><input type="radio" name="reads" value="members"><b>Members only</b><small>Removing a member ends their subscriptions.</small></label>
+          </div></div>
+        </div>
+        <div class="form" style="margin-top:1rem">
+          <label><span>Open to anyone <small>kinds anyone may write, whatever the rule above says</small></span><input class="txt mono" name="openKinds" placeholder="7, 9735"></label>
+          <label class="switch"><input type="checkbox" name="guestReplies"> Anyone may reply to a member's note</label>
+        </div>
+        <div class="limits">
+          <label><span>Minimum proof of work <small>bits</small></span><input class="txt num" type="number" name="minPow" min="0" max="64"></label>
+          <label><span>Reject events dated in the future by more than <small>seconds</small></span><input class="txt num" type="number" name="maxFuture" min="0"></label>
+          <label><span>Max events per query</span><input class="txt num" type="number" name="maxLimit" min="1" max="5000"></label>
+          <label><span>Max subscriptions per connection</span><input class="txt num" type="number" name="maxSubs" min="1" max="200"></label>
+          <label><span>Max message size <small>KB</small></span><input class="txt num" type="number" name="maxMessageKB" min="16" max="1024"></label>
+          <label><span>Events per minute <small>per connection</small></span><input class="txt num" type="number" name="eventsPerMinute" min="1"></label>
+          <label><span>Queries per minute <small>per connection</small></span><input class="txt num" type="number" name="reqsPerMinute" min="1"></label>
+          <label><span>Max upload size <small>MB</small></span><input class="txt num" type="number" name="maxBlobMB" min="1" max="95"></label>
+        </div>
+        <div class="actions"><button class="btn pri">Save rules</button></div>
+      </form>
+      <div class="block">
+        <h3>Kinds</h3>
+        <p class="note">An empty allow list means every kind. Blocks always win.</p>
+        <form id="kindform" class="addrow"><input class="txt num" type="number" name="kind" min="0" max="65535" placeholder="kind" required style="width:7rem;flex:0 0 auto"><button class="ib" name="rule" value="allow" title="Allow kind" aria-label="Allow kind"><svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg></button><button class="ib danger" name="rule" value="block" title="Block kind" aria-label="Block kind"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></button></form>
+        <p class="kindline">Allowed: <span id="kinds-allow"></span></p>
+        <p class="kindline">Blocked: <span id="kinds-block"></span></p>
+      </div>
+      <div class="block">
+        <h3>Blocked words</h3>
+        <p class="note">Content containing one is refused. You and your moderators are exempt. An entry written /like this/ is a regular expression.</p>
+        <form id="wordsform"><textarea class="txt" name="words" rows="4" placeholder="one word, phrase or /pattern/ per line"></textarea><label class="switch"><input type="checkbox" name="inTags"> Also search tags</label><div class="actions"><button class="btn">Save words</button></div></form>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="identity">
+      <h2>Identity</h2>
+      <form id="identity">
+        <h3>Profile</h3>
+        <div class="form">
+          <label><span>Name</span><input class="txt" name="name" maxlength="200"></label>
+          <label><span>Contact</span><input class="txt" name="contact" placeholder="mailto:you@example.com" maxlength="500"></label>
+          <label class="wide"><span>Description</span><textarea name="description" maxlength="2000"></textarea></label>
+          <label class="wide"><span>Icon URL</span><input class="txt" name="icon" placeholder="https://…/icon.png" maxlength="2000"></label>
+          <label class="wide"><span>Banner URL</span><input class="txt" name="banner" placeholder="https://…/banner.png" maxlength="2000"></label>
+        </div>
+        <h3 class="gap">For directories</h3>
+        <div class="form">
+          <label><span>Posting policy URL</span><input class="txt" name="postingPolicy" placeholder="https://…/posting" maxlength="2000"></label>
+          <label><span>Privacy policy URL</span><input class="txt" name="privacyPolicy" placeholder="https://…/privacy" maxlength="2000"></label>
+          <label><span>Tags</span><input class="txt" name="tags" placeholder="bitcoin, cats"></label>
+          <label><span>Languages</span><input class="txt" name="languageTags" placeholder="en, pt-BR"></label>
+          <label><span>Countries</span><input class="txt" name="relayCountries" placeholder="US, DE"></label>
+        </div>
+        <div class="actions"><button class="btn pri">Save identity</button></div>
+      </form>
+      <div class="block">
+        <h3>Your own domain</h3>
+        <p class="note">Point a hostname you control at this relay, such as <span class="mono">relay.example.com</span>. Add it here, then create the record shown at your DNS. The certificate is issued on its own once the record resolves.</p>
+        <form id="adddomain" class="addrow"><input class="txt mono" name="host" placeholder="relay.example.com" required><button class="btn">Add</button></form>
+        <div id="domains"></div>
+        <p class="note" id="domainnote"></p>
+      </div>
+      <div class="block">
+        <h3>Your relay lists</h3>
+        <p class="note">Clients find your relays through these lists. Add this relay to each so they use it. What is already listed stays.</p>
+        <div id="wire"></div>
+      </div>
+      <div class="block">
+        <h3>Share</h3>
+        <p class="note">A card for links and profiles, and the group address that group-aware clients open. Both are public and refresh every five minutes.</p>
+        <div class="share">
+          <a href="/card.svg" target="_blank" rel="noopener"><img id="cardimg" src="/card.svg" alt="relay card" width="600" height="315"></a>
+          <div class="share-side">
+            <img id="naddrqr" class="hidden" alt="QR code of the group address" width="150" height="150">
+            <code class="mono naddr" id="naddr"></code>
+            <div class="row"><button class="btn" id="copynaddr">Copy naddr</button><button class="btn" id="copyembed">Copy embed</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="data">
+      <h2>Data</h2>
+      <p class="lead">Keep-for rules run once a day. Purges happen now and cannot be undone.</p>
+      <div class="kbar" id="s-bar"></div><span class="legend slegend" id="s-legend"></span>
+      <div class="usage" id="s-totals"></div>
+      <div class="block">
+        <h3>By kind</h3>
+        <div class="scroll"><table id="kinds" class="events"><thead><tr><th>Kind</th><th class="r">Count</th><th class="r">Size</th><th>Oldest</th><th>Keep for</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3>Files <span class="count" id="blobs-count"></span></h3>
+        <div class="scroll"><table id="blobs" class="events"><thead><tr><th>Time</th><th>File</th><th>Size</th><th>Uploader</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3>Dumps <span class="count" id="dumps-count"></span></h3>
+        <p class="note">Every event as one JSONL file on a schedule, kept for a few runs and counted as files. Downloads need your signature.</p>
+        <form id="dumpform" class="addrow"><select class="txt" name="dumps" style="max-width:8rem"><option value="off">off</option><option value="daily">daily</option><option value="weekly">weekly</option></select><input class="txt num" type="number" name="keep" min="1" max="60" value="7" title="how many to keep" style="width:5rem;flex:0 0 auto"><button class="btn">Save</button><button type="button" id="dumpnow" class="btn">Dump now</button></form>
+        <ul id="dumps" class="plain"></ul>
+      </div>
+      <div class="block">
+        <h3>Import a file</h3>
+        <p class="note">A JSONL of events, one per line, such as a dump or a strfry export, or a JSON array. Up to 64 MB. Signatures are checked; bans and kind rules apply; the write rule does not. Progress shows under Jobs.</p>
+        <form id="importform" class="addrow"><input class="txt" type="file" name="file" accept=".jsonl,.json,.ndjson,application/json" required><button class="btn">Import</button></form>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="sync">
+      <h2>Sync</h2>
+      <p class="lead">Events in and out, one round at a time, while the relay sleeps between rounds. Jobs spend awake time, which fuel counts.</p>
+      <div class="block">
+        <h3>Jobs</h3>
+        <p class="note">Work the relay does on its own, one round at a time. A pull copies what another relay has and this one lacks. Fetch my history pulls your own events from the relays in your relay list. Rebroadcast sends what is here to other relays. Bans and kind rules apply to what arrives.</p>
+        <div class="scroll"><table id="jobs" class="events"><thead><tr><th>Job</th><th>Relays</th><th>Filter</th><th>Schedule</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+        <form id="pullform" class="addrow"><input class="txt mono" name="url" placeholder="wss://other.relay" required><select class="txt" name="every" style="max-width:9rem"><option value="0">once</option><option value="1">every hour</option><option value="6">every 6 hours</option><option value="24">every day</option></select><button class="btn">Pull</button></form>
+        <form id="backfillform" class="addrow"><input class="txt mono" name="relays" placeholder="relays, comma separated; blank uses your relay list"><button class="btn">Fetch my history</button></form>
+        <form id="pushform">
+          <div class="form">
+            <label class="wide"><span>Rebroadcast to</span><input class="txt mono" name="targets" placeholder="wss://a.relay, wss://b.relay" required></label>
+            <label><span>Kinds <small>blank for all</small></span><input class="txt mono" name="kinds" placeholder="1, 30023"></label>
+            <label><span>Newer than <small>days, blank for all</small></span><input class="txt num" type="number" name="days" min="0"></label>
+            <label><span>Schedule</span><select class="txt" name="every"><option value="0">once</option><option value="1">every hour</option><option value="6">every 6 hours</option><option value="24">every day</option></select></label>
+          </div>
+          <div class="actions"><button class="btn">Rebroadcast</button></div>
+        </form>
+      </div>
+      <div class="block">
+        <h3>Fork this relay</h3>
+        <p class="note">A new name, temporary until claimed, filled from this relay. Yours to split a name by job, or somebody else's to hand them a community with its history. One fork an hour.</p>
+        <form id="forkform">
+          <div class="form">
+            <label><span>Name <small>optional</small></span><input class="txt mono" name="name" placeholder="a memorable one if blank" pattern="[a-z0-9-]{3,32}"></label>
+            <label><span>Who claims it <small>npub or hex, you if blank</small></span><input class="txt mono" name="holder"></label>
+            <label><span>What to copy</span><select class="txt" name="scope"><option value="all">everything</option><option value="mine">only my events</option><option value="kinds">these kinds</option></select></label>
+            <label id="forkkinds" class="hidden"><span>Kinds <small>comma separated</small></span><input class="txt mono" name="kinds" placeholder="1, 30023"></label>
+            <label class="wide switch"><input type="checkbox" name="people" checked> Copy the people</label>
+          </div>
+          <div class="actions"><button class="btn pri">Fork</button></div>
+        </form>
+        <p class="note" id="forknote"></p>
+        <div class="row hidden" id="forkresult"><span class="mono" id="forkurl"></span><button class="ib" id="forkcopy" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="views">
+      <h2>Views</h2>
+      <p class="lead">Records the relay computes and signs, for clients and for anyone. Each run costs the rows it writes.</p>
+      <div class="block">
+        <div id="views"></div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="health">
+      <h2>Health</h2>
+      <div class="counters">
+        <div class="counter"><b class="big" id="h-last">–</b><small>since last event</small><span class="sub" id="h-last-sub"></span></div>
+        <div class="counter"><b class="big" id="h-conns">–</b><small>connected now</small><span class="sub">websockets open</span></div>
+        <div class="counter"><b class="big" id="h-fuel">–</b><small id="h-fuel-label">fuel</small><span class="sub" id="h-fuel-sub"></span></div>
+        <div class="counter"><div class="kbar" id="h-kinds"></div><small>used for, last 30 days</small><span class="sub legend" id="h-kinds-legend"></span></div>
+      </div>
+      <div class="usage" id="usage"></div>
+      <div class="block">
+        <h3>Zaps received</h3>
+        <div class="scroll"><table id="credits"><thead><tr><th>When</th><th>From</th><th class="r">Sats</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3>Notifications</h3>
+        <p class="note">The relay writes you a private message (NIP-17) with its own key. It lands here, in your inbox on your own relay, and on your DM relays when this relay holds your kind 10050.</p>
+        <form id="notify">
+          <div class="form">
+            <label class="wide switch"><input type="checkbox" name="reports"> A report arrives</label>
+            <label class="wide switch"><input type="checkbox" name="fuel"> Fuel runs low</label>
+            <label class="wide switch"><input type="checkbox" name="jobs"> A pull finishes</label>
+            <label class="wide switch"><input type="checkbox" name="succession"> The handover clock is running</label>
+            <label class="wide switch"><input type="checkbox" name="digest"> A note every week on how the relay is doing</label>
+          </div>
+          <div class="actions"><button class="btn pri">Save notifications</button><button type="button" id="notifytest" class="btn">Send a test message</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="owner">
+      <h2>Owner</h2>
+      <p class="lead">The relay's key, events, files and fuel stay put through everything here except delete.</p>
+      <div class="block">
+        <h3>Configuration</h3>
+        <p class="note">Rules, identity, members, bans, address blocks and kind rules as a file. Importing replaces those lists; it never touches events, files, or the owner.</p>
+        <div class="row"><button id="exportcfg" class="btn">Export configuration</button><button id="importcfg" class="btn">Import configuration</button><input type="file" id="cfgfile" accept="application/json,.json" class="hidden"></div>
+      </div>
+      <div class="block danger-zone">
+        <h3>Transfer ownership</h3>
+        <p class="note">Hands the relay to a member. You stay on as a moderator. The relay's key, events, files and fuel do not change. There is no undo.</p>
+        <form id="transfer" class="addrow"><select class="txt mono" name="pubkey" required></select><button class="btn danger">Transfer</button></form>
+      </div>
+      <div class="block danger-zone">
+        <h3>If I lose my key</h3>
+        <p class="note">Name a member as your heir. If you do not sign in here for the time you pick, the relay writes to you once a week for a month, then hands itself to the heir and keeps you on as a moderator. Any signed action on the relay resets the clock.</p>
+        <form id="succession">
+          <div class="form">
+            <label><span>Heir <small>a member</small></span><select class="txt mono" name="heir" required></select></label>
+            <label><span>Hand over</span><select class="txt" name="afterDays"><option value="90">after 3 months away</option><option value="180" selected>after 6 months away</option><option value="365">after a year away</option></select></label>
+          </div>
+          <div class="actions"><button class="btn">Set heir</button><button type="button" id="clearsuccession" class="btn hidden">Clear</button></div>
+        </form>
+        <p class="note" id="successionnote"></p>
+      </div>
+      <div class="block danger-zone">
+        <h3>Delete this relay</h3>
+        <p class="note">Deletes every event, file, member, invite and setting, closes every connection, and returns the name to unclaimed for anyone to take. There is no undo.</p>
+        <button id="deleterelay" class="btn danger">Delete this relay</button>
+      </div>
+    </section>
+  </div>
+
+  <footer class="pg"><p>a bind.ws relay</p><a href="https://github.com/FelineStateMachine/bindws">source</a></footer>
+</main>

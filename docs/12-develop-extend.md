@@ -38,7 +38,8 @@ src/
   nip05.ts      names
   ratelimit.ts  token buckets
   negentropy.ts hll.ts event.ts filter.ts
-  dashboard.ts  the console, one HTML file as three strings
+  dashboard.ts  the console's page, from the three files in console/
+  console/      console.html, console.css, console.js: the console as written
   gen/signer.ts generated: the NIP-46 client library the console loads from /signer.js
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
@@ -76,7 +77,7 @@ CI runs typecheck and the object tests on every push; the conformance suite agai
 1. Add the name to `METHODS` in `src/manage.ts` and the action it needs to `METHOD_ACTIONS` in `src/roles.ts`; a method without an action is refused for everyone.
 2. Add a `case` in the switch. Use `num(i)` and `str(i)` for parameters. Return `reply({ result })` or `reply({ error }, 400)`.
 3. If it changes state that other code caches, update `Settings` and its in-memory sets.
-4. If the console should call it, add the control to `dashboard.ts` and a handler in its script.
+4. If the console should call it, add the control to `src/console/console.html` and a handler in `console.js`.
 5. Cover it in the `test/object` file for its feature, with `rpc` from `test/helpers/relay.ts`. If it can show a member, an event or a file, ask `Settings.mayRead` (or `mayList` for names and counts) with what `whoAsks` found in the header, and add the path to the door walk in `test/object/exposure.test.ts`, which knocks on every path as a stranger and as a signed-in non-member and fails on anything of a member's that comes back.
 
 ## Add a NIP
@@ -97,11 +98,11 @@ A NIP that changes the query surface touches `store.ts`. Add the number to `SUPP
 
 ## The signer bundle
 
-The console has no build step, but remote signing needs NIP-44 and secp256k1, which browsers do not ship. `scripts/signer-entry.js` imports the pieces of nostr-tools the console uses and `npm run build:signer` bundles them with esbuild into `src/gen/signer.ts`, a string the relay serves at `/signer.js`. The console loads it only when someone picks a remote signer. The generated file is committed; `npm run typecheck` fails when it is stale.
+Remote signing needs NIP-44 and secp256k1, which browsers do not ship. `scripts/signer-entry.js` imports the pieces of nostr-tools the console uses and `npm run build:signer` bundles them with esbuild into `src/gen/signer.ts`, a string the relay serves at `/signer.js`. The console loads it only when someone picks a remote signer. The generated file is committed; `npm run typecheck` fails when it is stale.
 
 ## The console
 
-`src/dashboard.ts` holds CSS, markup and script as JSON string literals on single lines. Edit with a script that decodes, changes and re-encodes them; a raw newline inside a literal breaks the file, and the source keeps non-ASCII as `\uXXXX` escapes, so the encoder must too. Keep the script re-runnable with asserts on its anchors: when several changes land in parallel, the second one re-applies its script on top of the first. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
+The console is three ordinary files in `src/console`: `console.html` (the body), `console.css` and `console.js`. `npm run build:console` folds them into `src/gen/console.ts`, the strings the relay serves; `npm run dev` runs it first, and `npm run typecheck` fails when the generated file is stale. It is a generated module rather than a text-module rule in `wrangler.jsonc` because celld deploy refuses a config with `rules`. `scripts/check-console.mjs` runs the script's synchronous start against a stub document, so a handler wired above the helper it calls fails typecheck instead of a live page. The shared shell in `ui.ts` provides fonts, colors, buttons, inputs and the sticker vocabulary; keep new pages inside it.
 
 To look at what you changed: `npm run dev`, then `node scripts/dev-signer.mjs`, open `http://<name>.localhost:8787/`, paste the `window.nostr` snippet from that script into the devtools console, and sign in or claim. Playwright's CLI can drive the same loop: open the page, inject the snippet with `eval`, click, screenshot at a phone width and at a desktop width. `scripts/shot.mjs` renders a page over the Chrome debugging protocol when Playwright is not around.
 

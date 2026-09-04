@@ -137,7 +137,7 @@ Wiring the relay into the owner's lists (kinds 10002, 10050, 10007, 10063) happe
 
 `notify.ts` lets the relay write its owner: a kind 14 rumour sealed and gift wrapped with the identity key (NIP-59, NIP-44), stored as the owner's inbox and pushed best effort to up to three relays from the owner's kind 10050 through the pull code's `dial`. Hooks: a report filed through either door, fuel turning low, a job finishing, the succession clock and the test button. Off by default in `policy.notify`; naming an heir switches the succession kind on. The catch-all retention rule skips kind 1059 so the inbox survives it.
 
-The console (`dashboard.ts`) is one page, no build step: markup, styles and script as three string literals. Its signer is NIP-07 when present or a NIP-46 session over the relay itself, using a bundle of nostr-tools served at `/signer.js` and loaded only when someone picks remote signing.
+The console is one page: markup, styles and script are the three files in `src/console`, folded into a generated module that `dashboard.ts` serves. Its signer is NIP-07 when present or a NIP-46 session over the relay itself, using a bundle of nostr-tools served at `/signer.js` and loaded only when someone picks remote signing.
 
 ## Views
 
