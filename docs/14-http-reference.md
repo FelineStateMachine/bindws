@@ -182,6 +182,8 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 
 ## People, invites and names
 
+The NIP-86 `createclaim`, `listclaims` and `deleteclaim` methods use `POST /` to manage the same codes redeemed below. Their parameters, results and limits are in [NIP-86 membership claims](24-nip86-claims.md); the bind.ws `claim` method still concerns relay ownership.
+
 | Path | Method | Auth | Answers | Status |
 |---|---|---|---|---|
 | `/.well-known/nostr.json?name=` | GET | none for a name; the directory switch for the listing without one, else NIP-98 by a member | NIP-05 for the member with that name, with this relay as their relay; without a name, every named member when the directory is public | 200; 401 bad signature |

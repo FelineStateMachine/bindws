@@ -27,6 +27,8 @@ A members-only relay does not have to be silent to everyone else. On the Rules t
 
 **New invite link** mints a link that lives one hour to 30 days, three days by default, and takes as many people as you allow, or any number if you leave the count at zero. The person opens it, reads the join terms, signs once and becomes a member.
 
+Clients and scripts can choose a code through `createclaim`, list usable codes through `listclaims`, and revoke one through `deleteclaim`. These use the same invites and member tree as the page. A chosen code lasts three days and permits unlimited joins until expiry or revocation; use `createinvite` for a generated code with a different lifetime or use limit. See [NIP-86 membership claims](24-nip86-claims.md). These membership codes are separate from claiming ownership of a relay.
+
 The **Joining** block holds the join terms, shown before someone accepts an invite and published at `/terms`. Its switch decides whether visitors see the people directory at `/people`, in the group's member list, in the card's member count and in the NIP-05 listing at `/.well-known/nostr.json` without a name. A lookup by name still answers, since the member put that address in their own profile.
 
 ### Members invite members
