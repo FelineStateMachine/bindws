@@ -86,7 +86,7 @@ export class Store {
   private x<T extends Record<string, SqlStorageValue>>(q: string, ...args: unknown[]): SqlStorageCursor<T> {
     const c = this.sql.exec<T>(q, ...args);
     this.pending.push(c as SqlStorageCursor<Record<string, SqlStorageValue>>);
-    if (q.startsWith("DELETE FROM events") && c.rowsWritten) this.onSitesChanged();
+    if (q.startsWith("DELETE FROM events") && c.rowsWritten && this.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length) this.onSitesChanged();
     return c;
   }
 

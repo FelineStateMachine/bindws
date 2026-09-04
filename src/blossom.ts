@@ -122,7 +122,11 @@ export async function fetchOrigin(relay: Relay, raw: string, init?: RequestInit)
   }
   const local = localName(u, relay.domain);
   try {
-    if (local) return await relay.relays.getByName(local).fetch(u.href, { headers: { "x-relay-name": local } });
+    if (local) {
+      const headers = new Headers(init?.headers);
+      headers.set("x-relay-name", local);
+      return await relay.relays.getByName(local).fetch(u.href, { ...init, headers });
+    }
     if (u.protocol !== "https:") return "invalid: only https urls can be mirrored";
     return await relay.fetcher(u.href, { redirect: "follow", ...init });
   } catch (err) {
