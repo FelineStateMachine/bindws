@@ -139,6 +139,10 @@ describe("NIP-46 transport", () => {
     expect(await c.open("c", { kinds: [24133, 1] })).toMatch(/^auth-required/);
     expect(await c.open("d", { kinds: [24133] }, { kinds: [1] })).toMatch(/^auth-required/);
     expect(await c.open("e", {})).toMatch(/^auth-required/);
+    // NIP-11 says so, and advertises the transport.
+    const info: any = await (await SELF.fetch(`http://${host}/`, { headers: { accept: "application/nostr+json" } })).json();
+    expect(info.limitation.auth_required).toBe(true);
+    expect(info.supported_nips).toContain(46);
     // Amber's probe before it lists a relay: a throwaway key, no AUTH, a
     // subscription naming the key, and its own event echoed back.
     const probe = generateSecretKey();

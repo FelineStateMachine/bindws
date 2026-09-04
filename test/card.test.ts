@@ -18,6 +18,23 @@ async function rpc(host: string, sk: Uint8Array, method: string, ...params: unkn
 }
 const get = (host: string, path: string) => SELF.fetch(`http://${host}${path}`);
 
+// scan rasterizes a module grid and reads it with jsQR, a decoder that
+// shares nothing with the encoder, so it proves a phone can read it.
+function scan(size: number, dark: (x: number, y: number) => boolean): string | undefined {
+  const px = 4, margin = 4, n = size + margin * 2, w = n * px;
+  const img = new Uint8ClampedArray(w * w * 4).fill(255);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (!dark(x, y)) continue;
+      for (let dy = 0; dy < px; dy++) for (let dx = 0; dx < px; dx++) {
+        const i = (((y + margin) * px + dy) * w + (x + margin) * px + dx) * 4;
+        img[i] = img[i + 1] = img[i + 2] = 0;
+      }
+    }
+  }
+  return jsQR(img, w, w)?.data;
+}
+
 // readBack decodes a symbol without any error correction: it must be exact.
 function readBack(sym: ReturnType<typeof encode>): { mask: number; level: number; bytes: Uint8Array } {
   const { size, modules, version } = sym;
@@ -113,19 +130,7 @@ describe("qr encoder", () => {
     const full = Array.from({ length: 20 }, (_, i) => Array.from({ length: capacity(i + 1) }, (_, j) => String.fromCharCode(48 + ((j * 7 + i) % 74))).join(""));
     for (const text of ["nostr:npub1abc", uri, ...full]) {
       const sym = encode(text);
-      const px = 4, margin = 4, n = sym.size + margin * 2, w = n * px;
-      const img = new Uint8ClampedArray(w * w * 4).fill(255);
-      for (let y = 0; y < sym.size; y++) {
-        for (let x = 0; x < sym.size; x++) {
-          if (!sym.modules[y * sym.size + x]) continue;
-          for (let dy = 0; dy < px; dy++) for (let dx = 0; dx < px; dx++) {
-            const i = (((y + margin) * px + dy) * w + (x + margin) * px + dx) * 4;
-            img[i] = img[i + 1] = img[i + 2] = 0;
-          }
-        }
-      }
-      const r = jsQR(img, w, w);
-      expect(r?.data, `version ${sym.version}`).toBe(text);
+      expect(scan(sym.size, (x, y) => sym.modules[y * sym.size + x] === 1), `version ${sym.version}`).toBe(text);
     }
   });
 });
@@ -185,6 +190,14 @@ describe("relay card", () => {
     expect(svg).toContain("members write");
     expect(svg).toContain("group naddr");
     expect(svg).toContain('<path d="M');
+    // The QR on the card scans to the naddr: the card scales the modules
+    // into a 150 unit box, so read the cells back from the path.
+    const path = svg.match(/<g transform="translate\(418 58\)">.*?<path d="([^"]+)"/)![1];
+    const cells = [...path.matchAll(/M([\d.]+) ([\d.]+)h([\d.]+)/g)].map((m) => ({ x: +m[1], y: +m[2], cell: +m[3] }));
+    const size = encode(c.naddr).size;
+    expect(cells.length).toBeGreaterThan(100);
+    const dark = new Set(cells.map((k) => Math.round(k.x / k.cell) + "," + Math.round(k.y / k.cell)));
+    expect(scan(size, (x, y) => dark.has(x + "," + y))).toBe(c.naddr);
   });
 
   it("says so on unclaimed and leased relays, and does not sign for them", async () => {

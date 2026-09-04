@@ -69,7 +69,7 @@ export interface Env {
 // identity; 62 is request-to-vanish (store.vanish); 67 is the EOSE hint
 // array at the end of the subscription handler; 70 is the "-" tag check in
 // gate(); 77 is negentropy sync (handleSync).
-export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 50, 56, 59, 62, 67, 70, 77, 86, 98];
+export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 67, 70, 77, 86, 98];
 export const KIND_REPORT = 1984;
 // NIP-46 remote signing traffic: ephemeral, encrypted end to end, never stored.
 export const KIND_NOSTR_CONNECT = 24133;
@@ -1063,7 +1063,8 @@ export class Relay extends DurableObject<Env> {
         max_limit: p.maxLimit,
         default_limit: p.maxLimit,
         max_subid_length: 64,
-        auth_required: p.reads === "auth",
+        // True whenever a fresh socket cannot REQ: reads for the authenticated or for members.
+        auth_required: p.reads !== "open",
         payment_required: false,
         restricted_writes: p.writes !== "open" || this.settings.isUnclaimed(),
         created_at_upper_limit: p.maxFuture || undefined,
