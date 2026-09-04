@@ -96,6 +96,9 @@ the broader archive or sync behavior of later GRASP documents.
 
 ## Git HTTP
 
+Your relay's **Connect** section includes a copyable `git clone` example with
+its own hostname, the repository owner's npub and repository name.
+
 The Git door is unauthenticated when the relay's reads are open. It serves
 Git Smart HTTP at the repository path and returns a repository page or a 404
 for a path that is not hosted. Upload-pack advertises and serves

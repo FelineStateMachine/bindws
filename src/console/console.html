@@ -47,6 +47,16 @@
       <div class="door"><small>names</small><div class="v"><span id="d-nip05"></span></div></div>
       <div class="door"><small>HTTP bridge, NIP-98</small><div class="v"><span>POST /events, /query, /count</span></div></div>
     </div>
+    <div class="block hidden" id="git-connect">
+      <h3>Git repositories, ntig</h3>
+      <p class="note hidden" id="git-off">Git hosting is off here; the owner can enable Git repositories under Rules with reads open to anyone.</p>
+      <div class="hidden" id="git-ready">
+        <p class="note">Use ordinary Git to clone a repository hosted here.</p>
+        <div class="door"><small>Clone a repository</small><div class="v"><span id="git-clone"></span><button class="ib" id="git-copy" title="Copy clone example" aria-label="Copy clone example"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
+        <p class="note">Replace <span class="mono">&lt;npub&gt;</span> with the repository owner's npub, yours for your own repository, and <span class="mono">&lt;repo&gt;</span> with its repository name, such as <span class="mono">my-project</span>.</p>
+        <p class="note">To host your own, use a Nostr Git client to publish your repository and signed branch state to this relay before pushing to the same remote. <a href="https://github.com/FelineStateMachine/bindws/blob/main/docs/22-grasp-01-git-hosting.md">Git hosting guide</a>.</p>
+      </div>
+    </div>
     <div class="block">
       <h3>Open it in an app</h3>
       <p class="note">Relay apps open this relay as a place. Feed apps do not: they find the owner here through a profile link that carries this relay as the hint, and learn the relay from that. Either way, add <span class="mono" id="apps-ws"></span> under the app's relay settings to post here.</p>
