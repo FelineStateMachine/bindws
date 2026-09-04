@@ -203,6 +203,50 @@ within a live instance. Async handlers can interleave across awaits. Those
 flags are admission controls, not persisted crash recovery or authority to
 delete data. Repository CAS and persisted authority remain necessary.
 
+The coordination tests pause actual Git HTTP and alarm requests at an R2
+root read. Competing Git requests return 429 without reading R2. While HTTP
+holds `graspBusy`, signed event writes and HTTP management are refused and
+an alarm defers its storage work. While an alarm holds `graspControls`, a
+signed repository-state event still enters purgatory. This is intentional
+evidence of a narrower admission fence, not proof of exclusive maintenance.
+That event changes SQL authority without an R2 operation in the paused
+fixture; it does not demonstrate an existing Git publication or data-loss bug.
+Both successful and failed R2 reads release their flags. Consuming the
+completed HTTP response performs no more R2 reads in this fixture.
+
+| Entry point | Existing coordination | Limit before collection |
+|---|---|---|
+| Git advertisement, fetch and push | `grasp` sets `graspBusy` before its first await and rejects either occupied flag | Live-instance admission only; no persisted reader lease |
+| Accepted state and promotion | Run inside the HTTP fence or alarm controls; promotion rechecks candidates after reads | An immutable read session caches bytes but acquires no lock |
+| Non-GET HTTP management | `Relay.fetch` holds `graspControls` while the route runs and refuses `graspBusy` | Other controls and event writes can still interleave |
+| Signed events, imports and pulls | `acceptAny` or `writeGate` refuses `graspBusy` | `graspControls` alone does not refuse event writes |
+| Alarm, PR expiry and pending promotion | Alarm defers during `graspBusy`, otherwise holds `graspControls` | Alarm entry does not refuse an already active control operation |
+| Whole-relay deletion | Management or lease-expiry alarm calls `teardown` | Teardown has no internal lock and deletes the whole slug prefix; it is not a metadata collector |
+| Direct repository helper calls | Production callers are the HTTP handler and `graspTick` | `gitRepository` and `checkpoint()` acquire no host fence themselves; test calls bypass admission |
+
+The current HTTP handler constructs its response bytes before the read
+session closes. A future streaming path would need to preserve coordination
+until its last storage read. None of these in-memory flags coordinates an
+independent R2 client, another object ID sharing a prefix, or recovery after
+the owning instance is replaced. CAS protects root publication, but does not
+prevent deletion of an object that a reader or unpublished writer still
+needs. Removing a repository announcement also leaves its WAL and quota
+rows behind; visibility is not a storage-liveness test.
+
+Before metadata collection, a complete inventory needs explicit object,
+byte and operation budgets and must refuse an incomplete mark. The host
+also needs a proven ownership and recovery protocol covering active
+readers, unpublished writes, administrative deletion and maintenance.
+Budget exhaustion, missing or corrupt dependencies and changed roots must
+prevent a deletion decision. Stable before/after roots alone are insufficient:
+a reader may hold an older root, or a publisher may have uploaded objects
+without publishing its new root yet. This remains a collection blocker;
+the tests introduce no collector or runtime coordination change.
+
+`npm test -- test/object/grasp-coordination.test.ts` reproduces the paused
+HTTP/alarm checks. The checkpoint inventory above remains an isolated,
+quiescent fixture rather than an online maintenance API.
+
 Provider request accounting separates HTTP/RPC/alarm invocations from
 incoming WebSocket messages, which have a 20:1 billing ratio. Socket frames
 do not become Worker requests. DO duration counts overlapping work once per
