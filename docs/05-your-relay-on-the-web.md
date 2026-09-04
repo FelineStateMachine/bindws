@@ -64,6 +64,28 @@ Your relay checks that cookie against the read rule on every request. Scripts
 send an exact NIP-98 Authorization header instead. Site sign-in uses no
 password.
 
+## Git repositories
+
+With the **GRASP-01** feature enabled, your relay can host NIP-34 Git
+repositories alongside its sites. A repository owner publishes its
+announcement and current refs to the relay, then Git clients use the
+percent-encoded path `/<npub>/<identifier>.git`. The relay accepts only the
+repository's announced service URLs, and the owner or its recursive
+maintainers control the accepted branch and tag state.
+
+Reads follow your relay's read rule. Open reads provide an unauthenticated Git
+door with cross-origin support; signed-in and members-only reads require the
+same proof as the rest of the relay. The relay also accepts temporary
+`refs/nostr/<event-id>` refs for NIP-34 pull requests while their event and Git
+data arrive. Unmatched data expires after 20 minutes, and event or state
+purgatory expires after 30 minutes.
+
+GRASP-01 is a bounded Git host. It supports shallow object requests and
+`blob:none` or `tree:0` filters, with pack and repository limits set by the
+host's object store. It does not synchronize repositories between relays,
+archive them or host private repositories. See [GRASP-01 Git hosting](22-grasp-01-git-hosting.md)
+for the protocol and the limits.
+
 ## Media
 
 Your relay stores images and files too. Who may upload follows the write rule: anyone, members or only you. The largest upload is set on the Rules tab, 25 MB by default and up to 95. Files count as files stored for fuel.

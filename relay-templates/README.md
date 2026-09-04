@@ -19,6 +19,7 @@ copy as the start of your own.
 | [quiet](10-quiet.jsonc) | it should cost nothing and announce nothing: members only, every optional feature off, switched on one at a time as needed. |
 | [site](11-site.jsonc) | it hosts NIP-5A static websites: members publish manifests and files, with mirroring on. |
 | [marmot](12-marmot.jsonc) | it carries Marmot KeyPackages, opaque group messages and private welcomes. |
+| [grasp](13-grasp.jsonc) | it hosts GRASP Git repositories: admitted members publish repository state and related events, with reads open. |
 
 Each file says more in its comment: what the template does, which Haven relay
 it mirrors, and why its kinds are what they are.

@@ -34,6 +34,11 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 
 A door that belongs to a feature the owner switched off (Relay configuration, Rules) answers 404: names, files (Blossom and NIP-96), pages and the feed. `supported_nips` drops the numbers of features that are off.
 
+When GRASP-01 is on and reads are open, NIP-11 also has
+`supported_grasps: ["GRASP-01"]`, a `repo_acceptance_criteria` string and, only
+for policy beyond ordinary spam controls, `curation`. See [GRASP-01 Git
+hosting](22-grasp-01-git-hosting.md) for the acceptance and Git protocol rules.
+
 ## NIP-5A sites
 
 Site hostnames are `https://<npub>.<domain>`,
@@ -61,6 +66,27 @@ and checked redirects are used, and caller credentials are not forwarded.
 The sign-in cookie is Secure, HttpOnly and SameSite=Lax. The site door checks
 it against the current read rule on every request. A caller can use exact
 NIP-98 directly instead of a cookie.
+
+## GRASP-01 Git
+
+When the feature is on and the repository announcement is accepted, the
+percent-encoded repository path exposes Git Smart HTTP. The Git door follows
+the relay read rule and does not accept a websocket upgrade.
+
+| Path | Method | Auth | Answers | Status |
+|---|---|---|---|---|
+| `/<npub>/<identifier>.git` | GET | the read rule | repository page or Git `info/refs` and upload-pack response | 200; 401/403 by the read rule; 404 unhosted repository |
+| `/<npub>/<identifier>.git/git-receive-pack` | POST | the read rule | a receive-pack response after the NIP-34 state and maintainer checks | 200; 400 malformed pack or ref; 401/403 by the read rule; 409 state mismatch; 413 over the object-store limit |
+| `/<npub>/<identifier>.git/git-upload-pack` | POST | the read rule | a bounded pack for reachable, tip or filtered wants | 200; 400 malformed request; 401/403 by the read rule; 404 unavailable object |
+| `/<npub>/<identifier>.git` | OPTIONS | none | CORS preflight | 204 |
+
+Git responses include `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Methods: GET, POST` and
+`Access-Control-Allow-Headers: Content-Type`. Upload-pack advertises
+`allow-reachable-sha1-in-want`, `allow-tip-sha1-in-want` and `filter`, and
+accepts `blob:none` and `tree:0`. A `refs/nostr/<event-id>` push remains
+temporary until its matching NIP-34 event is accepted; unresolved PR data is
+discarded after the GRASP-01 holding window.
 
 ## Custom domains
 

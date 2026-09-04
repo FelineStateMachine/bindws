@@ -35,6 +35,9 @@ src/
   sites.ts      NIP-5A manifest validation, label parsing and site serving
   site-mirror.ts proxy and alarm-driven copies of missing site blobs
   site-auth.ts  NIP-07 challenge and relay-signed site cookie
+  grasp.ts      GRASP-01 Git Smart HTTP and the object-store boundary
+  grasp-state.ts NIP-34 authority events, purgatory and cleanup state
+  grasp-policy.ts GRASP-01 NIP-34 repository and ref policy
   card.ts       the status card, signed and as SVG
   qr.ts         a QR encoder for the card and the console
   fuel.ts       meters, prices, receipts, LNURL
@@ -87,7 +90,7 @@ The conformance suite needs a claimed relay. Against a dev server:
 CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 ```
 
-CI runs typecheck and the object tests on every push; the conformance suite against the Worker on `celld dev` is a separate workflow run on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands on `main` directly, in small commits that each typecheck on their own; a red check on `main` is fixed forward with the next commit.
+CI runs typecheck and the object tests on every push; the conformance suite against the Worker on `celld dev` is a separate workflow run on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands through pull requests in small commits that each typecheck on their own; the branch checks and review carry the change to `main`.
 
 ## Add a management method
 
@@ -118,6 +121,14 @@ NIPs remain out of `supported_nips` unless the NIP explicitly defines relay
 advertising for them.
 
 A NIP that changes the query surface touches `store.ts`. Add the number to `SUPPORTED_NIPS` in `nip11.ts` only when the NIP says relays advertise it, with a word in the comment there for the less obvious ones. Add a file named after the NIP in `test/conformance` so the behavior is checked from outside, and a Durable Object test in `test/object`, named after the module it exercises; a NIP number names a test file only where the feature has no other name (`nip05`, `nip11`, `nip66`).
+
+GRASP-01 follows the same split: `grasp-policy.ts` keeps NIP-34 parsing and
+authorization pure, while the Git door owns Smart HTTP and the object-store
+seam. The accepted kind 30618 state is the complete ref map the door may
+serve. Keep the Git path separate from relay and NIP-5A routing, and record
+any new GRASP capability in the information document and the numbered draft
+specification. GRASP-02, GRASP-03, GRASP-05, GRASP-06 and GRASP-08 need their
+own design and must not be implied by a GRASP-01 change.
 
 ## The signer bundle
 

@@ -56,6 +56,7 @@ It runs on Cloudflare Workers with one Durable Object per name, SQLite inside it
 ### Draft NIPs
 
 - [NIP-5A static websites](docs/20-nip-5a-static-websites.md): publish and serve static sites from signed Nostr manifests.
+- [GRASP-01 Git hosting](docs/22-grasp-01-git-hosting.md): host bounded NIP-34 repositories through Git Smart HTTP.
 
 ### Protocol guides
 
