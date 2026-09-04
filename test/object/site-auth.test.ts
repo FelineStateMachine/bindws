@@ -84,12 +84,17 @@ describe("site sign-in at the public door", () => {
     const page = await SELF.fetch(f.origin + "/", { headers: { cookie: value } });
     expect(page.status).toBe(200); expect(await page.text()).toBe("private site bytes");
     expect(page.headers.get("cache-control")).toContain("no-store");
+    const discoveryURL = f.origin + "/.well-known/nostr.json?path=%2F";
+    const discovery = await SELF.fetch(discoveryURL, { headers: { cookie: value } });
+    expect(discovery.status).toBe(200);
+    expect(await discovery.json()).toEqual({ "/": { filter: { kinds: [15128], authors: [pk(f.owner)], limit: 1 }, relays: [`wss://${f.host}`] } });
     const altered = value.slice(0, -5) + "zzzzz";
     expect((await SELF.fetch(f.origin + "/", { headers: { cookie: altered } })).status).toBe(401);
     // A cookie for this site does not authenticate at the relay door.
     expect((await SELF.fetch("https://" + f.host + "/query", { method: "POST", headers: { cookie: value }, body: "[]" })).status).toBe(401);
     await rpc(f.host, f.owner, "removemember", pk(f.member));
     expect((await SELF.fetch(f.origin + "/", { headers: { cookie: value } })).status).toBe(403);
+    expect((await SELF.fetch(discoveryURL, { headers: { cookie: value } })).status).toBe(403);
   });
 
   it("rejects cross-origin proofs, expired challenges and malformed exchanges", async () => {
