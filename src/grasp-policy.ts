@@ -94,7 +94,7 @@ export function parseRepositoryAnnouncement(event: GraspEvent): ParseResult<Repo
 export function isCanonicalCloneURL(raw: string): boolean {
   try {
     const url = new URL(raw);
-    return ["https:", "http:", "ssh:", "git:"].includes(url.protocol) && !url.hash && !!url.hostname;
+    return ["https:", "http:", "ssh:", "git:", "nostr:"].includes(url.protocol) && !url.hash && !!url.hostname;
   } catch {
     return /^git@[^:]+:.+$/u.test(raw);
   }

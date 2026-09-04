@@ -32,6 +32,7 @@ describe("GRASP-01 policy", () => {
     expect(isCanonicalCloneURL("http://git.example/x.git")).toBe(true);
     expect(isCanonicalCloneURL("ssh://git.example/x")).toBe(true);
     expect(isCanonicalCloneURL("git@git.example:x")).toBe(true);
+    expect(isCanonicalCloneURL("nostr://danconwaydev.com/relay.ngit.dev/ngit")).toBe(true);
     expect(isWebSocketURL("https://relay.example")).toBe(false);
     expect(parseRepositoryAnnouncement({ ...base, tags: [["d", "x"], ["clone", "https://git.example/x.git"], ["relays", "https://relay.example"]] }).error).toContain("relays");
   });
