@@ -11,7 +11,7 @@ curl -X POST https://bind.ws/lease
 
 That answers with a relay at a memorable name, open to anyone for 14 days. Claim it before then and it stays, events and all.
 
-<p align="center"><img src="docs/img/relay.png" alt="A relay's page: connect, people, fuel" width="720"></p>
+<p align="center"><img src="docs/img/relay.png" alt="A relay's page: banner, people, fuel" width="720"></p>
 
 ## What a name gives you
 
