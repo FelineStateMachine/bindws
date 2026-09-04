@@ -69,3 +69,6 @@ export const KIND_GIT_PATCH = 1617;
 export const KIND_GIT_PR = 1618;
 export const KIND_GIT_PR_UPDATE = 1619;
 export const KIND_GIT_ISSUE = 1621;
+
+// NIP-9a relay push registrations, readable only by their author.
+export const KIND_PUSH_REGISTRATION = 30390;

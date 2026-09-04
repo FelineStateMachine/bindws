@@ -333,6 +333,8 @@
     $("#wordsform").words.value = (p.blockedWords || []).join("\n"); $("#wordsform").inTags.checked = !!p.blockedWordsInTags; $("#thresholdform").reportThreshold.value = p.reportThreshold || 0; fa.minPow.value = p.minPow; fa.maxFuture.value = p.maxFuture; fa.maxLimit.value = p.maxLimit; fa.maxSubs.value = p.maxSubs; fa.maxMessageKB.value = p.maxMessageKB;
     fa.eventsPerMinute.value = p.eventsPerMinute; fa.reqsPerMinute.value = p.reqsPerMinute; fa.maxBlobMB.value = p.maxBlobMB;
     renderFeatures(p.features || {});
+    $("#push-policy-form").elements.origins.value = (p.pushCallbacks || []).join("\n");
+    $("#push-policy-form").elements.lettered.checked = !!p.letteredNips;
     fi.name.value = p.name; fi.contact.value = p.contact; fi.description.value = p.description; fi.icon.value = p.icon;
     const fj = $("#joinform"); fj.joinTerms.value = p.joinTerms; fj.directoryPublic.checked = !!p.directoryPublic;
     loadCard();
@@ -414,6 +416,7 @@
     ["sites", "Static websites", "NIP-5A sites on their own hostnames. Mirroring copies missing files into this relay and costs fuel.", ["mirror:on, mirror files", "proxy:on, fetch as needed", "off:off"]],
     ["marmot", "Marmot transport", "Signed KeyPackages and encrypted group messages, with account admission for ephemeral authors."],
     ["grasp", "Git repositories", "GRASP Git hosting with admitted repository state. The prototype backend has bounded storage and compute limits."],
+    ["push", "Relay push", "NIP-9a callback delivery for members and the owner. Requires approved callback origins; advertises lettered NIP identifiers."],
     ["signer", "Signer traffic", "NIP-46 remote signing carried for anyone, never stored."],
   ];
   function renderFeatures(f) {
@@ -428,6 +431,16 @@
     const k = sel.dataset.feature, v = k === "search" || k === "sites" ? sel.value : sel.value === "true";
     policy = await rpc("setpolicy", { features: { [k]: k === "sites" ? { enabled: v !== "off", mirror: v === "mirror" } : v } });
     toast(k === "search" ? "Search: " + v : (v ? "Switched on " : "Switched off ") + k); await loadInfo();
+  }));
+
+  $("#push-policy-form").addEventListener("submit", guard(async (ev) => {
+    ev.preventDefault();
+    const form = ev.target;
+    const origins = form.elements.origins.value.split(/\s+/).filter(Boolean);
+    const updated = await rpc("setpolicy", { pushCallbacks: origins, letteredNips: form.elements.lettered.checked });
+    if (JSON.stringify(updated.pushCallbacks) !== JSON.stringify([...new Set(origins.map((s) => s.replace(/\/$/, "")))])) throw new Error("Use up to sixteen exact HTTPS origins, with no path or credentials.");
+    policy = updated;
+    toast("Saved callback policy"); await loadInfo();
   }));
 
   async function loadViews() {

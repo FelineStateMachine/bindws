@@ -4,6 +4,7 @@
 // subscription's filters must clear for the socket that opened it: the
 // read rule, and the private kinds only their parties may see. Both answer
 // "" to let through, or the reason in NIP-01's prefix: form.
+import { checkPush } from "./push.ts";
 import { graspGate } from "./grasp-state.ts";
 import { checkSite } from "./sites.ts";
 import type { Relay, ConnState } from "./relay.ts";
@@ -18,6 +19,8 @@ import { marmotPrincipal, marmotShape } from "./marmot.ts";
 // relay's state, fuel, and the one-group rule. "" lets it through.
 export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: number): string {
   if (relay.repositoryAccess.blocked) return "restricted: relay operation in progress; retry the event";
+  const pushError = checkPush(relay, e, conn);
+  if (pushError) return pushError;
   const graspError = graspGate(relay, e, conn?.host ?? "");
   if (graspError) return graspError;
   const siteError = checkSite(e);

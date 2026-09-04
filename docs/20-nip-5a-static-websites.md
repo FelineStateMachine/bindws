@@ -123,11 +123,12 @@ site paths to the live manifest under the same site authentication and read
 rules, with the hosting relay as its hint. Custom site domains retain their
 site origin; discovery does not open the hosting relay's other HTTP doors.
 
-bind.ws does not advertise NIP-5A in `supported_nips`: NIP-11 still defines
-that field as integer identifiers, while 5A is a lettered draft and does not
-ask relays to advertise it. The relay advertises `nsites` instead. Follow
-upstream [pull request 1621](https://github.com/nostr-protocol/nips/pull/1621)
-for the eventual representation.
+bind.ws advertises `5A` in `supported_nips` when sites are enabled and the
+owner opts into lettered NIP identifiers (or enables relay push). Numeric
+entries keep their JSON number type. `nsites` remains available while sites
+are enabled, including in the default numeric-only mode. Some clients reject
+lettered entries; see [NIP-11 identifier compatibility](26-nip11-compatibility.md).
+`5A` is a literal identifier, never decimal 90.
 
 The implementation tracks upstream changes to the label grammar, aggregate
 hash, snapshot and copy tags, and the status of kind 34128. If those change,

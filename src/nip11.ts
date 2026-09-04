@@ -16,12 +16,23 @@ import { nip11Views } from "./views.ts";
 // (publishDiscovery); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
 // The numbers a switched-off feature takes with it (settings.ts, features).
-export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [], grasp: [] };
+export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [], grasp: [], push: [] };
+
+// Lettered identifiers retain their protocol spelling, never decimal values.
+// New draft capabilities belong here only alongside their implementation.
+export const LETTERED_NIPS: { id: string; enabled: (relay: Relay) => boolean }[] = [
+  { id: "AD", enabled: () => true },
+  { id: "5A", enabled: (relay) => featureOn(relay.settings.policy, "sites") },
+  { id: "9a", enabled: (relay) => featureOn(relay.settings.policy, "push") },
+];
+export type NipIdentifier = number | string;
 
 // supportedNips is the list as it stands with the features that are on.
-export function supportedNips(relay: Relay): number[] {
+export function supportedNips(relay: Relay): NipIdentifier[] {
   const off = new Set(FEATURE_NAMES.filter((f) => !featureOn(relay.settings.policy, f)).flatMap((f) => FEATURE_NIPS[f]));
-  return SUPPORTED_NIPS.filter((n) => !off.has(n));
+  const numeric = SUPPORTED_NIPS.filter((n) => !off.has(n));
+  const mixed = relay.settings.policy.letteredNips || featureOn(relay.settings.policy, "push");
+  return mixed ? [...numeric, ...LETTERED_NIPS.filter((n) => n.enabled(relay)).map((n) => n.id)] : numeric;
 }
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";

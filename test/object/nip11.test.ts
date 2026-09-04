@@ -104,3 +104,40 @@ describe("NIP-11 extras", () => {
     expect(doc.relay_countries).toEqual(["FR"]);
   });
 });
+
+describe("lettered capability identifiers", () => {
+  it("preserves numeric support by default and advertises enabled lettered capabilities together", async () => {
+    const host = "lettered-nips.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    const baseline = (await info(host)).supported_nips;
+    expect(baseline.every((n: unknown) => typeof n === "number")).toBe(true);
+    await rpc(host, owner, "setpolicy", { letteredNips: true });
+    let nips = (await info(host)).supported_nips;
+    expect(nips.filter((n: unknown) => typeof n === "number")).toEqual(baseline);
+    expect(nips).toEqual(expect.arrayContaining(["AD", "5A"]));
+    expect(nips).not.toContain("9a");
+    expect(nips).not.toContain(90);
+    await rpc(host, owner, "setpolicy", { letteredNips: false, features: { push: true, sites: false } });
+    nips = (await info(host)).supported_nips;
+    expect(nips).toEqual(expect.arrayContaining([1, 11, 86, "AD", "9a"]));
+    expect(nips).not.toContain("5A");
+    await rpc(host, owner, "setpolicy", { features: { push: false } });
+    expect((await info(host)).supported_nips).toEqual(baseline);
+  });
+
+  it("exports the representation and callback policy and validates entire origin lists", async () => {
+    const host = "push-policy-config.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setpolicy", { letteredNips: true, pushCallbacks: ["https://push.example.com/"] });
+    const config = (await rpc(host, owner, "exportconfig")).result;
+    expect(config.policy).toMatchObject({ letteredNips: true, pushCallbacks: ["https://push.example.com"] });
+    const invalid = await rpc(host, owner, "setpolicy", { pushCallbacks: ["https://127.0.0.1", "https://push.example.com"] });
+    expect(invalid.result.pushCallbacks).toEqual(["https://push.example.com"]);
+    const other = "push-policy-import.bind.ws";
+    await rpc(other, owner, "claim");
+    await rpc(other, owner, "importconfig", config);
+    expect((await rpc(other, owner, "getpolicy")).result).toMatchObject({ letteredNips: true, pushCallbacks: ["https://push.example.com"] });
+  });
+});

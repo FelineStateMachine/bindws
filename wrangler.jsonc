@@ -34,6 +34,7 @@
     // Requests for any other host fall back to the relay named DEV_RELAY.
     "DOMAIN": "bind.ws",
     "DEV_RELAY": "dev",
+    "PUSH_CALLBACK_ORIGINS": "[]",
     // Custom domains: the zone custom hostnames are created in, and the name
     // owners point their CNAME at. CF_API_TOKEN is a secret, set with
     // `wrangler secret put CF_API_TOKEN`; without it the feature is off.
@@ -84,6 +85,7 @@
       "vars": {
         "DOMAIN": "bind.ws",
         "DEV_RELAY": "dev",
+    "PUSH_CALLBACK_ORIGINS": "[]",
         "ZONE_ID": "",
         "CNAME_TARGET": "customers.bind.ws",
         "LIGHTNING_ADDRESS": "",

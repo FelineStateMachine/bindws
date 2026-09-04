@@ -2,6 +2,7 @@
 // synchronous, so each call is one atomic write batch on the DO.
 import { GRASP_SCHEMA } from "./grasp-state.ts";
 import { canonical, expiration, isAddressable, isEphemeral, isPrivate, isReplaceable, tag, tagValues, type Event } from "./event.ts";
+import { KIND_PUSH_REGISTRATION } from "./kinds.ts";
 import { ftsQuery, searchTerms, type Filter } from "./filter.ts";
 import { SITE_SCHEMA, SITE_KINDS } from "./sites.ts";
 import { HLL } from "./hll.ts";
@@ -227,6 +228,15 @@ export class Store {
       conds.push(`id NOT IN (SELECT value FROM json_each(?))`);
       args.push(JSON.stringify([...this.hidden]));
     }
+    // Push registrations are private to their author even for internal callers
+    // that use all:true. A p tag never grants access to a registration, and an
+    // empty pubkey list therefore excludes every registration.
+    if (who.pubkeys.length === 0) {
+      conds.push(`kind <> ${KIND_PUSH_REGISTRATION}`);
+    } else {
+      conds.push(`(kind <> ${KIND_PUSH_REGISTRATION} OR ${inList("pubkey")})`);
+      args.push(JSON.stringify(who.pubkeys));
+    }
     if (!who.all) {
       if (who.pubkeys.length === 0) conds.push("kind NOT IN (4,1059)");
       else {
@@ -287,18 +297,18 @@ export class Store {
   }
 
   stats(): { events: number; bytes: number; oldest: number; newest: number } {
-    const row = this.x<{ n: number; oldest: number | null; newest: number | null }>(`SELECT count(*) AS n, min(created_at) AS oldest, max(created_at) AS newest FROM events`).one();
+    const row = this.x<{ n: number; oldest: number | null; newest: number | null }>(`SELECT count(*) AS n, min(created_at) AS oldest, max(created_at) AS newest FROM events WHERE kind <> ${KIND_PUSH_REGISTRATION}`).one();
     return { events: row.n, bytes: this.sql.databaseSize, oldest: row.oldest ?? 0, newest: row.newest ?? 0 };
   }
 
   // kinds counts events per kind since a timestamp, busiest first, for the dashboard.
   kinds(since: number): { kind: number; n: number }[] {
-    return this.x<{ kind: number; n: number }>(`SELECT kind, count(*) AS n FROM events WHERE created_at >= ? GROUP BY kind ORDER BY n DESC LIMIT 50`, since).toArray();
+    return this.x<{ kind: number; n: number }>(`SELECT kind, count(*) AS n FROM events WHERE created_at >= ? AND kind <> ${KIND_PUSH_REGISTRATION} GROUP BY kind ORDER BY n DESC LIMIT 50`, since).toArray();
   }
 
   // kindCounts groups events since a timestamp by kind, for the dashboard.
   kindCounts(since: number): { kind: number; n: number }[] {
-    return this.x<{ kind: number; n: number }>(`SELECT kind, count(*) AS n FROM events WHERE created_at >= ? GROUP BY kind ORDER BY n DESC LIMIT 50`, since).toArray();
+    return this.x<{ kind: number; n: number }>(`SELECT kind, count(*) AS n FROM events WHERE created_at >= ? AND kind <> ${KIND_PUSH_REGISTRATION} GROUP BY kind ORDER BY n DESC LIMIT 50`, since).toArray();
   }
 
   // recent returns the newest events for the dashboard, regardless of visibility.
@@ -310,7 +320,7 @@ export class Store {
   }
 
   recent(limit: number, now: number): string[] {
-    return this.x<{ raw: string }>(`SELECT raw FROM events WHERE (expires = 0 OR expires > ?) ORDER BY created_at DESC, id ASC LIMIT ?`, now, limit).toArray().map((r) => r.raw);
+    return this.x<{ raw: string }>(`SELECT raw FROM events WHERE kind <> ${KIND_PUSH_REGISTRATION} AND (expires = 0 OR expires > ?) ORDER BY created_at DESC, id ASC LIMIT ?`, now, limit).toArray().map((r) => r.raw);
   }
 
   deleteEvent(id: string): boolean {
@@ -371,14 +381,14 @@ export class Store {
 
   // dumpPage reads a page of raw events by sequence for the JSONL dump.
   dumpPage(afterSeq: number, limit: number): { seq: number; raw: string }[] {
-    return this.x<{ seq: number; raw: string }>(`SELECT seq, raw FROM events WHERE seq>? ORDER BY seq LIMIT ?`, afterSeq, limit).toArray();
+    return this.x<{ seq: number; raw: string }>(`SELECT seq, raw FROM events WHERE seq>? AND kind <> ${KIND_PUSH_REGISTRATION} ORDER BY seq LIMIT ?`, afterSeq, limit).toArray();
   }
 
   // kindStats sizes each kind present: how many, how many bytes of raw event,
   // and the span of timestamps. Heaviest first.
   kindStats(): { kind: number; n: number; bytes: number; oldest: number; newest: number }[] {
     return this.x<{ kind: number; n: number; bytes: number; oldest: number; newest: number }>(
-      `SELECT kind, count(*) AS n, sum(length(raw)) AS bytes, min(created_at) AS oldest, max(created_at) AS newest FROM events GROUP BY kind ORDER BY bytes DESC`,
+      `SELECT kind, count(*) AS n, sum(length(raw)) AS bytes, min(created_at) AS oldest, max(created_at) AS newest FROM events WHERE kind <> ${KIND_PUSH_REGISTRATION} GROUP BY kind ORDER BY bytes DESC`,
     ).toArray();
   }
 
