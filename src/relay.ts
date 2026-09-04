@@ -94,6 +94,9 @@ interface ConnState {
   ip: string; // the client's address as the worker saw it; "unknown" outside Cloudflare
   authed: string[];
   subs: Record<string, Filter[]>;
+  // Open NIP-77 syncs by id, each with its filter: enough to rebuild the
+  // session's item list after a wake. Absent on sockets from before.
+  syncs?: Record<string, Filter>;
 }
 
 // Succession bookkeeping, kept in storage next to the policy.
@@ -451,7 +454,13 @@ export class Relay extends DurableObject<Env> {
         delete s.subs[id];
         changed = true;
       }
-      if (this.settings.mayRead(s.authed)) this.syncs.delete(ws);
+      if (this.settings.mayRead(s.authed)) {
+        this.syncs.delete(ws);
+        if (s.syncs && Object.keys(s.syncs).length) {
+          delete s.syncs;
+          changed = true;
+        }
+      }
       if (changed) this.persist(ws, s);
     }
   }
@@ -1650,8 +1659,27 @@ export class Relay extends DurableObject<Env> {
     }
     let sess = sessions.get(id);
     let msgHex = "";
+    // The responder's side of a sync is the sorted item list and nothing
+    // else, and the list comes from the filter. So the filter rides on the
+    // socket's attachment with the subscriptions, and a session whose
+    // Negentropy object went with the object's memory is rebuilt from it
+    // when the next message arrives, rather than ended with closed:.
+    const remember = (f: Filter | null) => {
+      const next = { ...(s.syncs ?? {}) };
+      if (f) next[id] = f;
+      else delete next[id];
+      if (Object.keys(next).length) s.syncs = next;
+      else delete s.syncs;
+      // Past the attachment limit the filter stays in memory only, and the
+      // session ends when the object sleeps, as every session once did.
+      if (!this.persist(ws, s) && f) {
+        delete s.syncs![id];
+        if (Object.keys(s.syncs!).length === 0) delete s.syncs;
+      }
+    };
     if (verb === "NEG-CLOSE") {
       sessions.delete(id);
+      if (s.syncs?.[id]) remember(null);
       return;
     }
     if (verb === "NEG-OPEN") {
@@ -1660,13 +1688,33 @@ export class Relay extends DurableObject<Env> {
       if (typeof f === "string") return this.send(ws, "NEG-ERR", id, "invalid: bad filter: " + f);
       const { reason } = this.allowFilters(s, [f]);
       if (reason) return this.send(ws, "NEG-ERR", id, reason);
-      if (!sessions.has(id) && sessions.size >= this.settings.policy.maxSubs) return this.send(ws, "NEG-ERR", id, "blocked: too many open syncs");
+      const open = new Set([...sessions.keys(), ...Object.keys(s.syncs ?? {})]);
+      if (!open.has(id) && open.size >= this.settings.policy.maxSubs) return this.send(ws, "NEG-ERR", id, "blocked: too many open syncs");
       const items = this.store.syncItems(f, { pubkeys: s.authed }, MAX_SYNC, now());
       if (items === "too big") return this.send(ws, "NEG-ERR", id, ERR_TOO_BIG, MAX_SYNC);
       sess = new Negentropy(items, sha256);
       sessions.set(id, sess);
+      remember(f);
       msgHex = typeof rest[1] === "string" ? rest[1] : "";
     } else {
+      const f = s.syncs?.[id];
+      if (!sess && f) {
+        // A wake since NEG-OPEN. The read rule is asked again with what the
+        // socket has proved by now, and the items are read afresh, so the
+        // session carries on from the store as it is.
+        const { reason } = this.allowFilters(s, [f]);
+        if (reason) {
+          remember(null);
+          return this.send(ws, "NEG-ERR", id, reason);
+        }
+        const items = this.store.syncItems(f, { pubkeys: s.authed }, MAX_SYNC, now());
+        if (items === "too big") {
+          remember(null);
+          return this.send(ws, "NEG-ERR", id, ERR_TOO_BIG, MAX_SYNC);
+        }
+        sess = new Negentropy(items, sha256);
+        sessions.set(id, sess);
+      }
       if (!sess) return this.send(ws, "NEG-ERR", id, "closed: no such sync, send NEG-OPEN first");
       msgHex = typeof rest[0] === "string" ? rest[0] : "";
     }
@@ -1676,6 +1724,7 @@ export class Relay extends DurableObject<Env> {
       this.send(ws, "NEG-MSG", id, bytesToHex(reply ?? new Uint8Array()));
     } catch (err) {
       sessions.delete(id);
+      if (s.syncs?.[id]) remember(null);
       this.send(ws, "NEG-ERR", id, "invalid: " + (err instanceof Error ? err.message : String(err)));
     }
   }

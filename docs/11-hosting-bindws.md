@@ -53,7 +53,7 @@ Nothing else is required: no origin, no certificates, no servers. An idle relay 
 ## Operate
 
 - `wrangler tail` streams logs, including receipt validation.
-- Deploys roll to objects within seconds. Live websockets survive when the object hibernates; a mid-flight negentropy sync does not.
+- Deploys roll to objects within seconds. Live websockets survive when the object hibernates, and so does a mid-flight negentropy sync: the next message rebuilds the session from the store.
 - The `usage` table grows one row per relay per month. No cleanup is needed.
 - To take a relay down as the operator, use the owner's typed-name `deleterelay` call or the console.
 
