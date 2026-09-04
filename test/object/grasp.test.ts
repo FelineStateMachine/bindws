@@ -141,11 +141,11 @@ describe("GRASP", () => {
     const c = await WS.connect(host);
     const repoResult = await c.ok(repo);
     expect(repoResult.ok, repoResult.msg).toBe(true);
-    
+
 
     const state = ev(owner, KIND_REPO_STATE, "", [["d", "lifecycle"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", pack.commitID]]);
     expect((await c.ok(state)).ok).toBe(true);
-    
+
     c.ws.close();
 
     const path = gitRepositoryPath(npubEncode(pk(owner)), "lifecycle");
@@ -181,7 +181,7 @@ describe("GRASP", () => {
     await rpc(host, owner, "setpolicy", { features: { grasp: true } });
     const c = await WS.connect(host);
     const repoResult = await c.ok(repo);
-    expect(repoResult.ok, repoResult.msg).toBe(true); 
+    expect(repoResult.ok, repoResult.msg).toBe(true);
     const state = ev(owner, KIND_REPO_STATE, "", [["d", "state-gate"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", pack.commitID]]);
     expect((await c.ok(state)).ok).toBe(true); c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "state-gate");
@@ -201,7 +201,7 @@ describe("GRASP", () => {
     await rpc(host, owner, "claim");
     await rpc(host, owner, "setpolicy", { features: { grasp: true } });
     const c = await WS.connect(host);
-    expect((await c.ok(repo)).ok).toBe(true); 
+    expect((await c.ok(repo)).ok).toBe(true);
     const state = ev(owner, KIND_REPO_STATE, "", [["d", "pr-refs"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", pack.commitID]]);
     expect((await c.ok(state)).ok).toBe(true); c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "pr-refs");
@@ -216,14 +216,14 @@ describe("GRASP", () => {
     expect(await deletion.text()).toContain(`ng ${unknownRef}`);
 
     const late = await WS.connect(host);
-    expect((await late.ok(realPR)).ok).toBe(true); 
+    expect((await late.ok(realPR)).ok).toBe(true);
     expect((await receivePack(path, host, pack.commitID, pack.commitID, "refs/heads/main")).status).toBe(200);
     expect((await late.req({ ids: [realPR.id] })).map((e) => e.id)).toEqual([realPR.id]);
     const listed = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
     expect(await listed.text()).toContain(`refs/nostr/${realPR.id}`);
     const wrongPR = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:pr-refs`], ["c", "b".repeat(40)]]);
     const wrongEvent = await WS.connect(host);
-    expect((await wrongEvent.ok(wrongPR)).ok).toBe(true); 
+    expect((await wrongEvent.ok(wrongPR)).ok).toBe(true);
     const mismatch = await receivePack(path, host, null, pack.commitID, `refs/nostr/${wrongPR.id}`);
     expect(await mismatch.text()).toContain(`ng refs/nostr/${wrongPR.id}`);
     wrongEvent.ws.close();
