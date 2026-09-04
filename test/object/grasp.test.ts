@@ -34,6 +34,14 @@ const receivePack = (path: string, host: string, old: string | null, next: strin
   headers: { "content-type": "application/x-git-receive-pack-request" },
   body: concat(packet(`${old ?? "0".repeat(40)} ${next ?? "0".repeat(40)} ${ref}\0report-status\n`), flush(), ...(pack ? [pack] : [])),
 });
+const receiveSettled = async (path: string, host: string, old: string | null, next: string | null, ref: string, pack?: Uint8Array) => {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const response = await receivePack(path, host, old, next, ref, pack);
+    if (response.status !== 429) return response;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Git transaction did not become available");
+};
 
 async function tinyRepository() {
   const blob = encoder.encode("hello from grasp\n");
@@ -211,7 +219,7 @@ describe("GRASP", () => {
     const unknownRef = `refs/nostr/${realPR.id}`;
     expect((await receivePack(path, host, null, pack.commitID, unknownRef, pack.pack)).status).toBe(200);
     expect(await (await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`)).text()).toContain(`${pack.commitID} ${unknownRef}`);
-    const deletion = await receivePack(path, host, pack.commitID, null, unknownRef);
+    const deletion = await receiveSettled(path, host, pack.commitID, null, unknownRef);
     expect(deletion.status).toBe(200);
     expect(await deletion.text()).toContain(`ng ${unknownRef}`);
 
