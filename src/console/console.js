@@ -1028,7 +1028,7 @@
     ];
     if (info?.supported_grasps?.includes("GRASP-01")) groups.push([
       "Git repositories", "Use this relay with a Git client.", [
-        row("GitWorkshop", "web", "Browse and collaborate on Git repositories.", [link("Open", "https://gitworkshop.dev/"), copy("Copy relay URL", wsURL)]),
+        row("GitWorkshop", "web", "Browse this relay's Git repositories.", [link("Open in app", "https://gitworkshop.dev/relay/" + enc((wsURL.startsWith("ws://") ? "ws:" : "") + host)), copy("Copy relay URL", wsURL)]),
       ],
     ]);
     el.innerHTML = groups.map(([h, note, rows]) => '<div class="appgroup"><h4>' + h + '</h4><p class="note">' + note + '</p><div class="appgrid">' + rows.join("") + "</div></div>").join("");
