@@ -5,7 +5,7 @@ import { now, tagValues, validate, type Event } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { blockedWords, gateFields, isWriteRule, limitFields, viewFields } from "./settings.ts";
+import { badBlockedWord, blockedWords, gateFields, isWriteRule, limitFields, viewFields } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, viewsSummary } from "./views.ts";
@@ -148,9 +148,15 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       return reply({ result: true });
     }
     case "setblockedwords": {
-      // (words[]): content containing one is refused; the owner and moderators are exempt.
-      const words = blockedWords(params[0]);
-      if (!words) return reply({ error: "invalid: give a list of words" }, 400);
+      // (words[]): content containing one is refused; the owner and moderators
+      // are exempt. A /pattern/ that does not compile fails the whole call, so
+      // the mistake is seen rather than dropped.
+      if (!Array.isArray(params[0])) return reply({ error: "invalid: give a list of words" }, 400);
+      for (const x of params[0]) {
+        const why = badBlockedWord(x);
+        if (why) return reply({ error: why }, 400);
+      }
+      const words = blockedWords(params[0])!;
       s.update({ blockedWords: words });
       return reply({ result: words });
     }

@@ -103,6 +103,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 - `banpubkey pubkey reason`, `banevent id reason`, `allowevent id`.
 - `blockip address reason`, `unblockip address`.
+- `setblockedwords [words]`: the list, plain words or `/patterns/`; a pattern that does not compile fails the call with `invalid:`. `setpolicy {blockedWordsInTags: true}` searches tag values too.
 
 **Delete events**
 

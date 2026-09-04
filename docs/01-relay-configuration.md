@@ -53,7 +53,7 @@ Who can do what, and how much.
 | Rate limits | events and queries per minute, per connection; an address gets four times that across all its connections |
 | Upload size | largest file in megabytes, up to 95 |
 | Kinds | allow list and block list by kind number |
-| Blocked words | content containing one is refused |
+| Blocked words | content containing one is refused; an entry written /like this/ is a regular expression, and a switch searches tags too |
 
 An empty allow list means every kind. Blocks always win.
 
@@ -61,7 +61,7 @@ An empty allow list means every kind. Blocks always win.
 
 **Open to anyone** loosens a limited rule for guests without opening it. List kinds, such as 7 for reactions, and anyone may write those. Switch on replies and anyone may answer a note (kind 1) or a comment (kind 1111) by a member or by you, one hop: a reply to a guest's reply is not a reply to a member. Bans, blocked words, kind rules, proof of work, fuel and the rate limits still apply to guests.
 
-**Blocked words** is a list, one word or phrase per line, lowercased and matched anywhere in the content of any kind. An event that contains one is refused with a reason that says so. You and your moderators are exempt, and moderators may edit the list. Tags are not searched.
+**Blocked words** is a list, one word or phrase per line, lowercased and matched anywhere in the content of any kind. An entry written `/like this/` is a regular expression, matched case-insensitively, up to 200 characters; one that does not compile is refused when you save, with the reason. **Also search tags** matches the values of every tag as well, so a blocked hashtag or a blocked link in a tag is refused too. An event that contains one is refused with a reason that says so. You and your moderators are exempt, and moderators may edit the list. A pattern that backtracks badly slows every write to your own relay, and fuel bills that time, so keep patterns simple.
 
 The per-address limit is what stops a client from opening many sockets to multiply its allowance. It also serves as the HTTP bridge's rate limit, which has no socket to meter. Address buckets live in memory and reset when the relay sleeps.
 

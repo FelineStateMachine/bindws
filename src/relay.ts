@@ -1342,9 +1342,10 @@ export class Relay extends DurableObject<Env> {
     if (this.settings.isBanned(e.pubkey)) return "blocked: this pubkey is banned from this relay";
     if (this.settings.isEventBanned(e.id)) return "blocked: this event is banned from this relay";
     // Blocked words: the owner and moderators may say anything, nobody else may say these.
-    if (e.content !== "" && this.settings.hasBlockedWord(e.content)) {
+    const where = this.settings.hasBlockedWord(e.content, e.tags);
+    if (where) {
       const role = this.settings.roleOf(e.pubkey);
-      if (role !== "owner" && role !== "moderator") return "blocked: content contains a blocked word";
+      if (role !== "owner" && role !== "moderator") return where === "tags" ? "blocked: a tag contains a blocked word" : "blocked: content contains a blocked word";
     }
     // NIP-46 traffic passes the ownership, fuel and write gates: it is
     // ephemeral, never stored, and readable only by its two parties, and

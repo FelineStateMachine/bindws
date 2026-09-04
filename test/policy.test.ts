@@ -93,3 +93,45 @@ describe("message size", () => {
     expect((await ws.ok(big)).ok).toBe(true);
   });
 });
+
+describe("blocked words", () => {
+  it("takes /patterns/, refuses a bad one with the reason, and reaches into tags on request", async () => {
+    const host = "words.bind.ws";
+    const owner = generateSecretKey();
+    const guest = generateSecretKey();
+    await rpc(host, owner, "claim");
+
+    // A pattern that does not compile fails the call; nothing is saved.
+    const bad = await rpc(host, owner, "setblockedwords", ["spam", "/(unclosed/"]);
+    expect(bad.status).toBe(400);
+    expect(bad.error).toMatch(/^invalid: /);
+    expect((await rpc(host, owner, "getpolicy")).result.blockedWords).toEqual([]);
+    const long = await rpc(host, owner, "setblockedwords", ["/" + "a".repeat(200) + "/"]);
+    expect(long.status).toBe(400);
+    expect(long.error).toMatch(/longer than 200/);
+
+    // Plain words are lowercased; a pattern keeps its case and is compiled case-insensitive.
+    const kept = (await rpc(host, owner, "setblockedwords", ["Casino", "/free\\s+money/", "/\\bwin\\d{3,}/"])).result;
+    expect(kept).toEqual(["casino", "/free\\s+money/", "/\\bwin\\d{3,}/"]);
+
+    const ws = (await WS.connect(host))!;
+    expect((await ws.ok(ev(guest, 1, "FREE   MONEY here"))).msg).toBe("blocked: content contains a blocked word");
+    expect((await ws.ok(ev(guest, 1, "you Win1234 now"))).msg).toBe("blocked: content contains a blocked word");
+    expect((await ws.ok(ev(guest, 1, "winner takes all"))).ok).toBe(true);
+    expect((await ws.ok(ev(guest, 1, "a night at the CASINO"))).ok).toBe(false);
+    // The owner says what they like.
+    expect((await ws.ok(ev(owner, 1, "free money"))).ok).toBe(true);
+
+    // Tags are not searched until the switch is on.
+    expect((await ws.ok(ev(guest, 1, "look", [["t", "casino"]]))).ok).toBe(true);
+    expect((await rpc(host, owner, "setpolicy", { blockedWordsInTags: true })).result.blockedWordsInTags).toBe(true);
+    const tagged = await ws.ok(ev(guest, 1, "look again", [["t", "Casino"]]));
+    expect(tagged.ok).toBe(false);
+    expect(tagged.msg).toBe("blocked: a tag contains a blocked word");
+    expect((await ws.ok(ev(guest, 1, "pattern in a tag", [["r", "https://x.example/free money"]]))).ok).toBe(false);
+    // The tag name itself is not a value.
+    expect((await ws.ok(ev(guest, 1, "fine", [["casino", "x"]]))).ok).toBe(true);
+    await rpc(host, owner, "setpolicy", { blockedWordsInTags: false });
+    expect((await ws.ok(ev(guest, 1, "look once more", [["t", "casino"]]))).ok).toBe(true);
+  });
+});

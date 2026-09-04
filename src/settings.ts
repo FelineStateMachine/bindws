@@ -45,8 +45,10 @@ export interface Policy {
   openKinds: number[];
   guestReplies: boolean;
   // Content containing one of these, case-insensitive, is refused unless the
-  // author is the owner or a moderator.
+  // author is the owner or a moderator. An entry written /like this/ is a
+  // regular expression; blockedWordsInTags searches tag values as well.
   blockedWords: string[];
+  blockedWordsInTags: boolean;
   // Open reports from this many distinct reporters hide an event until a
   // moderator resolves them; 0 turns it off.
   reportThreshold: number;
@@ -107,6 +109,7 @@ export const DEFAULT_POLICY: Policy = {
   openKinds: [],
   guestReplies: false,
   blockedWords: [],
+  blockedWordsInTags: false,
   reportThreshold: 0,
   reads: "open",
   joinTerms: "",
@@ -200,14 +203,45 @@ const MAX_BLOCKED_WORDS = 200;
 // How many pubkeys the web of trust may hold; past it the newest lists are dropped.
 export const MAX_WOT = 50_000;
 
-// blockedWords cleans a list: lowercased, trimmed, 2 to 64 characters, unique, capped.
+const MAX_PATTERN = 200;
+
+// wordPattern says whether a blocked-word entry is a regular expression,
+// written /like this/, and gives its source.
+export function wordPattern(w: string): string | null {
+  return w.length >= 3 && w.startsWith("/") && w.endsWith("/") ? w.slice(1, -1) : null;
+}
+
+// badBlockedWord is the reason an entry cannot be used, or "" when it can:
+// a pattern that does not compile or is too long. Plain words are never bad,
+// merely dropped when too short or too long.
+export function badBlockedWord(x: unknown): string {
+  if (typeof x !== "string") return "";
+  const src = wordPattern(x.trim());
+  if (src === null) return "";
+  if (x.trim().length > MAX_PATTERN) return `invalid: pattern is longer than ${MAX_PATTERN} characters: ${x.trim().slice(0, 40)}`;
+  try {
+    new RegExp(src, "i");
+  } catch (err) {
+    return "invalid: " + (err instanceof Error ? err.message : "bad pattern");
+  }
+  return "";
+}
+
+// blockedWords cleans a list: trimmed, unique, capped. A plain word is
+// lowercased and 2 to 64 characters; a /pattern/ keeps its case, since it is
+// compiled case-insensitive, and must compile.
 export function blockedWords(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const seen = new Set<string>();
   for (const x of v) {
     if (typeof x !== "string") continue;
-    const w = x.trim().toLowerCase().replace(/\s+/g, " ");
-    if (w.length >= 2 && w.length <= 64) seen.add(w);
+    const t = x.trim();
+    if (wordPattern(t) !== null) {
+      if (badBlockedWord(t) === "") seen.add(t);
+    } else {
+      const w = t.toLowerCase().replace(/\s+/g, " ");
+      if (w.length >= 2 && w.length <= 64) seen.add(w);
+    }
     if (seen.size === MAX_BLOCKED_WORDS) break;
   }
   return [...seen];
@@ -225,6 +259,7 @@ export function gateFields(patch: Record<string, unknown>): Partial<Policy> {
   if (typeof patch.guestReplies === "boolean") out.guestReplies = patch.guestReplies;
   const words = blockedWords(patch.blockedWords);
   if (words) out.blockedWords = words;
+  if (typeof patch.blockedWordsInTags === "boolean") out.blockedWordsInTags = patch.blockedWordsInTags;
   if (Number.isInteger(patch.reportThreshold) && (patch.reportThreshold as number) >= 0 && (patch.reportThreshold as number) <= 100) out.reportThreshold = patch.reportThreshold as number;
   return out;
 }
@@ -385,11 +420,31 @@ export class Settings {
     if (this.policy.writes === "wot") this.rebuildWot();
   }
 
-  // hasBlockedWord says whether text contains one of the blocked words.
-  hasBlockedWord(text: string): boolean {
-    if (this.policy.blockedWords.length === 0 || text === "") return false;
-    const lower = text.toLowerCase();
-    return this.policy.blockedWords.some((w) => lower.includes(w));
+  // The blocked words as they are matched: a lowercased substring or a
+  // compiled pattern. Rebuilt when the list changes, by identity.
+  private wordsFor: string[] | null = null;
+  private words: (string | RegExp)[] = [];
+
+  // hasBlockedWord says where an event carries a blocked word: "content",
+  // "tags" when the rule reaches into tag values, or "" when it is clean.
+  hasBlockedWord(text: string, tags: string[][] = []): "" | "content" | "tags" {
+    const list = this.policy.blockedWords;
+    if (list.length === 0) return "";
+    if (this.wordsFor !== list) {
+      this.wordsFor = list;
+      this.words = list.map((w) => {
+        const src = wordPattern(w);
+        return src === null ? w : new RegExp(src, "i");
+      });
+    }
+    const hit = (s: string) => {
+      if (s === "") return false;
+      const lower = s.toLowerCase();
+      return this.words.some((w) => (typeof w === "string" ? lower.includes(w) : w.test(s)));
+    };
+    if (hit(text)) return "content";
+    if (this.policy.blockedWordsInTags && tags.length && hit(tags.map((t) => t.slice(1).join(" ")).join(" "))) return "tags";
+    return "";
   }
 
   // migrateMembers folds the earlier allow list and names table into members,
