@@ -1490,16 +1490,17 @@ export class Relay extends DurableObject<Env> {
   // canSee decides whether a private kind reaches a socket through the
   // filter that matched it. A socket that has AUTHed as the sender or a
   // recipient always sees it. NIP-46 traffic is also delivered to a filter
-  // that names a party's key outright, in "#p" or "authors", on a socket the
-  // read rule admits: the payload is encrypted end to end, and remote signers
-  // such as Amethyst's listen under a transport key they never AUTH with, so
-  // the filter is the only proof they give. A bare subscription to the kind
-  // sees nothing, and a members-only relay shows a stranger nothing at all.
+  // that names a party's key outright, in "#p" or "authors", under any read
+  // rule and without AUTH: the payload is encrypted end to end, and signers
+  // and their clients hold no key this relay knows. Amber probes a relay
+  // this way before it will list it, and Amethyst's bunker listens under a
+  // transport key it never AUTHs with. A bare subscription to the kind
+  // still sees nothing.
   private canSee(s: ConnState, e: Event, f: Filter): boolean {
     if (!isPrivate(e.kind)) return true;
     const parties = [e.pubkey, ...tagValues(e, "p")];
     if (parties.some((p) => s.authed.includes(p))) return true;
-    if (e.kind !== KIND_NOSTR_CONNECT || this.settings.mayRead(s.authed)) return false;
+    if (e.kind !== KIND_NOSTR_CONNECT) return false;
     return [...(f.authors ?? []), ...(f.tags.p ?? [])].some((k) => parties.includes(k));
   }
 

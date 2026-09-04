@@ -188,12 +188,14 @@ describe("the read rule at every door", () => {
       expect(leaks(await resp.text(), f.secrets)).toEqual([]);
     }
 
-    // The socket: REQ, COUNT and NEG-OPEN are refused; signer traffic to her is not delivered.
+    // The socket: REQ, COUNT and NEG-OPEN are refused. Signer traffic is the
+    // one exception, and only to a filter that already names her key: the
+    // payload is ciphertext, and NIP-46 clients and signers never AUTH.
     const c = await WS.connect(f.host);
     expect((await c.open("r", { authors: [pk(f.eve)] })).closed).toMatch(/^auth-required/);
     expect((await c.count("n", { authors: [pk(f.eve)] })).closed).toMatch(/^auth-required/);
     expect(await c.sync("s", { authors: [pk(f.eve)] })).toMatch(/^auth-required/);
-    expect((await c.open("nc", { kinds: [24133], "#p": [pk(f.eve)] })).closed).toBe("");
+    expect((await c.open("nc", { kinds: [24133] })).closed).toBe("");
     const sender = await WS.connect(f.host);
     expect((await sender.ok(ev(generateSecretKey(), 24133, "ciphertext", [["p", pk(f.eve)]]))).ok).toBe(true);
     // A later round trip proves no EVENT frame was queued in between.

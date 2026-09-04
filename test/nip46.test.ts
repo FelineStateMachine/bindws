@@ -139,19 +139,20 @@ describe("NIP-46 transport", () => {
     expect(await c.open("c", { kinds: [24133, 1] })).toMatch(/^auth-required/);
     expect(await c.open("d", { kinds: [24133] }, { kinds: [1] })).toMatch(/^auth-required/);
     expect(await c.open("e", {})).toMatch(/^auth-required/);
-    // A member's app listens under a transport key it never AUTHs with, on
-    // the socket it AUTHed as the member: requests to that key arrive. The
-    // same filter on a stranger's socket gets nothing.
-    const transport = generateSecretKey();
-    await c.auth(owner, host);
-    expect(await c.open("nc", { kinds: [24133], "#p": [getPublicKey(transport)] })).toBe("");
-    const stranger = await WS.connect(host);
-    expect(await stranger.open("nc", { kinds: [24133], "#p": [getPublicKey(transport)] })).toBe("");
-    const app = generateSecretKey();
-    const req = ev(app, 24133, "ciphertext", [["p", getPublicKey(transport)]]);
-    expect(await stranger.ok(req)).toEqual({ ok: true, msg: "" });
-    expect((await c.expect("EVENT"))[2].id).toBe(req.id);
-    expect(await stranger.open("probe", { kinds: [24133] })).toBe("");
+    // Amber's probe before it lists a relay: a throwaway key, no AUTH, a
+    // subscription naming the key, and its own event echoed back.
+    const probe = generateSecretKey();
+    expect(await c.open("nc", { kinds: [24133], "#p": [getPublicKey(probe)] })).toBe("");
+    const self = ev(probe, 24133, "Test bunker event", [["p", getPublicKey(probe)]]);
+    expect(await c.ok(self)).toEqual({ ok: true, msg: "" });
+    expect((await c.expect("EVENT"))[2].id).toBe(self.id);
+    // A signer's reply reaches the client that asked for it by key, unauthed.
+    const client = generateSecretKey();
+    const d = await WS.connect(host);
+    expect(await d.open("nc", { kinds: [24133], "#p": [getPublicKey(client)] })).toBe("");
+    const reply = ev(owner, 24133, "ciphertext", [["p", getPublicKey(client)]]);
+    expect(await c.ok(reply)).toEqual({ ok: true, msg: "" });
+    expect((await d.expect("EVENT"))[2].id).toBe(reply.id);
   });
 
   it("serves the signer library with a long cache", async () => {
