@@ -1,0 +1,38 @@
+# The same Worker on celld (docs/16-hosting-without-cloudflare.md): the
+# black-box suite, files included, against `celld dev`. Run by hand from the
+# Actions tab, or with `gh workflow run celld.yml`, before a release or after
+# a celld upgrade; a red run means the host without Cloudflare broke. It is
+# not on every push, since the runner's timing makes the sync test flaky.
+name: celld
+on:
+  workflow_dispatch:
+jobs:
+  celld:
+    runs-on: ubuntu-latest
+    env:
+      CELLD_VERSION: v0.4.0
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install celld
+        run: |
+          curl -fsSL https://celld.dev/install.sh -o install.sh
+          sh install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Start celld dev
+        run: |
+          celld dev wrangler.celld.jsonc --port 9876 > celld.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://127.0.0.1:9876/ && break
+            sleep 1
+          done
+          curl -sf -H 'accept: application/nostr+json' http://127.0.0.1:9876/
+      - run: CLAIM=1 RELAY_URL=ws://127.0.0.1:9876 npm run test:conformance
+      - name: celld log
+        if: failure()
+        run: cat celld.log
