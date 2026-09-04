@@ -385,76 +385,86 @@ describe("GRASP", () => {
     const path = gitRepositoryPath(npubEncode(pk(owner)), "promotion");
     const requestId = "promotion-recovery";
     const stub = env.RELAY.getByName(`grasp-promotion-${mode}`);
-    await runInDurableObject(stub, async (relay) => {
-      const bucket = relay.media;
-      let published = false;
-      let failed = false;
-      const observed = new Proxy(bucket, { get(target, name) {
-        if (name === "get") return (key: string, options?: R2GetOptions) => {
-          if (published && key.endsWith("/root.json")) { failed = true; throw new Error("publication succeeded before promotion read failed"); }
-          return target.get(key, options);
-        };
-        if (name === "put") return async (...args: unknown[]) => {
-          const result = await Reflect.apply(target.put, target, args);
-          if (String(args[0]).endsWith("/root.json") && result) published = true;
-          return result;
-        };
-        const value = Reflect.get(target, name, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      } });
-      Object.defineProperty(relay, "media", { value: observed, configurable: true });
-      try {
-        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
-          method: "POST",
-          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
-          body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
-        }));
-        expect(await response.text()).not.toContain("ok refs/heads/main");
-        expect(published).toBe(true);
-        expect(failed).toBe(true);
-      } finally { Reflect.deleteProperty(relay, "media"); }
-      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
-      expect((await wal.load()).sequence).toBe(1);
-      expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toHaveLength(2);
-    });
-    const replay = await runInDurableObject(stub, async (relay) => {
-      const bucket = relay.media;
-      let roots = 0;
-      const published: string[] = [];
-      const broadcast = relay.broadcast.bind(relay);
-      Object.defineProperty(relay, "broadcast", { configurable: true, value: (event: Parameters<typeof relay.broadcast>[0]) => {
-        published.push(event.id);
-        broadcast(event);
-      } });
-      const observed = new Proxy(bucket, { get(target, name) {
-        if (name === "get") return (key: string, options?: R2GetOptions) => {
-          // The replay loads the WAL, then promotion loads it again. Change
-          // eligibility only after promotion's initial candidate check.
-          if (key.endsWith("/root.json") && ++roots === 2) {
-            if (mode === "expired") relay.sql.exec("UPDATE events SET expires=1 WHERE id=?", pr.id);
-            else relay.settings.setEvent(pr.id, "hide");
+    const replay = await runInDurableObject(stub, async (relay, context) => {
+      await context.storage.deleteAlarm();
+      const deadline = Date.now() + 5000;
+      while (relay.repositoryAccess.busy && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      return relay.repositoryAccess.run("git", async () => {
+        await context.storage.deleteAlarm();
+        // Both phases share one owner so an alarm cannot heal the injected
+        // interruption before the identical HTTP retry proves recovery.
+        {
+          const bucket = relay.media;
+          let published = false;
+          let failed = false;
+          const observed = new Proxy(bucket, { get(target, name) {
+            if (name === "get") return (key: string, options?: R2GetOptions) => {
+              if (published && key.endsWith("/root.json")) { failed = true; throw new Error("publication succeeded before promotion read failed"); }
+              return target.get(key, options);
+            };
+            if (name === "put") return async (...args: unknown[]) => {
+              const result = await Reflect.apply(target.put, target, args);
+              if (String(args[0]).endsWith("/root.json") && result) published = true;
+              return result;
+            };
+            const value = Reflect.get(target, name, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          } });
+          Object.defineProperty(relay, "media", { value: observed, configurable: true });
+          try {
+            const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
+              method: "POST",
+              headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
+              body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
+            }));
+            expect(await response.text()).not.toContain("ok refs/heads/main");
+            expect(published).toBe(true);
+            expect(failed).toBe(true);
+          } finally { Reflect.deleteProperty(relay, "media"); }
+          const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
+          expect((await wal.load()).sequence).toBe(1);
+          expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toHaveLength(2);
+        }
+        {
+          const bucket = relay.media;
+          let roots = 0;
+          const published: string[] = [];
+          const broadcast = relay.broadcast.bind(relay);
+          Object.defineProperty(relay, "broadcast", { configurable: true, value: (event: Parameters<typeof relay.broadcast>[0]) => {
+            published.push(event.id);
+            broadcast(event);
+          } });
+          const observed = new Proxy(bucket, { get(target, name) {
+            if (name === "get") return (key: string, options?: R2GetOptions) => {
+              // The replay loads the WAL, then promotion loads it again. Change
+              // eligibility only after promotion's initial candidate check.
+              if (key.endsWith("/root.json") && ++roots === 2) {
+                if (mode === "expired") relay.sql.exec("UPDATE events SET expires=1 WHERE id=?", pr.id);
+                else relay.settings.setEvent(pr.id, "hide");
+              }
+              return target.get(key, options);
+            };
+            const value = Reflect.get(target, name, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          } });
+          Object.defineProperty(relay, "media", { value: observed, configurable: true });
+          try {
+            const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
+              method: "POST",
+              headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
+              body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
+            }));
+            expect(roots).toBeGreaterThanOrEqual(2);
+            expect(published).toContain(announcement.id);
+            expect(published).toContain(state.id);
+            expect(published).not.toContain(pr.id);
+            return await response.text();
+          } finally {
+            Reflect.deleteProperty(relay, "media");
+            Reflect.deleteProperty(relay, "broadcast");
           }
-          return target.get(key, options);
-        };
-        const value = Reflect.get(target, name, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      } });
-      Object.defineProperty(relay, "media", { value: observed, configurable: true });
-      try {
-        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
-          method: "POST",
-          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
-          body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
-        }));
-        expect(roots).toBeGreaterThanOrEqual(2);
-        expect(published).toContain(announcement.id);
-        expect(published).toContain(state.id);
-        expect(published).not.toContain(pr.id);
-        return await response.text();
-      } finally {
-        Reflect.deleteProperty(relay, "media");
-        Reflect.deleteProperty(relay, "broadcast");
-      }
+        }
+      }, () => { throw new Error("promotion fixture did not settle"); });
     });
     expect(replay).toContain("ok refs/heads/main");
     await runInDurableObject(stub, async (relay) => {
