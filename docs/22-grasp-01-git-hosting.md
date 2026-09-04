@@ -182,8 +182,16 @@ When GRASP is on and reads are open, NIP-11 includes:
 | Field | Meaning |
 |---|---|
 | `supported_grasps` | `GRASP-01` for this service |
-| `repo_acceptance_criteria` | the required NIP-34 announcement, relay listing, maintainer and state checks, plus ordinary relay policy |
+| `repo_acceptance_criteria` | who may announce repositories under the current write and kind rules, guest exceptions, required relay listing and storage limits |
 | `curation` | omitted unless the owner applies curation beyond generic spam, bans or fuel rules |
+
+GitWorkshop classifies the acceptance description as public or approval
+required. Open writes allow anyone to announce a repository; allowlist,
+owner-only and web-of-trust writes describe their eligible authors. A guest
+exception for kind 30617 opens announcements, while state and collaboration
+events still follow their own rules. A blocked announcement kind preserves
+the owner's existing kind-rule exemption. Changing a rule changes the
+description without granting any new permission.
 
 NIP-11 does not list GRASP-02, GRASP-03, GRASP-05, GRASP-06 or GRASP-08. A
 relay's regular read rule still governs the Nostr side, and turning GRASP off

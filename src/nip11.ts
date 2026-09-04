@@ -6,6 +6,7 @@ import type { Relay } from "./relay.ts";
 import { now } from "./event.ts";
 import { SUCCESSION_WARN_DAYS, featureOn, FEATURE_NAMES, type Feature } from "./settings.ts";
 import { SITE_KINDS } from "./sites.ts";
+import { KIND_REPO } from "./kinds.ts";
 import { nip11Views } from "./views.ts";
 
 // The less obvious numbers: 43 is added once the relay has an identity; 62
@@ -68,7 +69,19 @@ export function nip11(relay: Relay, host: string) {
   if (relay.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
   if (featureOn(p, "grasp") && p.reads === "open") {
     doc.supported_grasps = ["GRASP-01"];
-    doc.repo_acceptance_criteria = "Repository announcements name this service in clone and relays; the relay write rule, bans, proof of work and fuel apply. At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.";
+    const access = {
+      open: "Anyone may announce a repository.",
+      allowlist: "Allowlist hosting: only the relay owner and members may announce repositories.",
+      owner: "Curated hosting: only the relay owner may announce repositories.",
+      wot: "Curated hosting: the relay owner, members and people they follow may announce repositories.",
+    };
+    const eligibility = relay.settings.isUnclaimed() ? "Repository hosting is unavailable until this relay is claimed."
+      : relay.settings.leaseExpired(now()) ? "Repository hosting is unavailable because this relay's lease has expired."
+      : !relay.settings.kindAllowed(KIND_REPO) ? "Curated hosting: kind 30617 is restricted; only the relay owner's repository announcements pass the kind rule."
+      : p.writes !== "open" && p.openKinds.includes(KIND_REPO) ? "Anyone may announce a repository through the guest exception for kind 30617."
+      : access[p.writes];
+    const guests = p.writes !== "open" && p.openKinds.length ? ` Guest write exceptions apply to kinds ${p.openKinds.join(", ")}.` : "";
+    doc.repo_acceptance_criteria = `${eligibility} Repository announcements name this service in clone and relays. State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.`;
     if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
   }
   if (featureOn(p, "sites")) doc.nsites = {

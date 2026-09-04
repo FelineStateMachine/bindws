@@ -6,6 +6,40 @@ import { generateSecretKey } from "nostr-tools/pure";
 import { rpc, info } from "../helpers/relay.ts";
 
 describe("NIP-11 extras", () => {
+  it("describes Git admission from current write rules without hiding guest or kind restrictions", async () => {
+    const host = "git-policy-info.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    for (const [writes, eligibility] of [
+      ["open", "Anyone may announce a repository."],
+      ["allowlist", "Allowlist hosting: only the relay owner and members may announce repositories."],
+      ["owner", "Curated hosting: only the relay owner may announce repositories."],
+      ["wot", "Curated hosting: the relay owner, members and people they follow may announce repositories."],
+    ]) {
+      expect((await rpc(host, owner, "setpolicy", { features: { grasp: true }, writes })).status).toBe(200);
+      const doc = await info(host);
+      expect(doc.repo_acceptance_criteria.startsWith(eligibility)).toBe(true);
+      expect(doc.repo_acceptance_criteria).toContain(`write rule (${writes}) and kind rules`);
+      expect(doc.supported_grasps).toEqual(["GRASP-01"]);
+    }
+    await rpc(host, owner, "setpolicy", { writes: "allowlist", openKinds: [30617] });
+    let doc = await info(host);
+    expect(doc.repo_acceptance_criteria).toContain("Anyone may announce a repository through the guest exception for kind 30617.");
+    expect(doc.repo_acceptance_criteria).toContain("Guest write exceptions apply to kinds 30617.");
+    expect(doc.repo_acceptance_criteria).toContain("write rule (allowlist)");
+    await rpc(host, owner, "disallowkind", 30617);
+    doc = await info(host);
+    expect(doc.repo_acceptance_criteria).toContain("only the relay owner's repository announcements pass the kind rule");
+    expect(doc.repo_acceptance_criteria).not.toContain("Anyone");
+    await rpc(host, owner, "unrulekind", 30617);
+    await rpc(host, owner, "setpolicy", { writes: "open", openKinds: [] });
+    expect((await info(host)).repo_acceptance_criteria).toMatch(/^Anyone may announce/);
+    await rpc(host, owner, "setpolicy", { reads: "members" });
+    expect((await info(host)).repo_acceptance_criteria).toBeUndefined();
+    await rpc(host, owner, "setpolicy", { reads: "open", features: { grasp: false } });
+    expect((await info(host)).repo_acceptance_criteria).toBeUndefined();
+  });
+
   it("publishes the policy links and lists once set, validated", async () => {
     const host = "eleven.bind.ws";
     const owner = generateSecretKey();
