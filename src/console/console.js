@@ -223,9 +223,7 @@
     info = await (await fetch("/", { headers: { accept: "application/nostr+json" } })).json();
     renderHeader();
     const git = info.supported_grasps?.includes("GRASP-01");
-    $("#git-connect").classList.remove("hidden");
-    $("#git-off").classList.toggle("hidden", !!git);
-    $("#git-ready").classList.toggle("hidden", !git);
+    $("#git-connect").classList.toggle("hidden", !git);
     const clone = "git clone '" + location.origin + "/<npub>/<repo>.git'";
     $("#git-clone").textContent = clone;
     $("#git-copy").dataset.copytext = clone;
