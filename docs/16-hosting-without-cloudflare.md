@@ -54,7 +54,7 @@ The line to look for is `ok bucket conditional write: create, reject-create, upd
 
 ## Configure
 
-`wrangler.celld.jsonc` is the Worker's config for celld: the same code, bindings, migrations and prices as `wrangler.jsonc`, and only the keys celld accepts, since it stops on any other. `node scripts/check/check-celld.mjs`, part of `npm run typecheck`, fails when the two drift. Edit:
+`wrangler.celld.jsonc` is the Worker's config for celld: the same code, bindings, migrations and prices as `wrangler.jsonc`, and only the keys celld accepts, since it stops on any other. `npm run check:celld`, part of `npm run typecheck`, fails when the two drift. Edit:
 
 | Setting | Meaning |
 |---|---|

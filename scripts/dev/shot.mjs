@@ -1,4 +1,4 @@
-// Screenshot a page with phone emulation over CDP. Usage: node scripts/shot.mjs <url> <out.png> [width] [height]
+// Screenshot a page with phone emulation over CDP. Usage: npm run dev:shot <url> <out.png> [width] [height]
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import WebSocket from "ws";

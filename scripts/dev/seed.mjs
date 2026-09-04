@@ -1,4 +1,4 @@
-// Seeds a dev relay with a few events: node scripts/seed.mjs [name]
+// Seeds a dev relay with a few events: npm run dev:seed [name]
 import WebSocket from "ws";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
 const name = process.argv[2] ?? "dev";

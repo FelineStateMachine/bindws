@@ -1,10 +1,10 @@
-// Checks relay configuration files: node scripts/check/check-config.mjs <file.jsonc>...
-// Part of npm run typecheck for every template in relay-templates/.
+// Checks relay configuration files, part of npm run typecheck for every
+// template in relay-templates/. For one file of your own: npm run relay check <file>.
 import { checkConfig, describe, readConfig } from "./config.mjs";
 
 const files = process.argv.slice(2);
 if (files.length === 0) {
-  console.error("usage: node scripts/check/check-config.mjs <file.jsonc>...");
+  console.error("usage: check-config.mjs <file.jsonc>...; for one file, npm run relay check <file>");
   process.exit(2);
 }
 let failed = false;

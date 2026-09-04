@@ -1,9 +1,9 @@
 // Fuel prices against what Cloudflare bills, at today's bitcoin price.
 //
-//   node scripts/margin.mjs                 tables, markdown
-//   node scripts/margin.mjs --btc 77000     at a given price
-//   node scripts/margin.mjs --target 0.4    a different margin target
-//   node scripts/margin.mjs --relays 500    the deployment projection at that count
+//   npm run margin                          tables, markdown
+//   npm run margin -- --btc 77000           at a given price
+//   npm run margin -- --target 0.4          a different margin target
+//   npm run margin -- --relays 500          the deployment projection at that count
 //
 // Exit code 1 when a priced line sits below the target margin, so a weekly
 // run can raise a flag. Cloudflare rates are list prices for Workers Paid,

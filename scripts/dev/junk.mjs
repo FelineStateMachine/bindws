@@ -1,4 +1,4 @@
-// Fills a relay with test files and reports, signed by the dev seed key. Usage: node scripts/junk.mjs https://<name>.bind.ws
+// Fills a relay with test files and reports, signed by the dev seed key. Usage: npm run dev:junk https://<name>.bind.ws
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

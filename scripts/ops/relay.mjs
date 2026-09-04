@@ -1,10 +1,10 @@
 // A relay's configuration as a file in your repository: check it, see what
 // applying it would change, apply it, or pull the relay's current one.
 //
-//   node scripts/ops/relay.mjs check <file.jsonc>
-//   node scripts/ops/relay.mjs plan  <file.jsonc> <wss://name.bind.ws>
-//   node scripts/ops/relay.mjs push  <file.jsonc> <wss://name.bind.ws>
-//   node scripts/ops/relay.mjs pull  <wss://name.bind.ws> [file.json]
+//   npm run relay check <file.jsonc>
+//   npm run relay plan  <file.jsonc> <wss://name.bind.ws>
+//   npm run relay push  <file.jsonc> <wss://name.bind.ws>
+//   npm run relay pull  <wss://name.bind.ws> [file.json]
 //
 // plan, push and pull sign as the owner: RELAY_SK holds the secret key, hex
 // or nsec. check needs no relay. plan is importconfig with dryRun, so it
@@ -18,7 +18,7 @@ import { checkConfig, describe, readConfig } from "../check/config.mjs";
 
 const [cmd, a, b] = process.argv.slice(2);
 const usage = () => {
-  console.error("usage: relay.mjs check <file> | plan <file> <url> | push <file> <url> | pull <url> [file]");
+  console.error("usage: npm run relay check <file> | plan <file> <url> | push <file> <url> | pull <url> [file]");
   process.exit(2);
 };
 

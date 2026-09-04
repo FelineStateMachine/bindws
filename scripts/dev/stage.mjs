@@ -1,6 +1,6 @@
 // Stages a local relay for screenshots: claims it with the dev signer's key,
 // gives it a name and a description, and adds a few members. Run the dev
-// server first. Usage: node scripts/stage.mjs <name>
+// server first. Usage: npm run dev:stage <name>
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 

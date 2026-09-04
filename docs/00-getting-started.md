@@ -64,13 +64,13 @@ Members can have a name at your relay, such as `alice@<name>.bind.ws`. Set it in
 
 ## From a file
 
-Everything the console sets can live in a file in your own repository: the rules, the features, the kinds and keep-for rules, the members, the bans. Pull the relay as it is, edit the file, see what applying it would change, then apply:
+Everything the console sets can live in a file in your own repository: the rules, the features, the kinds and keep-for rules, the members, the bans. From a checkout of the [repository](https://github.com/FelineStateMachine/bindws), pull the relay as it is, edit the file, see what applying it would change, then apply:
 
 ```
 export RELAY_SK=<your key, hex or nsec>
-node scripts/ops/relay.mjs pull wss://<name>.bind.ws relay.json
-node scripts/ops/relay.mjs plan relay.json wss://<name>.bind.ws
-node scripts/ops/relay.mjs push relay.json wss://<name>.bind.ws
+npm run relay pull wss://<name>.bind.ws relay.json
+npm run relay plan relay.json wss://<name>.bind.ws
+npm run relay push relay.json wss://<name>.bind.ws
 ```
 
 The file has a schema, so an editor checks it as you type, and `plan` never touches the relay. A template from the repository's `relay-templates/` folder is a good start: `10-quiet.jsonc` is a small private relay with every costly feature off. See [Scripts and agents](13-scripts-and-agents.md#the-configuration-file).

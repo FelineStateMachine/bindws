@@ -22,7 +22,7 @@ Edit `wrangler.jsonc`:
 | `LEASE_DAYS` | how long a temporary relay from `POST /lease` lives; 14 if unset |
 | `ratelimits` | how many leases a minute, per address and overall; the defaults are 5 and 60 |
 
-The prices carry a comment with the Cloudflare rates they were set from. `node scripts/ops/margin.mjs` compares them with those rates at the current bitcoin price, and a weekly workflow does the same; see [Costs and margins](15-costs-and-margins.md).
+The prices carry a comment with the Cloudflare rates they were set from. `npm run margin` compares them with those rates at the current bitcoin price, and a weekly workflow does the same; see [Costs and margins](15-costs-and-margins.md).
 
 Point `routes` at your zone: the apex as a custom domain and `*.<domain>/*` as a zone route. Create the R2 bucket named in `r2_buckets`.
 
@@ -126,4 +126,4 @@ npm run dev
 
 `wrangler dev --env dev` serves `http://<name>.localhost:8787` as the relay named `<name>`, `http://<domain>.localhost:8787` as the apex and anything else as `DEV_RELAY`. The dev environment has no routes, so hostnames pass through.
 
-To use the console without a browser extension, run `node scripts/dev/dev-signer.mjs` and paste the snippet from that file into the devtools console before clicking sign in. `node scripts/dev/seed.mjs <name>` publishes sample events. `npm run dev` folds the console's files into their generated module first; the templates need `npm run build:templates` after a change.
+To use the console without a browser extension, run `npm run dev:signer` and paste the snippet from that file into the devtools console before clicking sign in. `npm run dev:seed <name>` publishes sample events. `npm run dev` folds the console's files into their generated module first; the templates need `npm run build:templates` after a change.

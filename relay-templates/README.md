@@ -35,8 +35,8 @@ the relay serves as its presets; `npm run typecheck` checks every file here
 against the schema and the relay's parser, fails when the generated module
 is stale, and fails when a file is missing from the table above.
 
-To try one on a relay without applying it:
+To try one on a relay without applying it, from the repository root:
 
 ```
-node ../scripts/ops/relay.mjs plan 10-quiet.jsonc wss://<name>.bind.ws
+npm run relay plan relay-templates/10-quiet.jsonc wss://<name>.bind.ws
 ```
