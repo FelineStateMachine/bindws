@@ -7,6 +7,13 @@ import { stripComments } from "../check/jsonc.mjs";
 const DIR = new URL("../../relay-templates/", import.meta.url);
 const OUT = new URL("../../src/gen/templates.ts", import.meta.url);
 const files = readdirSync(DIR).filter((f) => f.endsWith(".jsonc")).sort();
+// The folder's README is the catalog: every template has a row there.
+const readme = readFileSync(new URL("README.md", DIR), "utf8");
+const missing = files.filter((f) => !readme.includes(`](${f})`));
+if (missing.length) {
+  console.error(`relay-templates/README.md has no row for: ${missing.join(", ")}`);
+  process.exit(1);
+}
 const templates = files.map((f) => {
   const doc = JSON.parse(stripComments(readFileSync(new URL(f, DIR), "utf8")));
   delete doc.$schema;
