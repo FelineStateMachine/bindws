@@ -135,3 +135,38 @@ describe("blocked words", () => {
     expect((await ws.ok(ev(guest, 1, "look once more", [["t", "casino"]]))).ok).toBe(true);
   });
 });
+
+describe("address blocks in the configuration", () => {
+  it("export carries them and import applies them, dropping the sockets they refuse", async () => {
+    const a = "cfg-a.bind.ws";
+    const b = "cfg-b.bind.ws";
+    const owner = generateSecretKey();
+    const bad = "203.0.113.9";
+    await rpc(a, owner, "claim");
+    await rpc(b, owner, "claim");
+    await rpc(a, owner, "blockip", bad, "scraper");
+    await rpc(a, owner, "blockip", "2001:DB8::9", "");
+    const cfg = (await rpc(a, owner, "exportconfig")).result;
+    const byIP = (l: { ip: string; reason: string }[]) => [...l].sort((x, y) => x.ip.localeCompare(y.ip));
+    expect(byIP(cfg.addresses)).toEqual([{ ip: "2001:db8::9", reason: "" }, { ip: bad, reason: "scraper" }]);
+
+    // The second relay has a stale block of its own and an open socket from the address about to be refused.
+    await rpc(b, owner, "blockip", "198.51.100.200", "old");
+    const open = (await WS.connect(b, bad))!;
+    expect((await open.ok(ev(owner, 1, "before"))).ok).toBe(true);
+    cfg.addresses.push({ ip: "not an address", reason: "x" }, { reason: "no ip" });
+    const imported = await rpc(b, owner, "importconfig", cfg);
+    expect(imported.status).toBe(200);
+    expect(byIP(imported.result.addresses)).toEqual([{ ip: "2001:db8::9", reason: "" }, { ip: bad, reason: "scraper" }]);
+    expect((await rpc(b, owner, "listblockedips")).result.map((x: { ip: string }) => x.ip).sort()).toEqual(["2001:db8::9", bad]);
+    for (let i = 0; i < 40 && !open.closed; i++) await new Promise((r) => setTimeout(r, 25));
+    expect(open.closed?.code).toBe(4403);
+    expect(await WS.connect(b, bad)).toBeNull();
+    expect(await WS.connect(b, "198.51.100.200")).not.toBeNull();
+    // A document without the list clears the blocks, like the other lists.
+    delete cfg.addresses;
+    await rpc(b, owner, "importconfig", cfg);
+    expect((await rpc(b, owner, "listblockedips")).result).toEqual([]);
+    expect(await WS.connect(b, bad)).not.toBeNull();
+  });
+});

@@ -141,7 +141,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 **Config**
 
-- `exportconfig`, `importconfig document`: rules, identity, members, bans, kind rules and retention as one document.
+- `exportconfig`, `importconfig document`: rules, identity, members, bans, address blocks, kind rules and retention as one document.
 
 **Jobs**
 

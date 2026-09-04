@@ -34,7 +34,7 @@ Keeping order. Reports never show in the feed.
 - **Reports** filed against people or events arrive here. Resolve each one by dismissing it, deleting the event or banning the author.
 - **Ban** a pubkey. Their events are refused and their open connections are closed. Tick **erase** and everything they wrote here, their profile included, and every file they uploaded goes too. The row action asks the same question; so does banning from a report.
 - **Hide after N reports.** Set a number and an event reported by that many different people is hidden: not served, counted, synced, rebroadcast or shown on a page, until a moderator resolves the reports. Dismissing the last open report shows it again; deleting or banning makes it permanent. Reports on a person or a file never hide anything. Hidden events are marked in the reports table.
-- **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Addresses churn, so blocks are not part of the exported configuration.
+- **Block an address.** An IP address, v4 or v6, gets no socket and no write or read door; its open connections are closed. The page, the relay information and management stay reachable, so you can undo a block on your own address. Blocks travel with the exported configuration, so a relay you rebuild from the file refuses the same addresses.
 - **Recent events** shows the feed with pin, delete and ban actions. **Search** above it looks through notes, articles and profiles by words, the same index clients use (NIP-50), up to 200 results; **Clear** goes back to the feed.
 - **Pinned** is the group's pin list, up to 20 event ids or addresses in the order clients show them. Pin from the feed or by id; unpin from the list. Moderators may pin. The list is published as a record signed by the relay, so group clients see it.
 
@@ -122,7 +122,7 @@ Time since the last event, open connections, fuel status and a breakdown of kind
 
 The relay as a thing you hold.
 
-**Export configuration** downloads rules, identity, members, bans, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
+**Export configuration** downloads rules, identity, members, bans, address blocks, kind rules and retention as one file. **Import** replaces those lists on any relay you own. Events, files and the owner are never touched.
 
 **Transfer ownership** hands the relay to a member you pick. You stay on as a moderator. The relay's key, events, files and fuel do not change. You type the relay's name to confirm.
 

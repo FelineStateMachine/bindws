@@ -283,6 +283,12 @@ export function limitFields(patch: Record<string, unknown>): Partial<Policy> {
   return out;
 }
 
+// validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
+export function validIP(ip: string): boolean {
+  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip)) return true;
+  return /^[0-9a-f:]{2,39}$/.test(ip) && ip.includes(":") && !ip.includes(":::") && ip.split("::").length <= 2;
+}
+
 const TAG_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const LANG_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
 const COUNTRY_RE = /^[A-Z]{2}$/;
@@ -674,7 +680,8 @@ export class Settings {
   // ---- portable configuration ----
 
   // exportConfig is everything that makes this relay itself, minus its
-  // data: policy, people, bans, and kind rules. Enough to rebuild it.
+  // data: policy, people, bans, address blocks and kind rules. Enough to
+  // rebuild it.
   exportConfig(name: string) {
     return {
       format: "bind.ws/relay-config/1",
@@ -684,6 +691,7 @@ export class Settings {
       members: this.members().filter((m) => m.role !== "owner").map((m) => ({ pubkey: m.pubkey, name: m.name, note: m.note, ...(m.role === "moderator" ? { role: "moderator" } : {}), ...(m.keep_days ? { keepDays: m.keep_days } : {}), ...(m.max_bytes ? { maxBytes: m.max_bytes } : {}) })),
       bans: this.listBans(),
       banned_events: this.listEvents("ban"),
+      addresses: this.listIPBlocks(),
       kinds: { allow: this.listKinds("allow"), block: this.listKinds("block") },
       retention: this.listRetention(),
     };
@@ -717,6 +725,12 @@ export class Settings {
     for (const b of Array.isArray(c.bans) ? c.bans : []) {
       const r = b as Record<string, unknown>;
       if (hex64(r.pubkey) && !this.isOwner(r.pubkey)) this.setBan(r.pubkey, true, typeof r.reason === "string" ? r.reason : "", now);
+    }
+    for (const b of this.listIPBlocks()) this.setIPBlock(b.ip, false);
+    for (const a of Array.isArray(c.addresses) ? c.addresses : []) {
+      const r = a as Record<string, unknown>;
+      const ip = typeof r.ip === "string" ? r.ip.trim().toLowerCase() : "";
+      if (validIP(ip)) this.setIPBlock(ip, true, typeof r.reason === "string" ? r.reason.slice(0, 200) : "", now);
     }
     for (const e of this.listEvents("ban")) this.setEvent(e.id, null);
     for (const e of Array.isArray(c.banned_events) ? c.banned_events : []) {

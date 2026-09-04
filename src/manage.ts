@@ -6,7 +6,8 @@ import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { badBlockedWord, blockedWords, gateFields, isWriteRule, limitFields, viewFields } from "./settings.ts";
-import { isReplaceable, isProtected, publicFields, dumpFields } from "./settings.ts";
+import { isReplaceable, isProtected, publicFields, dumpFields, validIP } from "./settings.ts";
+export { validIP };
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, viewsSummary } from "./views.ts";
 import { MAX_PINS } from "./groups.ts";
@@ -40,12 +41,6 @@ const METHODS = [
   "setsuccession", "clearsuccession", "successionstatus",
   "adddomain", "removedomain", "checkdomain", "listdomains",
 ];
-
-// validIP accepts an IPv4 or IPv6 address, nothing fancier: no ranges, no names.
-export function validIP(ip: string): boolean {
-  if (/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip)) return true;
-  return /^[0-9a-f:]{2,39}$/.test(ip) && ip.includes(":") && !ip.includes(":::") && ip.split("::").length <= 2;
-}
 
 export async function manage(relay: Relay, req: Request): Promise<Response> {
   const cors = { "access-control-allow-origin": "*", "content-type": "application/json" };
@@ -303,6 +298,8 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const before = new Map(s.members().map((x) => [x.pubkey, x.role]));
       const err = s.importConfig(params[0], t);
       if (err) return reply({ error: err }, 400);
+      // Imported address blocks drop the sockets they now refuse.
+      for (const b of s.listIPBlocks()) relay.blockIP(b.ip, b.reason);
       const after = new Map(s.members().map((x) => [x.pubkey, x.role]));
       const changes: { pubkey: string; added?: boolean }[] = [];
       for (const [pk, role] of after) {

@@ -137,8 +137,8 @@ describe("address blocks", () => {
     expect((await post(host, member, "/events", ev(member, 1, "elsewhere"), "203.0.113.6")).status).toBe(200);
     expect(await WS.connect(host, "203.0.113.6")).not.toBeNull();
     expect((await rpc(host, owner, "stats")).status).toBe(200);
-    // Blocks are not part of the portable configuration.
-    expect((await rpc(host, owner, "exportconfig")).result.blocked_ips).toBeUndefined();
+    // Blocks are part of the portable configuration.
+    expect((await rpc(host, owner, "exportconfig")).result.addresses).toEqual([{ ip: bad, reason: "scraper" }]);
 
     expect((await rpc(host, owner, "unblockip", bad)).result).toBe(true);
     expect((await rpc(host, owner, "listblockedips")).result).toEqual([]);
