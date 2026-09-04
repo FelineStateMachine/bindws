@@ -73,11 +73,43 @@ export interface Policy {
   memberInvites: { depth: number; quota: number };
   // Views (views.ts): a name maps to false when the owner switched it off.
   views: Record<string, boolean>;
+  features: Features;
 }
 
 export const VIEW_NAMES = ["profiles", "relays", "calendar", "moderation", "articles", "zaps", "presence"];
 
 // viewFields applies a `views` patch of name to boolean; unknown names are dropped.
+// Features an operator may switch off, each a door or a cost. The bridge
+// is not one: the console runs on it. What is off leaves supported_nips
+// (nip11.ts), answers 404 at its door (routes.ts) and is refused at the
+// socket (gates.ts, relay.ts).
+export const FEATURE_NAMES = ["search", "sync", "count", "discovery", "names", "files", "pages", "signer"] as const;
+export type Feature = (typeof FEATURE_NAMES)[number];
+export type SearchMode = "full" | "prose" | "off";
+export interface Features {
+  search: SearchMode; // NIP-50: full indexes every public kind with content, prose the kinds that carry prose
+  sync: boolean; // NIP-77 negentropy
+  count: boolean; // NIP-45 COUNT, with HLL
+  discovery: boolean; // NIP-66: the record the relay signs about itself
+  names: boolean; // NIP-05 under the relay's domain
+  files: boolean; // Blossom and NIP-96
+  pages: boolean; // notes and articles as pages, the feed
+  signer: boolean; // NIP-46 traffic carried for anyone
+}
+export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true };
+export const featureOn = (p: Policy, f: Feature): boolean => p.features[f] !== false && p.features[f] !== "off";
+
+export function featureFields(patch: Record<string, unknown>, cur: Features): Partial<Policy> {
+  if (!patch.features || typeof patch.features !== "object") return {};
+  const out: Features = { ...cur };
+  for (const [k, v] of Object.entries(patch.features as Record<string, unknown>)) {
+    if (k === "search") {
+      if (v === "full" || v === "prose" || v === "off") out.search = v;
+    } else if ((FEATURE_NAMES as readonly string[]).includes(k) && typeof v === "boolean") (out as unknown as Record<string, boolean>)[k] = v;
+  }
+  return { features: out };
+}
+
 export function viewFields(patch: Record<string, unknown>, cur: Record<string, boolean>): Partial<Policy> {
   if (!patch.views || typeof patch.views !== "object") return {};
   const out: Record<string, boolean> = { ...cur };
@@ -126,6 +158,7 @@ export const DEFAULT_POLICY: Policy = {
   dumpsKeep: 7,
   memberInvites: { depth: 0, quota: 0 },
   views: {},
+  features: { ...DEFAULT_FEATURES },
 };
 
 export const SETTINGS_SCHEMA = `
@@ -358,7 +391,10 @@ export class Settings {
   load() {
     this.sql.exec(SETTINGS_SCHEMA);
     const row = this.sql.exec<{ value: string }>(`SELECT value FROM settings WHERE key='policy'`).toArray()[0];
-    if (row) this.policy = { ...DEFAULT_POLICY, ...JSON.parse(row.value) };
+    if (row) {
+      const stored = JSON.parse(row.value) as Partial<Policy>;
+      this.policy = { ...DEFAULT_POLICY, ...stored, features: { ...DEFAULT_FEATURES, ...(stored.features ?? {}) } };
+    }
     ensureColumns(this.sql, "members", MEMBER_COLUMNS);
     this.migrateMembers();
     for (const r of this.sql.exec<{ pubkey: string }>(`SELECT pubkey FROM pubkey_rules WHERE rule='ban'`)) this.banned.add(r.pubkey);
@@ -706,7 +742,7 @@ export class Settings {
     const policy = (c.policy && typeof c.policy === "object" ? c.policy : {}) as Record<string, unknown>;
     const clean: Partial<Policy> = {};
     for (const k of ["name", "description", "icon", "contact", "joinTerms"] as const) if (typeof policy[k] === "string") clean[k] = (policy[k] as string).slice(0, 20000);
-    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy), viewFields(policy, this.policy.views));
+    Object.assign(clean, publicFields(policy), dumpFields(policy), gateFields(policy), viewFields(policy, this.policy.views), featureFields(policy, this.policy.features));
     if (isWriteRule(policy.writes)) clean.writes = policy.writes;
     if (policy.reads === "open" || policy.reads === "auth" || policy.reads === "members") clean.reads = policy.reads;
     if (typeof policy.directoryPublic === "boolean") clean.directoryPublic = policy.directoryPublic;

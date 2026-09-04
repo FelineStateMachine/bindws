@@ -9,6 +9,7 @@ import { expiration, hasTag, isPrivate, tagValues, type Event } from "./event.ts
 import type { Filter } from "./filter.ts";
 import { KIND_AUTH, KIND_NOSTR_CONNECT } from "./kinds.ts";
 import { isGroupState } from "./groups.ts";
+import { featureOn } from "./settings.ts";
 
 // writeGate is what every write must pass, whoever sends it: shape, bans, the
 // relay's state, fuel, and the one-group rule. "" lets it through.
@@ -31,7 +32,7 @@ export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: num
   // letting it through means this relay can carry a remote signer's
   // session, even for the person about to claim it from a phone. Bans
   // and the per-connection rate limit still apply.
-  if (e.kind === KIND_NOSTR_CONNECT) return "";
+  if (e.kind === KIND_NOSTR_CONNECT && featureOn(p, "signer")) return "";
   const h = tagValues(e, "h")[0];
   if (h !== undefined && h !== relay.slug) return "blocked: this relay hosts one group: " + relay.slug;
   if (conn) {
@@ -68,7 +69,9 @@ export function readGate(relay: Relay, s: ConnState, filters: Filter[]): { reaso
   // A subscription to NIP-46 traffic alone may be opened under any read
   // policy, with or without AUTH; the traffic itself is a private kind,
   // delivered only to its parties (canSee).
-  if (filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
+  const p = relay.settings.policy;
+  if (!featureOn(p, "search") && filters.some((f) => f.search !== undefined)) return { reason: "unsupported: search is switched off on this relay", authHint: false };
+  if (featureOn(p, "signer") && filters.length > 0 && filters.every((f) => f.kinds?.length === 1 && f.kinds[0] === KIND_NOSTR_CONNECT)) return { reason: "", authHint: false };
   const authed = s.authed.length > 0;
   const gate = relay.settings.mayRead(s.authed);
   if (gate) return { reason: gate, authHint: false };

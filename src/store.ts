@@ -66,6 +66,10 @@ export class Store {
   // Event ids under a report hold: left out of every read. Settings owns the
   // Set; the relay hands the same instance here.
   hidden: Set<string> = new Set();
+  // What the full-text index takes (settings.ts, features.search): every
+  // public kind with content, the prose kinds, or nothing. Changing it
+  // affects events from then on; the index is not rebuilt.
+  searchMode: () => "full" | "prose" | "off" = () => "prose";
 
   constructor(private sql: SqlStorage) {}
 
@@ -147,7 +151,9 @@ export class Store {
     for (const t of e.tags) {
       if (t.length >= 2 && t[0].length === 1) this.x(`INSERT INTO tags(event_id,name,value) VALUES(?,?,?)`, e.id, t[0], t[1]);
     }
-    if (e.content !== "" && searchable(e.kind)) this.x(`INSERT INTO search(rowid,content) VALUES(?,?)`, seq, e.content);
+    const mode = this.searchMode();
+    const indexed = mode === "full" ? !isPrivate(e.kind) : mode === "prose" && searchable(e.kind);
+    if (e.content !== "" && indexed) this.x(`INSERT INTO search(rowid,content) VALUES(?,?)`, seq, e.content);
     return "";
   }
 

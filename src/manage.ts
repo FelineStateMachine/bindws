@@ -10,7 +10,7 @@ import { now } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { inviteCreator, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { badBlockedWord, blockedWords, gateFields, isWriteRule, limitFields, viewFields, type Policy, type Settings } from "./settings.ts";
+import { badBlockedWord, blockedWords, featureFields, gateFields, isWriteRule, limitFields, viewFields, type Policy, type Settings } from "./settings.ts";
 import { isReplaceable, isProtected, publicFields, dumpFields, validIP } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
 import { VIEWS, publishView, viewsSummary } from "./views.ts";
@@ -163,7 +163,7 @@ export const METHODS: Record<string, Method> = {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean: Record<string, unknown> = {};
       for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
-      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, p.views));
+      Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, p.views), featureFields(patch, p.features));
       if (isWriteRule(patch.writes)) clean.writes = patch.writes;
       if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
       if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);

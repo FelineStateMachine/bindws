@@ -55,6 +55,7 @@ Who can do what, and how much.
 | Upload size | largest file in megabytes, up to 95 |
 | Kinds | allow list and block list by kind number |
 | Blocked words | content containing one is refused; an entry written /like this/ is a regular expression, and a switch searches tags too |
+| Features | search (prose, full, off), sync, counts, the discovery record, names, files, pages and the feed, signer traffic; each on or off |
 
 An empty allow list means every kind. Blocks always win.
 
@@ -65,6 +66,8 @@ An empty allow list means every kind. Blocks always win.
 **Blocked words** is a list, one word or phrase per line, lowercased and matched anywhere in the content of any kind. An entry written `/like this/` is a regular expression, matched case-insensitively, up to 200 characters; one that does not compile is refused when you save, with the reason. **Also search tags** matches the values of every tag as well, so a blocked hashtag or a blocked link in a tag is refused too. An event that contains one is refused with a reason that says so. You and your moderators are exempt, and moderators may edit the list. A pattern that backtracks badly slows every write to your own relay, and fuel bills that time, so keep patterns simple.
 
 The per-address limit is what stops a client from opening many sockets to multiply its allowance. It also serves as the HTTP bridge's rate limit, which has no socket to meter. Address buckets live in memory and reset when the relay sleeps.
+
+**Features** are the doors and the costs an owner may do without. Search indexes the prose kinds by default (notes, threads, comments, highlights, articles, wiki pages); *full* indexes every public kind with content, and *off* refuses search filters. A change applies to events from then on; the index is not rebuilt. Sync (NIP-77) reads the whole matching set per reconciliation, counts (NIP-45) keep sketches, the discovery record (NIP-66) is what crawlers find, names (NIP-05) publish members under the domain, files are the Blossom and NIP-96 doors, pages are notes and articles as web pages with the feed, and signer traffic is NIP-46 carried for anyone. What is off leaves `supported_nips`, answers 404 at its door, and is refused at the socket with an `unsupported:` reason. The bridge, groups, the roster, reports and management are not features: the console runs on them.
 
 ### Presets
 

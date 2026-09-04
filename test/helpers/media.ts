@@ -14,5 +14,11 @@ export async function upload(host: string, sk: Uint8Array, text: string) {
   const sha = bytesToHex(sha256(body));
   const resp = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossomToken(sk, "upload", sha), "content-type": "text/plain" }, body });
   const raw = await resp.text();
-  return { status: resp.status, sha, body: raw ? JSON.parse(raw) : null };
+  let answer: any = null;
+  try {
+    answer = raw ? JSON.parse(raw) : null;
+  } catch {
+    answer = raw; // a door that is not there answers with text
+  }
+  return { status: resp.status, sha, body: answer };
 }

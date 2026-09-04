@@ -10,7 +10,7 @@ import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
 import { discovery } from "./nip66.ts";
 import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
-import { Settings, isReplaceable, isProtected } from "./settings.ts";
+import { Settings, isReplaceable, isProtected, featureOn } from "./settings.ts";
 import { blobBytes, type Blob } from "./blossom.ts";
 import { DIGEST_DAYS, digestText, notify, fuelLow, fuelText } from "./notify.ts";
 import { Succession } from "./succession.ts";
@@ -145,6 +145,7 @@ export class Relay extends DurableObject<Env> {
       this.store.init();
       this.settings.load();
     this.store.hidden = this.settings.hiddenEvents;
+      this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
       this.fuel.lnurl = (await ctx.storage.get<LnurlParams>("lnurl")) ?? null;
@@ -243,6 +244,12 @@ export class Relay extends DurableObject<Env> {
   async publishDiscovery() {
     if (this.settings.policy.owner === "") return;
     await this.identity.ensure();
+    if (!featureOn(this.settings.policy, "discovery")) {
+      // Switched off: the record comes down and the fingerprint with it.
+      for (const r of this.sql.exec<{ id: string }>(`SELECT id FROM events WHERE kind=? AND pubkey=?`, KIND_RELAY_DISCOVERY, this.identity.pubkey).toArray()) this.store.deleteEvent(r.id);
+      await this.ctx.storage.delete("nip66-fp");
+      return;
+    }
     const d = discovery(this, this.slug + "." + this.domain);
     const fp = JSON.stringify([d.tags, d.content]);
     const row = this.sql.exec<{ created_at: number }>(`SELECT created_at FROM events WHERE kind=? AND pubkey=? ORDER BY created_at DESC LIMIT 1`, KIND_RELAY_DISCOVERY, this.identity.pubkey).toArray()[0];
@@ -423,6 +430,7 @@ export class Relay extends DurableObject<Env> {
 
   // mayUpload applies the write policy to Blossom uploads. "" allows.
   mayUpload(pubkey: string, host: string): string {
+    if (!featureOn(this.settings.policy, "files")) return "restricted: files are switched off on this relay";
     if (this.settings.isUnclaimed()) return "restricted: this relay is unclaimed";
     if (this.settings.leaseExpired(now())) return "restricted: this temporary relay has expired";
     if (this.settings.isBanned(pubkey)) return "blocked: this pubkey is banned from this relay";
@@ -464,6 +472,7 @@ export class Relay extends DurableObject<Env> {
     this.store.init();
     this.settings.load();
     this.store.hidden = this.settings.hiddenEvents;
+    this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
     await this.ctx.storage.put("slug", this.slug);
   }
@@ -977,7 +986,7 @@ export class Relay extends DurableObject<Env> {
     const no = (msg: string) => ({ ok: false, msg, stored: false });
     const gate = writeGate(this, e, conn, t);
     if (gate) return no(gate);
-    if (e.kind === KIND_NOSTR_CONNECT) return { ok: true, msg: "", stored: true }; // see gate
+    if (e.kind === KIND_NOSTR_CONNECT && featureOn(p, "signer")) return { ok: true, msg: "", stored: true }; // see gate
     const exp = expiration(e);
     if (conn) {
       // The owner's own profile and lists always land, whatever the kind
@@ -1159,6 +1168,7 @@ export class Relay extends DurableObject<Env> {
     const p = this.settings.policy;
 
     if (verb === "COUNT") {
+      if (!featureOn(p, "count")) return this.send(ws, "CLOSED", id, "unsupported: COUNT is switched off on this relay");
       const result: Record<string, unknown> = {};
       if (filters.length === 1 && hllOffset(filters[0]) >= 0) {
         const r = this.store.countHLL(filters[0], who, hllOffset(filters[0]), t);
@@ -1247,6 +1257,7 @@ export class Relay extends DurableObject<Env> {
       return;
     }
     if (verb === "NEG-OPEN") {
+      if (!featureOn(this.settings.policy, "sync")) return this.send(ws, "NEG-ERR", id, "unsupported: sync is switched off on this relay");
       if (rest.length < 2) return this.send(ws, "NEG-ERR", id, "error: NEG-OPEN needs a filter and a message");
       const f = parseFilter(rest[0]);
       if (typeof f === "string") return this.send(ws, "NEG-ERR", id, "invalid: bad filter: " + f);

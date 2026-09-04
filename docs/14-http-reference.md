@@ -31,6 +31,8 @@ Any request with `Accept: application/nostr+json` answers the NIP-11 document, w
 | `/favicon.svg` | GET | none | the icon | 200 |
 | any | OPTIONS | none | CORS preflight | 200 |
 
+A door that belongs to a feature the owner switched off (Relay configuration, Rules) answers 404: names, files (Blossom and NIP-96), pages and the feed. `supported_nips` drops the numbers of features that are off.
+
 ## Bridge
 
 Signed with NIP-98 over the exact URL, method and body. Same gates as a socket: the signer's bans, the read rule and the write rules apply, and the address is rate limited at four times the per-connection allowance.

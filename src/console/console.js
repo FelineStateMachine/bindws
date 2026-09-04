@@ -326,6 +326,7 @@
     fa.writes.value = p.writes; fa.reads.value = p.reads; fa.openKinds.value = (p.openKinds || []).join(", "); fa.guestReplies.checked = !!p.guestReplies;
     $("#wordsform").words.value = (p.blockedWords || []).join("\n"); $("#wordsform").inTags.checked = !!p.blockedWordsInTags; $("#thresholdform").reportThreshold.value = p.reportThreshold || 0; fa.minPow.value = p.minPow; fa.maxFuture.value = p.maxFuture; fa.maxLimit.value = p.maxLimit; fa.maxSubs.value = p.maxSubs; fa.maxMessageKB.value = p.maxMessageKB;
     fa.eventsPerMinute.value = p.eventsPerMinute; fa.reqsPerMinute.value = p.reqsPerMinute; fa.maxBlobMB.value = p.maxBlobMB;
+    renderFeatures(p.features || {});
     fi.name.value = p.name; fi.contact.value = p.contact; fi.description.value = p.description; fi.icon.value = p.icon;
     const fj = $("#joinform"); fj.joinTerms.value = p.joinTerms; fj.directoryPublic.checked = !!p.directoryPublic;
     loadCard();
@@ -392,6 +393,31 @@
   const kindName = (k) => KIND_NAMES[k] || (k >= 20000 && k < 30000 ? "ephemeral" : k >= 30000 && k < 40000 ? "addressable" : k >= 10000 && k < 20000 ? "replaceable" : "kind " + k);
   const SYS_KINDS = new Set([0, 3, 10002, 9735, 13534, 8000, 8001, 9000, 9001, 39000, 39001, 39002, 39003]);
   let storage = null;
+
+  // Features (settings.ts): a select each; search has three modes, the rest on or off.
+  const FEATURES = [
+    ["search", "Search", "NIP-50. Prose indexes notes, threads, comments, highlights, articles and wiki pages; full indexes every public kind with content. A change applies to events from then on.", ["prose:prose", "full:full", "off:off"]],
+    ["sync", "Sync", "NIP-77 reconciliation, which reads the whole matching set per sync."],
+    ["count", "Counts", "NIP-45 COUNT, with HLL sketches."],
+    ["discovery", "Discovery record", "NIP-66: the record the relay signs about itself, for crawlers."],
+    ["names", "Names", "NIP-05 addresses under this relay's domain."],
+    ["files", "Files", "Blossom and NIP-96: uploads, downloads and listings."],
+    ["pages", "Pages and feed", "Notes and articles as pages, and the Atom feed."],
+    ["signer", "Signer traffic", "NIP-46 remote signing carried for anyone, never stored."],
+  ];
+  function renderFeatures(f) {
+    $("#features").innerHTML = FEATURES.map(([k, title, about, modes]) => {
+      const cur = modes ? String(f[k] || "prose") : String(f[k] !== false);
+      const opts = (modes || ["true:on", "false:off"]).map((m) => { const [v, l] = m.split(":"); return '<option value="' + v + '"' + (cur === v ? " selected" : "") + ">" + l + "</option>"; }).join("");
+      return "<label><span>" + esc(title) + " <small>" + esc(about) + "</small></span><select class=\"txt\" data-feature=\"" + k + "\">" + opts + "</select></label>";
+    }).join("");
+  }
+  $("#features").addEventListener("change", guard(async (ev) => {
+    const sel = ev.target.closest("select[data-feature]"); if (!sel) return;
+    const k = sel.dataset.feature, v = k === "search" ? sel.value : sel.value === "true";
+    policy = await rpc("setpolicy", { features: { [k]: v } });
+    toast(k === "search" ? "Search: " + v : (v ? "Switched on " : "Switched off ") + k); await loadInfo();
+  }));
 
   async function loadViews() {
     let views;

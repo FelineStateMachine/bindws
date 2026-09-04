@@ -4,6 +4,7 @@
 // blocked their own address can undo it. The websocket upgrade is the one
 // door relay.ts answers itself, before this table.
 import type { Relay } from "./relay.ts";
+import { featureOn, type Feature } from "./settings.ts";
 import { now } from "./event.ts";
 import { manage } from "./manage.ts";
 import { bridge } from "./bridge.ts";
@@ -28,6 +29,8 @@ export interface Route {
   when: (url: URL, req: Request) => boolean;
   // A door that writes or reads events or files: refused to a blocked address.
   gated?: true;
+  // The feature the door belongs to; switched off, the door is not there.
+  feature?: Feature;
   answer: (relay: Relay, req: Request, url: URL) => Response | Promise<Response>;
 }
 
@@ -52,6 +55,7 @@ export const ROUTES: Route[] = [
   // NIP-05 names, under the read rule for whoever asks.
   {
     when: is("/.well-known/nostr.json"),
+    feature: "names",
     answer: (relay, req, url) => {
       const who = whoAsks(req, "", null);
       if (typeof who === "string") return json({ error: who }, 401);
@@ -94,8 +98,8 @@ export const ROUTES: Route[] = [
   { when: get(under("/view/")), answer: (relay, req) => serveView(relay, req, verifyNIP98) },
   { when: (url, req) => req.method === "PUT" && url.pathname === "/import", answer: importUpload },
   // Files: Blossom on its paths (blossom.ts), NIP-96 on its own (nip96.ts).
-  { when: (url) => is("/upload", "/mirror", "/report")(url) || under("/list/")(url) || isBlobPath(url.pathname), gated: true, answer: blossom },
-  { when: (url) => is("/.well-known/nostr/nip96.json", "/nip96")(url) || under("/nip96/")(url), answer: nip96 },
+  { when: (url) => is("/upload", "/mirror", "/report")(url) || under("/list/")(url) || isBlobPath(url.pathname), gated: true, feature: "files", answer: blossom },
+  { when: (url) => is("/.well-known/nostr/nip96.json", "/nip96")(url) || under("/nip96/")(url), feature: "files", answer: nip96 },
   // Fuel: meters and prices for anyone who might top up (who paid is the
   // owner's, in the stats method), and the invoice door (fuel.ts).
   { when: get(is("/fuel")), answer: (relay) => json(relay.fuelStatus()) },
@@ -105,7 +109,7 @@ export const ROUTES: Route[] = [
   // CORS preflight for everything above.
   { when: (_, req) => req.method === "OPTIONS", answer: () => new Response(null, { headers: { ...CORS, "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } }) },
   // Notes and articles as pages, the feed (pages.ts).
-  { when: (url, req) => req.method === "GET" && isPagePath(url.pathname), answer: pages },
+  { when: (url, req) => req.method === "GET" && isPagePath(url.pathname), feature: "pages", answer: pages },
   // The relay's own page (dashboard.ts) and what it loads.
   { when: is("/"), answer: () => html(dashboard()) },
   { when: is("/signer.js"), answer: () => new Response(SIGNER_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=604800, immutable" } }) },
@@ -119,6 +123,9 @@ export function isGated(url: URL, req: Request): boolean {
 
 // route answers the request at the first door that takes it, or 404.
 export function route(relay: Relay, req: Request, url: URL): Response | Promise<Response> {
-  for (const r of ROUTES) if (r.when(url, req)) return r.answer(relay, req, url);
+  for (const r of ROUTES) {
+    if (r.feature && !featureOn(relay.settings.policy, r.feature)) continue;
+    if (r.when(url, req)) return r.answer(relay, req, url);
+  }
   return new Response("not found", { status: 404 });
 }
