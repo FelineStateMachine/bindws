@@ -12,7 +12,7 @@
   "observability": {
     "enabled": true,
     "logs": { "enabled": true },
-    "traces": { "enabled": true, "head_sampling_rate": 0.1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
   },
   // Metrics: uncomment to write the same meter numbers as Analytics Engine
   // data points, queried with SQL or the Grafana plugin. Workers Paid only.
