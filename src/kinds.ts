@@ -53,3 +53,8 @@ export const KIND_GROUP_PINS = 39005;
 
 // NIP-66: the discovery record the relay signs about itself
 export const KIND_RELAY_DISCOVERY = 30166;
+
+// NIP-5A static websites and immutable manifest snapshots
+export const KIND_SITE = 15128;
+export const KIND_NAMED_SITE = 35128;
+export const KIND_SITE_SNAPSHOT = 5128;

@@ -8,10 +8,11 @@ import { hasTag, isPrivate, now, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
 import { Socket, dial, checkPullURL, runPullRound, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
 import type { Relay } from "./relay.ts";
+import { runMirrorRound } from "./site-mirror.ts";
 import { runImportRound } from "./imports.ts";
 
-export type JobKind = "pull" | "push" | "import";
-export type JobLabel = "pull" | "backfill" | "push" | "replica" | "import";
+export type JobKind = "pull" | "push" | "import" | "mirror";
+export type JobLabel = "pull" | "backfill" | "push" | "replica" | "import" | "mirror";
 export const EVERY = [0, 1, 6, 24] as const; // hours; 0 runs once
 
 export interface JobResult {
@@ -48,6 +49,7 @@ export interface Job {
   sent: number;
   refused: number;
   duplicates?: number; // import: events the relay already had
+  site?: string; // mirror: the manifest event id
   object?: string; // import: the R2 object's id
   size?: number; // import: the object's size in bytes
   carry?: string; // import: the partial last line of the previous round, base64
@@ -122,6 +124,7 @@ export function relaysFromList(relay: Relay, pubkey: string): string[] {
 // runRound does one round of a job. more: call again for this run.
 export async function runRound(relay: Relay, job: Job): Promise<{ more: boolean; error: string }> {
   if (job.kind === "pull") return runPullSourceRound(relay, job);
+  if (job.kind === "mirror") return runMirrorRound(relay, job);
   if (job.kind === "import") return runImportRound(relay, job);
   return runPushRound(relay, job);
 }

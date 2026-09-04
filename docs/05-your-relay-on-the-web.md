@@ -27,7 +27,42 @@ Your relay can answer at a hostname you own, such as `wss://relay.example.com`. 
 
 Once the record resolves, the certificate is issued on its own. **Check** asks where it stands; the hostname is live when both it and its certificate read active. **Remove** deletes the hostname and its certificate. Up to three hostnames per relay. Everything else stays the same: same events, same members, same console, reachable by either name. Hostnames survive a transfer and are removed with the relay.
 
+When you add a hostname, the Identity tab lets you choose its destination:
+your relay, a root site, a named site or a snapshot. You can change that
+choice later. The management calls are `adddomain(host, site?)` and
+`setdomainsite(host, site?)`; omit the optional site or send an empty value to
+target your relay. `listdomains` returns the selected `site` label.
+
 This needs the host to have switched custom domains on. If they have not, the block says so.
+
+## Static websites
+
+With the **Sites** feature enabled, the relay can host NIP-5A static websites
+published by tools such as nsyte and nsite-cli. A root site uses
+`https://<npub>.bind.ws`; a named site uses
+`https://<pubkeyB36><dTag>.bind.ws`; and a snapshot uses
+`https://v<snapshotIdB36>.bind.ws`. Site URLs are separate origins with only
+the site door, so they do not open the relay console, websocket or file API.
+
+The site's access follows **Rules > Reads**. Directories use `index.html`,
+and a missing path falls back to `/404.html`; a missing manifest or unavailable
+file returns 404. The relay verifies each file's hash before serving it. Site
+manifests can expire with NIP-40, and the relay's retention rules also apply.
+You can point a custom domain at a site from the domain controls. A
+missing local blob is fetched from the manifest's public HTTPS servers and
+then verified; with mirroring on, that fetch is normally done ahead of the
+first visit.
+
+The edge can cache a custom-host mapping for up to 60 seconds. A local site
+record validates the selected label before serving it, so a stale mapping
+cannot send a custom hostname to a removed site.
+
+When reads require sign-in, a browser visit that accepts HTML shows a NIP-07
+sign-in page. Your signer answers a five-minute challenge, and your relay
+sets a Secure, HttpOnly, SameSite=Lax `__Host-nsite` cookie for seven days.
+Your relay checks that cookie against the read rule on every request. Scripts
+send an exact NIP-98 Authorization header instead. Site sign-in uses no
+password.
 
 ## Media
 

@@ -5,3 +5,4 @@ node_modules
 .playwright-cli
 .crush
 .celld
+.handoff-*

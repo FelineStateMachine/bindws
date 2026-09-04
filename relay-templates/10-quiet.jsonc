@@ -21,7 +21,8 @@
       "names": false,
       "files": false,
       "pages": false,
-      "signer": false
+      "signer": false,
+      "sites": false
     }
   },
   "kinds": {

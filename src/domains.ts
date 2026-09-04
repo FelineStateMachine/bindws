@@ -8,10 +8,15 @@
 // follow the request host.
 import type { Fetcher } from "./fuel.ts";
 import type { Relay } from "./relay.ts";
+import { parseSite } from "./sites.ts";
+import { validName } from "./names.ts";
 
 export interface CustomHost {
   host: string;
   id: string; // Cloudflare's custom hostname id
+  // An optional NIP-5A site label served on this hostname. Older entries do
+  // not have this field and continue to address the relay itself.
+  site?: string;
   at: number; // when last checked
   status: string; // Cloudflare's hostname status, active when it proxies
   sslStatus: string; // certificate status, active when issued
@@ -109,6 +114,7 @@ function parseState(r: Record<string, unknown>): HostnameState {
 // DomainView is what the console and API callers get.
 export interface DomainView {
   host: string;
+  site?: string;
   status: string;
   sslStatus: string;
   ready: boolean;
@@ -119,7 +125,7 @@ export interface DomainView {
 function view(h: CustomHost, target: string, state: HostnameState | null): DomainView {
   const records: DomainView["records"] = [{ type: "CNAME", name: h.host, value: target, note: "required; the certificate follows once it resolves" }];
   if (state?.ownership && state.status !== "active") records.push({ type: "TXT", name: state.ownership.name, value: state.ownership.value, note: "optional; activates the hostname before you switch the CNAME" });
-  return { host: h.host, status: h.status, sslStatus: h.sslStatus, ready: h.status === "active" && h.sslStatus === "active", checkedAt: h.at, records };
+  return { host: h.host, site: h.site, status: h.status, sslStatus: h.sslStatus, ready: h.status === "active" && h.sslStatus === "active", checkedAt: h.at, records };
 }
 
 function stored(relay: Relay): CustomHost[] {
@@ -130,29 +136,71 @@ function save(relay: Relay, hosts: CustomHost[]) {
   relay.settings.update({ customHosts: hosts });
 }
 
+export interface CustomTarget {
+  name: string;
+  site?: string;
+}
+
+// customTarget reads both the old plain relay name and a mapping with a
+// site label, so existing custom domains keep their relay door.
+export function customTarget(value: string | null): CustomTarget | null {
+  if (!value) return null;
+  if (validName(value)) return { name: value };
+  try {
+    const target = JSON.parse(value) as { name?: unknown; site?: unknown };
+    if (typeof target.name !== "string" || !validName(target.name)) return null;
+    if (target.site !== undefined && (typeof target.site !== "string" || !parseSite(target.site))) return null;
+    return { name: target.name, ...(target.site === undefined ? {} : { site: target.site }) };
+  } catch {
+    return null;
+  }
+}
+
+function targetValue(name: string, site?: string): string {
+  return site === undefined ? name : JSON.stringify({ name, site });
+}
+
 // addDomain registers a hostname with Cloudflare, then maps it in KV and
 // remembers it. KV is written only after Cloudflare accepted the hostname.
-export async function addDomain(relay: Relay, raw: string): Promise<DomainView | string> {
+export async function addDomain(relay: Relay, raw: string, site?: string): Promise<DomainView | string> {
   const api = relay.hostnames;
   const kv = relay.hosts;
   if (!api || !kv) return UNSUPPORTED;
   const c = checkHostname(raw, relay.domain);
   if ("error" in c) return c.error;
+  if (site !== undefined && !parseSite(site)) return "invalid: not a valid site hostname";
   const hosts = stored(relay);
   if (hosts.some((h) => h.host === c.host)) return "duplicate: that hostname is already on this relay";
   if (hosts.length >= MAX_CUSTOM_HOSTS) return `restricted: at most ${MAX_CUSTOM_HOSTS} custom domains per relay`;
-  const taken = await kv.get(c.host);
-  if (taken && taken !== relay.slug) return "restricted: that hostname points at another relay";
+  const taken = customTarget(await kv.get(c.host));
+  if (taken && taken.name !== relay.slug) return "restricted: that hostname points at another relay";
   let state: HostnameState;
   try {
     state = await api.create(c.host);
   } catch (err) {
     return "error: " + (err instanceof Error ? err.message : String(err));
   }
-  await kv.put(c.host, relay.slug);
-  const h: CustomHost = { host: c.host, id: state.id, at: Math.floor(Date.now() / 1000), status: state.status, sslStatus: state.sslStatus };
+  await kv.put(c.host, targetValue(relay.slug, site));
+  const h: CustomHost = { host: c.host, ...(site === undefined ? {} : { site }), id: state.id, at: Math.floor(Date.now() / 1000), status: state.status, sslStatus: state.sslStatus };
   save(relay, [...hosts, h]);
   return view(h, relay.cnameTarget, state);
+}
+
+// setDomainSite changes a registered hostname's destination. Its existing
+// certificate and DNS records stay valid because only the routing changes.
+export async function setDomainSite(relay: Relay, raw: string, site?: string): Promise<DomainView | string> {
+  if (!relay.hostnames || !relay.hosts) return UNSUPPORTED;
+  const host = raw.trim().toLowerCase();
+  const hosts = stored(relay);
+  const h = hosts.find((x) => x.host === host);
+  if (!h) return "invalid: no such custom domain on this relay";
+  if (site !== undefined && !parseSite(site)) return "invalid: not a valid site hostname";
+  const taken = customTarget(await relay.hosts.get(host));
+  if (taken && taken.name !== relay.slug) return "restricted: that hostname points at another relay";
+  await relay.hosts.put(host, targetValue(relay.slug, site));
+  const fresh = { ...h, site };
+  save(relay, hosts.map((x) => x.host === host ? fresh : x));
+  return view(fresh, relay.cnameTarget, null);
 }
 
 // checkDomain asks Cloudflare where the hostname stands and remembers it.
@@ -189,7 +237,7 @@ export async function removeDomain(relay: Relay, raw: string): Promise<string> {
     return "error: " + (err instanceof Error ? err.message : String(err));
   }
   const kv = relay.hosts;
-  if (kv && (await kv.get(host)) === relay.slug) await kv.delete(host);
+  if (kv && customTarget(await kv.get(host))?.name === relay.slug) await kv.delete(host);
   save(relay, hosts.filter((x) => x.host !== host));
   return "";
 }
@@ -209,7 +257,7 @@ export async function forgetDomains(relay: Relay): Promise<void> {
     }
     try {
       const kv = relay.hosts;
-      if (kv && (await kv.get(h.host)) === relay.slug) await kv.delete(h.host);
+      if (kv && customTarget(await kv.get(h.host))?.name === relay.slug) await kv.delete(h.host);
     } catch (err) {
       console.log(`custom hostname ${h.host} not removed from KV: ${err instanceof Error ? err.message : String(err)}`);
     }

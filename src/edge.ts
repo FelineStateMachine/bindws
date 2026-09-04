@@ -3,8 +3,10 @@
 // the custom hostname map, and the answer to a proxy asking whether a
 // hostname belongs here. Hosting without Cloudflare is
 // docs/16-hosting-without-cloudflare.md.
+import { customTarget } from "./domains.ts";
 import type { Env } from "./relay.ts";
 import { Bucket } from "./ratelimit.ts";
+import { parseSite, siteKey } from "./sites.ts";
 import { RESERVED, validName } from "./names.ts";
 
 // Custom domains map to relay names through KV. Looked up once a minute per
@@ -24,6 +26,16 @@ export async function customHost(env: Pick<Env, "HOSTS">, host: string): Promise
   if (hostCache.size > 10_000) hostCache.clear();
   hostCache.set(host, { name, at: Date.now() });
   return name;
+}
+
+// Site routes are read through KV without caching misses: publishers often
+// open the URL immediately after the relay acknowledges their event.
+export async function siteHost(env: Pick<Env, "HOSTS">, label: string): Promise<string | null> {
+  if (!parseSite(label) || !env.HOSTS) return null;
+  try {
+    const value = await env.HOSTS.get<{ name: string }>(siteKey(label), "json");
+    return value && validName(value.name) ? value.name : null;
+  } catch { return null; }
 }
 
 // clientIP is the address the edge saw. On Cloudflare that is
@@ -78,9 +90,9 @@ export async function hostnameKnown(env: Pick<Env, "DOMAIN" | "HOSTS">, raw: str
   if (host === domain || host === "www." + domain) return true;
   if (host.endsWith("." + domain)) {
     const name = host.slice(0, -(domain.length + 1));
-    return validName(name) || RESERVED.has(name);
+    return validName(name) || RESERVED.has(name) || (await siteHost(env, name)) !== null;
   }
-  return host !== "" && (await customHost(env, host)) !== null;
+  return host !== "" && customTarget(await customHost(env, host)) !== null;
 }
 
 // hostOf lower-cases the hostname of a URL, ignoring scheme, port and path.

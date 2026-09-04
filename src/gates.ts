@@ -4,6 +4,7 @@
 // subscription's filters must clear for the socket that opened it: the
 // read rule, and the private kinds only their parties may see. Both answer
 // "" to let through, or the reason in NIP-01's prefix: form.
+import { checkSite } from "./sites.ts";
 import type { Relay, ConnState } from "./relay.ts";
 import { expiration, hasTag, isPrivate, tagValues, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
@@ -14,6 +15,8 @@ import { featureOn } from "./settings.ts";
 // writeGate is what every write must pass, whoever sends it: shape, bans, the
 // relay's state, fuel, and the one-group rule. "" lets it through.
 export function writeGate(relay: Relay, e: Event, conn: ConnState | null, t: number): string {
+  const siteError = checkSite(e);
+  if (siteError) return siteError;
   const p = relay.settings.policy;
   if (e.kind === KIND_AUTH) return "blocked: kind 22242 is only accepted inside an AUTH message";
   if (p.maxFuture > 0 && e.created_at > t + p.maxFuture) return "invalid: event creation date is too far off from the current time";

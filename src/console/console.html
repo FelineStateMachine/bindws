@@ -254,8 +254,8 @@
       </form>
       <div class="block">
         <h3>Your own domain</h3>
-        <p class="note">Point a hostname you control at this relay, such as <span class="mono">relay.example.com</span>. Add it here, then create the record shown at your DNS. The certificate is issued on its own once the record resolves.</p>
-        <form id="adddomain" class="addrow"><input class="txt mono" name="host" placeholder="relay.example.com" required><button class="btn">Add</button></form>
+        <p class="note">Your hostname serves this relay or one of its sites once its CNAME resolves and its certificate is issued.</p>
+        <form id="adddomain"><div class="form"><label><span>Hostname</span><input class="txt mono" name="host" placeholder="relay.example.com" required></label><label><span>Destination</span><select class="txt" name="site"><option value="">This relay</option></select></label></div><div class="actions"><button class="btn">Add domain</button></div></form>
         <div id="domains"></div>
         <p class="note" id="domainnote"></p>
       </div>
@@ -290,6 +290,11 @@
       <div class="block">
         <h3>Files <span class="count" id="blobs-count"></span></h3>
         <div class="scroll"><table id="blobs" class="events"><thead><tr><th>Time</th><th>File</th><th>Size</th><th>Uploader</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3>Sites <span class="count" id="sites-count"></span></h3>
+        <p class="note">Published NIP-5A manifests and the hostnames where they are served.</p>
+        <div class="scroll"><table id="sites" class="events"><thead><tr><th>Author</th><th>Name</th><th>URL</th><th class="r">Files</th><th class="r">Size</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="block">
         <h3>Dumps <span class="count" id="dumps-count"></span></h3>

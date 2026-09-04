@@ -8,12 +8,12 @@ audience: developer
 One Cloudflare Worker, one Durable Object per relay name, SQLite inside each object and R2 beside it.
 
 ```
-client ──wss/https──▶ worker ──host→object──▶ durable object "<name>"
-                        │ KV: custom host → name    ├ sqlite: events, tags, search, members, rules, jobs, usage
-                        │                           ├ sockets: live subscriptions (hibernating)
-                        │                           ├ alarm: sweep, retention, fuel, dumps, jobs, succession
-                        │                           ├ r2: blobs and dumps under <name>/
-                        │                           └ outbound sockets: pulls, pushes, notifications
+client --wss/https--> worker --host->object--> durable object "<name>"
+                        | KV: custom host -> name  | sqlite: events, tags, search, members, rules, jobs, usage
+                        |                           | sockets: live subscriptions (hibernating)
+                        |                           | alarm: sweep, retention, fuel, dumps, jobs, succession
+                        |                           | r2: blobs and dumps under <name>/
+                        |                           + outbound sockets: pulls, pushes, notifications
 ```
 
 ## Routing and states
@@ -141,6 +141,20 @@ Wiring the relay into the owner's lists (kinds 10002, 10050, 10007, 10063) happe
 `notify.ts` lets the relay write its owner: a kind 14 rumour sealed and gift wrapped with the identity key (NIP-59, NIP-44), stored as the owner's inbox and pushed best effort to up to three relays from the owner's kind 10050 through the pull code's `dial`. Hooks: a report filed through either door, fuel turning low, a job finishing, the succession clock and the test button. Off by default in `policy.notify`; naming an heir switches the succession kind on. The catch-all retention rule skips kind 1059 so the inbox survives it.
 
 The console is one page: markup, styles and script are the three files in `src/console`, folded into a generated module that `dashboard.ts` serves. Its signer is NIP-07 when present or a NIP-46 session over the relay itself, using a bundle of nostr-tools served at `/signer.js` and loaded only when someone picks remote signing.
+
+`sites.ts` and `site-mirror.ts` implement NIP-5A manifests and static-site
+serving. The worker
+parses a site's single-label hostname before normal relay-name routing and
+uses the `HOSTS` KV namespace to find the relay holding its manifest. A SQL
+outbox keeps event mutations and index writes together; the alarm retries
+pending KV updates and removes mappings for deletion or expiry. The site door
+looks up root, named or snapshot manifests, resolves directory paths to
+`index.html`, verifies the R2 object's SHA-256, and meters the response. A
+local cache miss can proxy a verified file from public sources in the
+manifest and the author's kind 10063, bounded by `min(maxBlobMB, 32 MiB)`.
+The mirror queue creates one bounded alarm job per manifest; deletion cancels
+pending work. Site requests carry `x-relay-site`, so a site origin cannot
+reach relay doors.
 
 ## Views
 

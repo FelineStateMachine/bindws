@@ -7,7 +7,8 @@ import { FAVICON_SVG } from "./ui.ts";
 import { verifyNIP98 } from "./auth.ts";
 import { leaseNames, leaseDays, validName } from "./names.ts";
 import { now } from "./event.ts";
-import { clientIP, customHost, hostnameKnown, leaseAllowed } from "./edge.ts";
+import { clientIP, customHost, hostnameKnown, leaseAllowed, siteHost } from "./edge.ts";
+import { customTarget } from "./domains.ts";
 import schema from "../relay-config.schema.json";
 
 // The entry module exports the handler and the object only: workerd
@@ -67,11 +68,20 @@ export default {
       return new Response(null, { status: (await hostnameKnown(env, url.searchParams.get("domain") ?? "")) ? 200 : 404 });
     }
     let name: string | null;
+    let site = "";
     if (host === domain || host === "www." + domain || host === domain + ".localhost") name = null; // apex (<domain>.localhost in wrangler dev)
     else if (host.endsWith("." + domain)) name = host.slice(0, -(domain.length + 1));
     else if (host.endsWith(".localhost")) name = host.slice(0, -".localhost".length); // wrangler dev: <name>.localhost
-    else name = (await customHost(env, host)) ?? env.DEV_RELAY; // a custom domain, or wrangler dev without a subdomain
-
+    else {
+      const target = customTarget(await customHost(env, host));
+      name = target?.name ?? env.DEV_RELAY;
+      site = target?.site ?? "";
+    }
+    if (name !== null && name.length > 32) {
+      site = name;
+      name = await siteHost(env, site);
+      if (!name) return new Response("Not found", { status: 404 });
+    }
     if (name === null) {
       if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON_SVG, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
       // The configuration file's schema, for editors: relay-config.schema.json in the repository.
@@ -87,6 +97,8 @@ export default {
     }
     const stub = env.RELAY.getByName(name);
     const headers = new Headers(req.headers);
+    headers.delete("x-relay-site");
+    if (site) headers.set("x-relay-site", site);
     headers.set("x-relay-name", name);
     // The client's address, as the edge saw it. Set here, never read from
     // the client's own headers, so nothing a caller sends can spoof it.

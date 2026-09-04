@@ -2,6 +2,7 @@
 // synchronous, so each call is one atomic write batch on the DO.
 import { canonical, expiration, isAddressable, isEphemeral, isPrivate, isReplaceable, tag, tagValues, type Event } from "./event.ts";
 import { ftsQuery, searchTerms, type Filter } from "./filter.ts";
+import { SITE_SCHEMA, SITE_KINDS } from "./sites.ts";
 import { HLL } from "./hll.ts";
 import { hexToBytes, type SyncItem } from "./negentropy.ts";
 
@@ -71,10 +72,13 @@ export class Store {
   // affects events from then on; the index is not rebuilt.
   searchMode: () => "full" | "prose" | "off" = () => "prose";
 
+  onSitesChanged: () => void = () => {};
+
   constructor(private sql: SqlStorage) {}
 
   init() {
     this.sql.exec(SCHEMA);
+    this.sql.exec(SITE_SCHEMA);
   }
 
   // x runs a statement and remembers its cursor so drain() can report rows
@@ -82,6 +86,7 @@ export class Store {
   private x<T extends Record<string, SqlStorageValue>>(q: string, ...args: unknown[]): SqlStorageCursor<T> {
     const c = this.sql.exec<T>(q, ...args);
     this.pending.push(c as SqlStorageCursor<Record<string, SqlStorageValue>>);
+    if (q.startsWith("DELETE FROM events") && c.rowsWritten && this.sql.exec(`SELECT 1 FROM site_outbox LIMIT 1`).toArray().length) this.onSitesChanged();
     return c;
   }
 
@@ -151,6 +156,7 @@ export class Store {
     for (const t of e.tags) {
       if (t.length >= 2 && t[0].length === 1) this.x(`INSERT INTO tags(event_id,name,value) VALUES(?,?,?)`, e.id, t[0], t[1]);
     }
+    if (SITE_KINDS.includes(e.kind)) this.onSitesChanged();
     const mode = this.searchMode();
     const indexed = mode === "full" ? !isPrivate(e.kind) : mode === "prose" && searchable(e.kind);
     if (e.content !== "" && indexed) this.x(`INSERT INTO search(rowid,content) VALUES(?,?)`, seq, e.content);

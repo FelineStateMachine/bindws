@@ -1,12 +1,15 @@
 // Custom domains: a hostname the owner controls, mapped to the relay through
 // KV and registered with Cloudflare for SaaS. The Cloudflare API is a fake
 // fetch here; routing goes through the real worker and the KV binding.
-import { env, runInDurableObject } from "cloudflare:test";
+import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import type { Relay } from "../../src/relay.ts";
 import { Hostnames, checkHostname, MAX_CUSTOM_HOSTS } from "../../src/domains.ts";
-import { rpc, info } from "../helpers/relay.ts";
+import { siteLabel } from "../../src/sites.ts";
+import { upload } from "../helpers/media.ts";
+import { WS } from "../helpers/ws.ts";
+import { rpc, info, ev, nip98 } from "../helpers/relay.ts";
 
 // fakeCloudflare answers the custom hostnames API and records every call.
 function fakeCloudflare(opts: { active?: boolean; refuse?: boolean } = {}) {
@@ -153,4 +156,48 @@ describe("custom domains", () => {
     expect(fake.calls.some((c) => c.method === "DELETE" && c.url.endsWith("/ch-1"))).toBe(true);
     expect(await env.HOSTS.get("relay.gone.test")).toBeNull();
   });
+  it("routes a custom site domain only to site content under the relay read rule", async () => {
+    const name = "domain-sites", host = name + ".bind.ws", sk = generateSecretKey();
+    await rpc(host, sk, "claim"); await enable(name, fakeCloudflare());
+    const file = await upload(host, sk, "custom site");
+    const e = ev(sk, 15128, "", [["path", "/index.html", file.sha]]);
+    const c = await WS.connect(host); expect((await c.ok(e)).ok).toBe(true); c.ws.close();
+    const label = siteLabel(e), custom = "www.nsite-example.test";
+    const added = await rpc(host, sk, "adddomain", custom, label);
+    expect(added.status).toBe(200); expect(added.result.site).toBe(label);
+    expect(JSON.parse((await env.HOSTS.get(custom))!)).toEqual({ name, site: label });
+    const url = "https://" + custom + "/";
+    const res = await SELF.fetch(url, { headers: { accept: "application/nostr+json" } });
+    expect(res.status).toBe(200); expect(await res.text()).toBe("custom site");
+    expect((await SELF.fetch(url, { headers: { upgrade: "websocket" } })).status).toBe(405);
+    expect((await SELF.fetch(url, { method: "POST", headers: { "content-type": "application/nostr+json+rpc" }, body: '{"method":"getpolicy"}' })).status).toBe(405);
+    await rpc(host, sk, "setpolicy", { reads: "members" });
+    expect((await SELF.fetch(url)).status).toBe(401);
+    expect((await SELF.fetch(url, { headers: { authorization: await nip98(sk, url) } })).status).toBe(200);
+    expect((await rpc(host, sk, "removedomain", custom)).status).toBe(200);
+    expect(await env.HOSTS.get(custom)).toBeNull();
+    // A cached edge mapping cannot keep a removed custom site alive.
+    expect((await SELF.fetch(url, { headers: { authorization: await nip98(sk, url) } })).status).toBe(404);
+  });
+
+  it("changes a relay domain into a site without exposing the cached relay door", async () => {
+    const name = "domain-target", host = name + ".bind.ws", sk = generateSecretKey();
+    await rpc(host, sk, "claim"); await enable(name, fakeCloudflare());
+    const file = await upload(host, sk, "retargeted");
+    const e = ev(sk, 35128, "", [["d", "docs"], ["path", "/index.html", file.sha]]);
+    const c = await WS.connect(host); expect((await c.ok(e)).ok).toBe(true); c.ws.close();
+    const custom = "target.nsite-example.test";
+    expect((await rpc(host, sk, "adddomain", custom)).status).toBe(200);
+    expect((await info(custom)).pubkey).toBe((await info(host)).pubkey);
+    expect((await rpc(host, sk, "setdomainsite", custom, siteLabel(e))).status).toBe(200);
+    const res = await SELF.fetch("https://" + custom + "/", { headers: { accept: "application/nostr+json" } });
+    expect(res.status).toBe(200); expect(await res.text()).toBe("retargeted");
+    expect((await SELF.fetch("https://" + custom + "/", { headers: { upgrade: "websocket" } })).status).toBe(405);
+    expect((await rpc(host, sk, "setdomainsite", custom, "invalid")).status).toBe(400);
+    expect((await rpc(host, generateSecretKey(), "setdomainsite", custom, "")).status).toBe(403);
+    expect((await rpc(host, sk, "setdomainsite", custom, "")).status).toBe(200);
+    expect(await env.HOSTS.get(custom)).toBe(name);
+    expect((await info(custom)).pubkey).toBe((await info(host)).pubkey);
+  });
+
 });

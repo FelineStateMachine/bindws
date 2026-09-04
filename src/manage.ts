@@ -22,8 +22,9 @@ import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dum
 import { can, type Action, type Role } from "./roles.ts";
 import { detailOf } from "./audit.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
-import { addDomain, checkDomain, listDomains, removeDomain } from "./domains.ts";
+import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from "./domains.ts";
 import { verifyNIP98 } from "./auth.ts";
+import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -387,6 +388,32 @@ export const METHODS: Record<string, Method> = {
       return reply({ result: rows.map((b) => ({ ...descriptor(host, b), uploader: b.uploader })) });
     },
   },
+  listsites: {
+    action: "read", reads: true,
+    run: ({ relay, t, reply }) => {
+      // Site manifests are regular events, so the paths live in their raw
+      // JSON rather than the single-character tag index. Keep this query
+      // bounded like the other console data lists. Expired manifests should not appear even before the index sweep.
+      const rows = relay.sql.exec<{ raw: string }>(`SELECT raw FROM events WHERE kind IN (${SITE_KINDS.join(",")}) AND (expires=0 OR expires>?) ORDER BY created_at DESC LIMIT 500`, t).toArray();
+      const host = relay.domain;
+      const result = rows.flatMap(({ raw }) => {
+        try {
+          const e = JSON.parse(raw) as Parameters<typeof siteLabel>[0];
+          if (checkSite(e)) return [];
+          const label = siteLabel(e);
+          if (!label) return [];
+          const paths = sitePaths(e);
+          const hashes = [...new Set(paths.map((p) => p[2]).filter((x): x is string => !!x))];
+          const blobs = hashes.length ? relay.sql.exec<{ sha256: string; size: number }>(`SELECT sha256,size FROM blobs WHERE sha256 IN (SELECT value FROM json_each(?))`, JSON.stringify(hashes)).toArray() : [];
+          const present = new Set(blobs.map((b) => b.sha256));
+          const size = blobs.reduce((total, b) => total + b.size, 0);
+          const d = e.kind === 35128 ? e.tags.find((t) => t[0] === "d")?.[1] || "" : "";
+          return [{ id: e.id, kind: e.kind, author: e.pubkey, d, label, url: `https://${label}.${host}`, size, missing: hashes.filter((h) => !present.has(h)).length, expires_at: e.tags.find((t) => t[0] === "expiration")?.[1] ? Number(e.tags.find((t) => t[0] === "expiration")![1]) : 0, paths: paths.length }];
+        } catch { return []; }
+      });
+      return reply({ result });
+    },
+  },
   deleteblob: {
     action: "storage",
     run: async ({ relay, str, hex64, reply }) => {
@@ -653,9 +680,16 @@ export const METHODS: Record<string, Method> = {
   adddomain: {
     action: "identity",
     run: async ({ relay, str, reply }) => {
-      const r = await addDomain(relay, str(0));
+      const r = await addDomain(relay, str(0), str(1) || undefined);
       if (typeof r === "string") return reply({ error: r }, r.startsWith("error:") ? 502 : 400);
       return reply({ result: r });
+    },
+  },
+  setdomainsite: {
+    action: "identity",
+    run: async ({ relay, str, reply }) => {
+      const r = await setDomainSite(relay, str(0), str(1) || undefined);
+      return typeof r === "string" ? reply({ error: r }, 400) : reply({ result: r });
     },
   },
   checkdomain: {
