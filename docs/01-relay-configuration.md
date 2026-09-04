@@ -116,7 +116,7 @@ What moves in and out. Jobs spend awake time, which fuel counts.
 
 Records the relay computes and signs from its own data.
 
-- **Views** lists the records the relay signs from its own data, profiles, relays, calendar, moderation, articles, zaps and presence, with how often each runs, who may read it, when it last ran and how many rows that wrote. Each has a switch; off takes the record down at once. **Open** shows the record itself. See [Your relay on the web](05-your-relay-on-the-web.md#views).
+- **Views** lists the records the relay signs from its own data, profiles, relays, calendar, moderation, articles, zaps and presence, with how it runs, who may read it, when it last ran and how many rows that wrote. Each has a choice: off, on write (a burst republishes once, and daily besides), hourly or daily; presence is on or off. Off takes the record down at once. A view's own trigger is the default; a daily view that never moves costs nothing, an hourly one costs a fingerprint check. **Open** shows the record itself. See [Your relay on the web](05-your-relay-on-the-web.md#views).
 
 ## Health
 

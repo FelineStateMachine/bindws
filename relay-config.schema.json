@@ -62,7 +62,7 @@
           "additionalProperties": false,
           "properties": { "depth": { "type": "integer", "minimum": 0 }, "quota": { "type": "integer", "minimum": 0 } }
         },
-        "views": { "type": "object", "additionalProperties": { "type": "boolean" }, "description": "a view named here with false is off; the rest are on" },
+        "views": { "type": "object", "additionalProperties": { "anyOf": [{ "type": "boolean" }, { "enum": ["off", "write", "hourly", "daily"] }] }, "description": "a view named here runs on that trigger, or is off; the rest run on their own trigger. true and false still mean the default and off" },
         "features": {
           "type": "object",
           "additionalProperties": false,

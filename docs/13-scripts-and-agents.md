@@ -122,7 +122,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 **Rules**
 
-- `setpolicy {…}`: any policy fields; the relay drops values it does not accept. `features` is a map: `search` is `prose`, `full` or `off`; `sync`, `count`, `discovery`, `names`, `files`, `pages` and `signer` are booleans (see Relay configuration, Rules).
+- `setpolicy {…}`: any policy fields; the relay drops values it does not accept. `views` is a map of view name to `off`, `write`, `hourly` or `daily` (`true` and `false` still mean the default trigger and off). `features` is a map: `search` is `prose`, `full` or `off`; `sync`, `count`, `discovery`, `names`, `files`, `pages` and `signer` are booleans (see Relay configuration, Rules).
 - `allowkind k`, `disallowkind k`, `unrulekind k`.
 - `setretention kind|null days`, `purgekind kind|null days`.
 - `resetrules`: the defaults, kind rules and keep-for cleared.

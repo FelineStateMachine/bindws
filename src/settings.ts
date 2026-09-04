@@ -72,11 +72,16 @@ export interface Policy {
   // turns it off, which leaves inviting to the owner and moderators.
   memberInvites: { depth: number; quota: number };
   // Views (views.ts): a name maps to false when the owner switched it off.
-  views: Record<string, boolean>;
+  views: Record<string, ViewSetting>;
   features: Features;
 }
 
 export const VIEW_NAMES = ["profiles", "relays", "calendar", "moderation", "articles", "zaps", "presence"];
+// A view's setting: off, or the trigger it runs on. A view not named here
+// runs on its own trigger (views.ts); a setting a view cannot take (a
+// schedule for the live presence view) is ignored there.
+export const VIEW_SETTINGS = ["off", "write", "hourly", "daily"] as const;
+export type ViewSetting = (typeof VIEW_SETTINGS)[number];
 
 // viewFields applies a `views` patch of name to boolean; unknown names are dropped.
 // Features an operator may switch off, each a door or a cost. The bridge
@@ -126,13 +131,16 @@ export function policyPatch(patch: Record<string, unknown>, cur: Policy): Partia
   return clean as Partial<Policy>;
 }
 
-export function viewFields(patch: Record<string, unknown>, cur: Record<string, boolean>): Partial<Policy> {
+// viewFields takes a view's setting; true and false still mean the default
+// trigger and off, as they did before settings were triggers.
+export function viewFields(patch: Record<string, unknown>, cur: Record<string, ViewSetting>): Partial<Policy> {
   if (!patch.views || typeof patch.views !== "object") return {};
-  const out: Record<string, boolean> = { ...cur };
+  const out: Record<string, ViewSetting> = { ...cur };
   for (const [k, v] of Object.entries(patch.views as Record<string, unknown>)) {
-    if (!VIEW_NAMES.includes(k) || typeof v !== "boolean") continue;
-    if (v) delete out[k];
-    else out[k] = false;
+    if (!VIEW_NAMES.includes(k)) continue;
+    if (v === true) delete out[k];
+    else if (v === false) out[k] = "off";
+    else if ((VIEW_SETTINGS as readonly unknown[]).includes(v)) out[k] = v as ViewSetting;
   }
   return { views: out };
 }
@@ -410,6 +418,13 @@ export class Settings {
     if (row) {
       const stored = JSON.parse(row.value) as Partial<Policy>;
       this.policy = { ...DEFAULT_POLICY, ...stored, features: { ...DEFAULT_FEATURES, ...(stored.features ?? {}) } };
+      // Views were on or off before they had triggers.
+      const views: Record<string, ViewSetting> = {};
+      for (const [k, v] of Object.entries((stored.views ?? {}) as Record<string, unknown>)) {
+        if (v === false) views[k] = "off";
+        else if ((VIEW_SETTINGS as readonly unknown[]).includes(v)) views[k] = v as ViewSetting;
+      }
+      this.policy.views = views;
     }
     ensureColumns(this.sql, "members", MEMBER_COLUMNS);
     this.migrateMembers();

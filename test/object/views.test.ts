@@ -178,8 +178,30 @@ describe("views", () => {
     expect((await s.c.req({ kinds: [KIND_VIEW], authors: [doc.self], "#d": [viewD("articles")] })).length).toBe(0);
     expect((await info(s.host)).views.map((v: any) => v.name)).not.toContain("articles");
     const exported = (await rpc(s.host, s.owner, "exportconfig")).result;
-    expect(exported.policy.views).toEqual({ articles: false });
+    expect(exported.policy.views).toEqual({ articles: "off" });
     await rpc(s.host, s.owner, "setpolicy", { views: { articles: true } });
     expect((await view(s.host, "articles")).status).toBe(200);
+  });
+
+  it("runs on the trigger the owner set: a daily articles view ignores a write, presence takes no schedule, and nonsense is dropped", async () => {
+    const s = await seed("views-trigger");
+    const list = async () => Object.fromEntries(((await rpc(s.host, s.owner, "listviews")).result as any[]).map((v) => [v.name, v]));
+    let l = await list();
+    expect([l.articles.trigger, l.articles.default, l.articles.choices]).toEqual(["write", "write", ["off", "write", "hourly", "daily"]]);
+    expect([l.presence.trigger, l.presence.choices]).toEqual(["live", ["off"]]);
+    const dirty = () => runInDurableObject(env.RELAY.getByName("views-trigger"), async (r: Relay) => [...r.viewDirty]);
+    await runInDurableObject(env.RELAY.getByName("views-trigger"), async (r: Relay) => r.viewDirty.clear());
+    expect((await s.c.ok(ev(s.alice, 30023, "three", [["d", "three"], ["title", "Three"]]))).ok).toBe(true);
+    expect(await dirty()).toContain("articles");
+    await runInDurableObject(env.RELAY.getByName("views-trigger"), async (r: Relay) => r.viewDirty.clear());
+    const r = await rpc(s.host, s.owner, "setpolicy", { views: { articles: "daily", presence: "hourly", profiles: "sideways", zaps: "hourly" } });
+    expect(r.result.views).toEqual({ articles: "daily", presence: "hourly", zaps: "hourly" });
+    l = await list();
+    expect([l.articles.trigger, l.presence.trigger, l.profiles.trigger, l.zaps.trigger]).toEqual(["daily", "live", "daily", "hourly"]);
+    expect((await s.c.ok(ev(s.alice, 30023, "four", [["d", "four"], ["title", "Four"]]))).ok).toBe(true);
+    expect(await dirty()).toEqual([]);
+    expect((await info(s.host)).views.find((v: any) => v.name === "articles").trigger).toBe("daily");
+    await rpc(s.host, s.owner, "setpolicy", { views: { articles: "off" } });
+    expect((await view(s.host, "articles")).status).toBe(404);
   });
 });

@@ -15,6 +15,7 @@ import { bolt11Msats } from "./fuel.ts";
 import { now, tag, tagValues, type Event } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { KIND_VIEW, KIND_PRESENCE } from "./kinds.ts";
+import type { ViewSetting } from "./settings.ts";
 
 export const PRESENCE_ACTIVE_S = 15 * 60;
 export const PRESENCE_THROTTLE_S = 30;
@@ -254,7 +255,20 @@ const presence: View = {
 
 export const VIEWS: View[] = [profiles, relays, calendar, moderation, articles, zaps, presence];
 export const viewByName = (name: string): View | undefined => VIEWS.find((v) => v.name === name);
-export const viewOn = (relay: Relay, name: string): boolean => relay.settings.policy.views[name] !== false;
+// viewChoices is what the owner may set a view to: a stored view runs on a
+// write, hourly or daily; the live presence view is on or off.
+export const viewChoices = (v: View): ViewSetting[] => (v.trigger === "live" ? ["off"] : ["off", "write", "hourly", "daily"]);
+// viewTrigger is how a view runs as set: its own trigger unless the owner
+// chose another it can take, or "off".
+export function viewTrigger(relay: Relay, name: string): Trigger | "off" {
+  const v = viewByName(name);
+  if (!v) return "off";
+  const set = relay.settings.policy.views[name];
+  if (set === "off") return "off";
+  if (set && v.trigger !== "live" && viewChoices(v).includes(set)) return set;
+  return v.trigger;
+}
+export const viewOn = (relay: Relay, name: string): boolean => viewTrigger(relay, name) !== "off";
 export const viewStored = (relay: Relay, v: View): boolean => v.trigger !== "live" && v.audience(relay) === "public";
 
 // presenceTags folds the socket list and the recent writers: online beats active.
@@ -288,7 +302,7 @@ export function latestStored(relay: Relay, name: string): string | null {
 
 // nip11Views describes the views a relay keeps, for the information document.
 export function nip11Views(relay: Relay) {
-  return VIEWS.filter((v) => viewOn(relay, v.name)).map((v) => ({ name: v.name, kind: v.trigger === "live" ? KIND_PRESENCE : KIND_VIEW, d: viewD(v.name), trigger: v.trigger, audience: v.audience(relay) }));
+  return VIEWS.filter((v) => viewOn(relay, v.name)).map((v) => ({ name: v.name, kind: v.trigger === "live" ? KIND_PRESENCE : KIND_VIEW, d: viewD(v.name), trigger: viewTrigger(relay, v.name), audience: v.audience(relay) }));
 }
 
 // GET /view/<name>: the stored record, or a members-only fold signed on the
@@ -321,7 +335,7 @@ export async function viewsSummary(relay: Relay) {
   for (const v of VIEWS) {
     const runs = await viewRuns(relay, v.name);
     const last = runs[runs.length - 1] ?? null;
-    out.push({ name: v.name, about: v.about, trigger: v.trigger, audience: v.audience(relay), on: viewOn(relay, v.name), stored: viewStored(relay, v), last, path: "/view/" + v.name });
+    out.push({ name: v.name, about: v.about, trigger: viewTrigger(relay, v.name), default: v.trigger, choices: viewChoices(v), audience: v.audience(relay), on: viewOn(relay, v.name), stored: viewStored(relay, v), last, path: "/view/" + v.name });
   }
   return out;
 }
@@ -364,9 +378,9 @@ export async function publishView(relay: Relay, name: string): Promise<void> {
   if (v.fingerprint) await relay.storage.put("view-fp:" + name, v.fingerprint(relay));
 }
 
-// markView republishes a write-triggered view shortly, once for a burst.
+// markView republishes a view set to run on writes shortly, once for a burst.
 export function markView(relay: Relay, name: string) {
-  if (!viewOn(relay, name) || relay.settings.policy.owner === "") return;
+  if (viewTrigger(relay, name) !== "write" || relay.settings.policy.owner === "") return;
   relay.viewDirty.add(name);
   if (relay.viewTimer) return;
   relay.viewTimer = setTimeout(() => {
@@ -390,9 +404,10 @@ export function markView(relay: Relay, name: string) {
 export async function viewsTick(relay: Relay, t: number) {
   if (relay.settings.policy.owner === "") return;
   for (const v of VIEWS) {
-    if (v.trigger === "live" || !viewOn(relay, v.name)) continue;
+    const trigger = viewTrigger(relay, v.name);
+    if (trigger === "live" || trigger === "off") continue;
     const last = (await relay.storage.get<number>("view-at:" + v.name)) ?? 0;
-    const period = v.trigger === "hourly" ? 3600 : 86400;
+    const period = trigger === "hourly" ? 3600 : 86400;
     if (t - last < period - 300) continue;
     await relay.storage.put("view-at:" + v.name, t);
     if (v.fingerprint && viewStored(relay, v) && latestStored(relay, v.name) !== null) {

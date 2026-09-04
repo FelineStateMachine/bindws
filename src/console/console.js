@@ -423,18 +423,22 @@
     let views;
     try { views = await rpc("listviews"); } catch { return; }
     $("#views").innerHTML = views.map((v) => {
-      const runs = v.trigger === "live" ? "live, from memory" : v.trigger === "write" ? "on write and daily" : v.trigger;
+      const runs = v.trigger === "off" ? "off" : v.trigger === "live" ? "live, from memory" : v.trigger === "write" ? "on write and daily" : v.trigger;
+      const label = (c) => (c === "off" ? "off" : c === "write" ? "on write" : c === "live" ? "on" : c);
+      const choices = [...v.choices, v.default].filter((c, i, a) => a.indexOf(c) === i);
+      const pick = '<select class="txt" data-view="' + esc(v.name) + '" style="width:auto">' + choices.map((c) => '<option value="' + c + '"' + (c === v.trigger ? " selected" : "") + ">" + label(c) + "</option>").join("") + "</select>";
       const who = v.audience === "members" ? "members" + (v.stored ? "" : ", on request") : "anyone";
       const last = v.trigger === "live" ? "" : v.last ? "last run " + fmtTime(v.last.at) : "not run yet";
       const rows = v.trigger === "live" ? "no rows" : v.last ? v.last.rows.toLocaleString() + " rows" : "";
       const meta = [runs, who, last, rows].filter(Boolean).map((x) => "<span>" + esc(x) + "</span>").join('<span class="sep">|</span>');
-      return '<div class="wire-row' + (v.on ? "" : " dim") + '"><div class="wire-main"><b>' + esc(v.name) + '</b><br><small>' + esc(v.about) + '</small></div><div class="wire-side"><div class="wire-acts"><label><input type="checkbox" data-view="' + esc(v.name) + '"' + (v.on ? " checked" : "") + "> on</label>" + (v.on ? '<a class="btn" href="' + esc(v.path) + '" target="_blank" rel="noopener">Open</a>' : "") + '</div><div class="wire-meta">' + meta + "</div></div></div>";
+      return '<div class="wire-row' + (v.on ? "" : " dim") + '"><div class="wire-main"><b>' + esc(v.name) + '</b><br><small>' + esc(v.about) + '</small></div><div class="wire-side"><div class="wire-acts">' + pick + (v.on ? '<a class="btn" href="' + esc(v.path) + '" target="_blank" rel="noopener">Open</a>' : "") + '</div><div class="wire-meta">' + meta + "</div></div></div>";
     }).join("");
   }
   $("#views").addEventListener("change", guard(async (ev) => {
-    const box = ev.target.closest("input[data-view]"); if (!box) return;
-    await rpc("setpolicy", { views: { [box.dataset.view]: box.checked } });
-    toast((box.checked ? "Publishing " : "Took down ") + box.dataset.view); await loadViews(); await loadInfo();
+    const sel = ev.target.closest("select[data-view]"); if (!sel) return;
+    const value = sel.value === "live" ? true : sel.value;
+    await rpc("setpolicy", { views: { [sel.dataset.view]: value } });
+    toast(sel.value === "off" ? "Took down " + sel.dataset.view : sel.dataset.view + ": " + (sel.value === "live" ? "on" : sel.value === "write" ? "on write" : sel.value)); await loadViews(); await loadInfo();
   }));
   async function loadDumps() {
     const list = await rpc("listdumps");
