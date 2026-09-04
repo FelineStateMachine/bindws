@@ -1,6 +1,7 @@
 // The relay: one Durable Object per name, holding its SQLite database and
 // its live websockets (hibernating while idle). Protocol handling mirrors
 // relay.go; policy is per relay and owner-managed (see manage.ts).
+import { syncSiteIndex, forgetSites } from "./sites.ts";
 import { DurableObject } from "cloudflare:workers";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { difficulty, expiration, hasTag, isPrivate, now, tagValues, validate, canonical, type Event } from "./event.ts";
@@ -136,6 +137,7 @@ export class Relay extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.store = new Store(ctx.storage.sql);
+    this.store.onSitesChanged = () => this.queueSites();
     this.settings = new Settings(ctx.storage.sql);
     this.fuel = new Fuel(ctx.storage.sql, fuelConfig(env as unknown as Record<string, unknown>));
     this.identity = new Identity(ctx.storage);
@@ -443,6 +445,7 @@ export class Relay extends DurableObject<Env> {
   // teardown deletes everything this relay holds and returns the name to
   // unclaimed. Every socket is closed. Nothing is recoverable afterwards.
   async teardown() {
+    await forgetSites(this);
     await forgetDomains(this);
     for (const ws of this.ctx.getWebSockets()) {
       try {
@@ -465,6 +468,7 @@ export class Relay extends DurableObject<Env> {
     this.ipBuckets.clear();
     this.meter = { bytesIn: 0, bytesOut: 0, rowsRead: 0, rowsWritten: 0, activeMs: 0, accepted: 0, refused: 0, reqs: 0 };
     this.store = new Store(this.sql);
+    this.store.onSitesChanged = () => this.queueSites();
     this.settings = new Settings(this.sql);
     this.fuel = new Fuel(this.sql, this.fuel.cfg);
     this.identity = new Identity(this.ctx.storage);
@@ -475,6 +479,26 @@ export class Relay extends DurableObject<Env> {
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
     await this.ctx.storage.put("slug", this.slug);
+  }
+
+  private sitesSync: Promise<boolean> | null = null;
+  syncSites(): Promise<boolean> {
+    if (!this.sitesSync) this.sitesSync = syncSiteIndex(this).finally(() => { this.sitesSync = null; });
+    return this.sitesSync;
+  }
+  private sitesQueued = false;
+  private queueSites() {
+    if (this.sitesQueued) return;
+    this.sitesQueued = true;
+    this.ctx.waitUntil(Promise.resolve().then(async () => {
+      this.sitesQueued = false;
+      try {
+        await this.syncSites();
+      } catch (err) {
+        console.log("site index sync failed: " + String(err));
+      }
+      await this.ensureAlarm();
+    }));
   }
 
   async deleteBlob(sha: string) {
@@ -1077,6 +1101,10 @@ export class Relay extends DurableObject<Env> {
     }
     // ---- end digest ----
     const next = this.store.sweepExpired(t);
+    if (await this.syncSites()) {
+      await this.ctx.storage.setAlarm(Date.now() + 250);
+      return;
+    }
     // ---- dumps: a scheduled JSONL of everything, into R2 (dumps.ts) ----
     if (dumpDue(this, t)) {
       try {
