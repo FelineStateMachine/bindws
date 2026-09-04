@@ -292,6 +292,11 @@
         <div class="scroll"><table id="blobs" class="events"><thead><tr><th>Time</th><th>File</th><th>Size</th><th>Uploader</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="block">
+        <h3>Sites <span class="count" id="sites-count"></span></h3>
+        <p class="note">Published NIP-5A manifests and the hostnames where they are served.</p>
+        <div class="scroll"><table id="sites" class="events"><thead><tr><th>Author</th><th>Name</th><th>URL</th><th class="r">Files</th><th class="r">Size</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="block">
         <h3>Dumps <span class="count" id="dumps-count"></span></h3>
         <p class="note">Every event as one JSONL file on a schedule, kept for a few runs and counted as files. Downloads need your signature.</p>
         <form id="dumpform" class="addrow"><select class="txt" name="dumps" style="max-width:8rem"><option value="off">off</option><option value="daily">daily</option><option value="weekly">weekly</option></select><input class="txt num" type="number" name="keep" min="1" max="60" value="7" title="how many to keep" style="width:5rem;flex:0 0 auto"><button class="btn">Save</button><button type="button" id="dumpnow" class="btn">Dump now</button></form>

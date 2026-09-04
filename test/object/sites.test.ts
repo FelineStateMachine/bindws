@@ -61,6 +61,28 @@ describe("sites", () => {
     expect(await env.HOSTS.get(siteKey(siteLabel(expires)))).toBeNull();
     c.ws.close();
   });
+  it("lists manifests with deduplicated sizes and pending mirror files", async () => {
+    const name = "sites-list", host = name + ".bind.ws", sk = generateSecretKey();
+    await rpc(host, sk, "claim");
+    const file = await upload(host, sk, "listed site");
+    const missing = "cd".repeat(32);
+    const tags = [["path", "/index.html", file.sha], ["path", "/copy.html", file.sha], ["path", "/missing.js", missing]];
+    const c = await WS.connect(host);
+    const root = ev(sk, 15128, "", tags), named = ev(sk, 35128, "", [...tags, ["d", "docs"]]);
+    const snapTags = [...tags, ["a", `15128:${pk(sk)}:`], ["x", aggregate({ tags }), "aggregate"]];
+    const snapshot = ev(sk, 5128, "", snapTags);
+    for (const e of [root, named, snapshot]) expect((await c.ok(e)).ok).toBe(true);
+    const listed = (await rpc(host, sk, "listsites")).result;
+    expect(listed).toHaveLength(3);
+    expect(listed.find((s: any) => s.id === root.id)).toMatchObject({ d: "", paths: 3, size: "listed site".length, missing: 1, url: "https://" + siteLabel(root) + ".bind.ws" });
+    expect(listed.find((s: any) => s.id === named.id)).toMatchObject({ d: "docs", size: "listed site".length });
+    expect(listed.find((s: any) => s.id === snapshot.id)).toMatchObject({ d: "", kind: 5128 });
+    expect((await rpc(host, generateSecretKey(), "listsites")).status).toBe(403);
+    const many = ev(sk, 35128, "", [["d", "large"], ...Array.from({ length: 120 }, (_, i) => ["path", `/file${i}.txt`, i.toString(16).padStart(64, "0")])]);
+    expect((await c.ok(many)).ok).toBe(true);
+    expect((await rpc(host, sk, "listsites")).result.find((s: any) => s.id === many.id)).toMatchObject({ paths: 120, size: 0, missing: 120 });
+    c.ws.close();
+  });
   it("serves all hostname forms, directories, fallback pages and verified metadata", async () => {
     const name = "sites-serve", host = name + ".bind.ws", sk = generateSecretKey();
     await rpc(host, sk, "claim");

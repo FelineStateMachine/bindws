@@ -349,7 +349,7 @@
   $("#audit-more").onclick = guard(async () => { const last = $("#audit tbody tr:last-child"); await loadAudit(last ? +last.dataset.seq : 0); });
   async function loadLists() {
     loadAudit(0);
-    const [mem, bans, bannedEvents, allow, block, invites, reports, blobs, blocks] = await Promise.all([rpc("listmembers"), rpc("listbannedpubkeys"), rpc("listbannedevents"), rpc("listallowedkinds"), rpc("listblockedkinds"), rpc("listinvites"), rpc("listreports"), rpc("listblobs", 100), rpc("listblockedips")]);
+    const [mem, bans, bannedEvents, allow, block, invites, reports, blobs, blocks, sites] = await Promise.all([rpc("listmembers"), rpc("listbannedpubkeys"), rpc("listbannedevents"), rpc("listallowedkinds"), rpc("listblockedkinds"), rpc("listinvites"), rpc("listreports"), rpc("listblobs", 100), rpc("listblockedips"), rpc("listsites")]);
     const members = mem.members;
     window.__members = members;
     const roleCell = (m) => m.role === "owner" ? ' <span class="chip">owner</span>' : myRole === "owner" ? ' <select class="txt role" title="Role"><option value="member"' + (m.role === "member" ? " selected" : "") + '>member</option><option value="moderator"' + (m.role === "moderator" ? " selected" : "") + '>moderator</option></select>' : m.role === "moderator" ? ' <span class="chip">moderator</span>' : "";
@@ -383,6 +383,8 @@
     $("#reports-count").textContent = reports.length || ""; $("#tc-reports").textContent = reports.length || "";
     $("#blobs tbody").innerHTML = blobs.length ? blobs.map((b) => '<tr><td class="dim">' + esc(fmtTime(b.uploaded)) + '</td><td class="mono"><a href="' + esc(b.url) + '" target="_blank" rel="noopener">' + key(b.sha256) + '</a> <span class="dim">' + esc(b.type) + '</span></td><td class="mono">' + fmtBytes(b.size) + '</td><td class="mono" title="' + esc(b.uploader) + '">' + av(b.uploader) + key(b.uploader) + '</td><td class="r">' + ib("trash", "Delete file", "deleteblob", b.sha256, "danger") + "</td></tr>").join("") : '<tr><td colspan="5" class="muted">no uploads</td></tr>';
     $("#blobs-count").textContent = blobs.length || "";
+    $("#sites tbody").innerHTML = sites.length ? sites.map((s) => '<tr><td class="mono" title="' + esc(s.author) + '">' + av(s.author) + key(s.author) + '</td><td class="mono">' + esc(s.d || (s.kind === 5128 ? "snapshot" : "root")) + '</td><td><a href="' + esc(s.url) + '" target="_blank" rel="noopener" title="' + esc(s.url) + '">' + esc(s.url) + '</a></td><td class="r mono">' + esc(s.paths) + (s.missing ? ' <span class="chip bad" title="files still being mirrored">' + esc(s.missing) + ' missing</span>' : '') + '</td><td class="r mono">' + fmtBytes(s.size) + '</td><td class="dim">' + esc(s.expires_at ? fmtTime(s.expires_at) : "never") + '</td><td class="r">' + ib("trash", "Delete site", "deleteevent", s.id, "danger") + '</td></tr>').join("") : '<tr><td colspan="7" class="muted">no sites yet</td></tr>';
+    $("#sites-count").textContent = sites.length || "";
     const tag = (k, cls) => '<span class="tag ' + cls + '">' + k + ib("x", "Remove rule", "unrulekind", String(k)) + "</span>";
     $("#kinds-allow").innerHTML = allow.length ? allow.map((k) => tag(k, "ok")).join("") : '<span class="tag plain">all</span>';
     $("#kinds-block").innerHTML = block.length ? block.map((k) => tag(k, "blk")).join("") : '<span class="tag plain">none</span>';
@@ -561,14 +563,14 @@
   // Jobs run in the background; the table follows them while the tab is open.
   let jobsTimer = 0;
   const fmtJob = (j) => {
-    const what = j.kind === "import" ? "import" : j.label === "backfill" ? "fetch my history" : j.kind === "pull" ? "pull" : "rebroadcast";
+    const what = j.kind === "mirror" ? "mirror site" : j.kind === "import" ? "import" : j.label === "backfill" ? "fetch my history" : j.kind === "pull" ? "pull" : "rebroadcast";
     const f = [];
     if (j.filter.authors) f.push(j.filter.authors.length === 1 && j.filter.authors[0] === me ? "my events" : j.filter.authors.length + " authors");
     if (j.filter.kinds) f.push("kinds " + j.filter.kinds.join(", "));
     if (j.filter.since) f.push("since " + fmtDay(j.filter.since));
     const when = j.every ? "every " + (j.every === 24 ? "day" : j.every + " h") + (j.nextRun ? ", next " + fmtTime(j.nextRun) : "") : "once";
     const l = j.last;
-    const count = (stored, blobs, sent, refused) => (j.kind === "import" ? stored.toLocaleString() + " events" + ((j.last ? j.last.duplicates : j.duplicates) ? ", " + (j.last ? j.last.duplicates : j.duplicates) + " already here" : "") : j.kind === "pull" ? stored.toLocaleString() + " events" + (blobs ? ", " + blobs + " files" : "") : sent.toLocaleString() + " sent" + (refused ? ", " + refused + " refused" : ""));
+    const count = (stored, blobs, sent, refused) => (j.kind === "mirror" ? blobs.toLocaleString() + " files mirrored" : j.kind === "import" ? stored.toLocaleString() + " events" + ((j.last ? j.last.duplicates : j.duplicates) ? ", " + (j.last ? j.last.duplicates : j.duplicates) + " already here" : "") : j.kind === "pull" ? stored.toLocaleString() + " events" + (blobs ? ", " + blobs + " files" : "") : sent.toLocaleString() + " sent" + (refused ? ", " + refused + " refused" : ""));
     const res = j.running ? "running: " + count(j.stored, j.blobs, j.sent, j.refused) + "..." : !l ? "waiting" : l.error ? "failed: " + l.error : count(l.stored, l.blobs, l.sent, l.refused) + (l.skipped ? ", " + l.skipped + " skipped" : "") + ", " + fmtTime(l.finishedAt);
     return "<tr><td>" + what + "</td><td class=\"mono\">" + j.relays.map(esc).join("<br>") + "</td><td>" + (f.join(", ") || "everything") + "</td><td>" + when + "</td><td>" + esc(res) + "</td><td>" + (j.running ? "" : ib("undo", "Run now", "runjob", j.id)) + ib("x", "Remove", "removejob", j.id) + "</td></tr>";
   };

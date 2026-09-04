@@ -256,5 +256,32 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       },
       "retention": []
     }
+  },
+  {
+    "name": "site",
+    "document": {
+      "format": "bind.ws/relay-config/2",
+      "template": {
+        "title": "Sites",
+        "about": "A static website host. Members publish NIP-5A manifests and files; the relay mirrors missing files into its own Blossom store."
+      },
+      "policy": {
+        "writes": "allowlist",
+        "reads": "open",
+        "directoryPublic": true,
+        "features": {
+          "files": true,
+          "sites": {
+            "enabled": true,
+            "mirror": true
+          }
+        }
+      },
+      "kinds": {
+        "allow": [],
+        "block": []
+      },
+      "retention": []
+    }
   }
 ];

@@ -17,6 +17,7 @@ copy as the start of your own.
 | [articles](08-articles.jsonc) | long-form only, yours or mirrored daily from a source. |
 | [dm](09-dm.jsonc) | it is a drop box for private messages: anyone leaves a gift wrap, only members read. |
 | [quiet](10-quiet.jsonc) | it should cost nothing and announce nothing: members only, every optional feature off, switched on one at a time as needed. |
+| [site](11-site.jsonc) | it hosts NIP-5A static websites: members publish manifests and files, with mirroring on. |
 
 Each file says more in its comment: what the template does, which Haven relay
 it mirrors, and why its kinds are what they are.
