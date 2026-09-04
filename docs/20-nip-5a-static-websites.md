@@ -87,7 +87,9 @@ manifest and then up to ten servers from the author's kind 10063. Sources
 must be public HTTPS URLs (or a local sibling relay), redirects are checked
 again, credentials are never forwarded, and the size cap is the smaller of
 the relay's `maxBlobMB` and 32 MiB. Bad hashes, failed checks, and oversized
-files are never stored. Remote bytes and served bytes count toward fuel.
+files are never stored. Remote bytes and served bytes appear in the traffic meters but have no fuel
+price. Stored mirrors share the file allowance; request work contributes to
+the relay's estimated awake-time meter.
 
 If mirroring is disabled, the site door still proxies a cache miss using the
 same checks and cap. A file is retried at most three times; a failed job stops
