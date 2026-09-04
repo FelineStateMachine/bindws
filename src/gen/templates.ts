@@ -232,7 +232,7 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       "format": "bind.ws/relay-config/2",
       "template": {
         "title": "Quiet",
-        "about": "A small private relay with nothing that costs or announces. Members write and read; search, sync, counts, the discovery record, names, files, pages and signer traffic are off."
+        "about": "A small private relay with nothing that costs or announces. Members write and read; search, sync, counts, the discovery record, names, files, pages, signer traffic, sites, Marmot and Git hosting are off."
       },
       "policy": {
         "writes": "allowlist",
@@ -247,7 +247,9 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
           "files": false,
           "pages": false,
           "signer": false,
-          "sites": false
+          "sites": false,
+          "marmot": false,
+          "grasp": false
         }
       },
       "kinds": {
