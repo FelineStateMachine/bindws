@@ -92,6 +92,7 @@ const PROTOCOL: [string, string][] = [
   ["05", "Members with a name are you@name.bind.ws."],
   ["43", "The relay signs and publishes its member list."],
   ["57", "Zaps to the relay add fuel. The receipt is stored on the relay."],
+  ["66", "The relay signs a discovery record about itself, so directories find it without a probe."],
   ["Blossom", "Upload and fetch files by hash on the same host. Check an upload before sending it, mirror a file from a URL, report one by hash."],
   ["94, 96", "The same files through the NIP-96 door, with NIP-94 metadata in every answer."],
 ];
@@ -110,7 +111,7 @@ export function landing(req: Request, env: Env): Response {
   const bad = new URL(req.url).searchParams.get("bad");
   const days = leaseDays(env);
   const interfaces = table(["Endpoint", "Protocol", "Auth", "Notes"], [
-    [`wss://&lt;name&gt;.${domain}`, "NIP-01, 09, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 59, 62, 67, 70, 77", "optional NIP-42", "Sockets hibernate; a negentropy session carries on after a wake."],
+    [`wss://&lt;name&gt;.${domain}`, "NIP-01, 09, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 59, 62, 66, 67, 70, 77", "optional NIP-42", "Sockets hibernate; a negentropy session carries on after a wake."],
     ["GET / (accept nostr+json)", "NIP-11", "none", "limitation, retention, payments_url, self"],
     ["POST /", "NIP-86", "NIP-98, owner", "claim and the management methods"],
     ["POST /lease", "lease", "optional NIP-98", `A temporary relay for ${leaseDays(env)} days. A signature reserves the claim for that key.`],

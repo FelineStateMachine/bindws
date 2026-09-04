@@ -518,8 +518,8 @@ describe("storage: retention and purge", () => {
     await runInDurableObject(stub, async (r: Relay) => expect(r.sweepRetention(now())).toBe(1));
     let st = (await rpc(host, owner, "storagestats")).result;
     const byKind = Object.fromEntries(st.kinds.map((k: any) => [k.kind, k.n]));
-    expect(byKind).toEqual({ 1: 2, 7: 1, 0: 2, 13534: 1, 33534: 2, 39000: 1, 39001: 1, 39002: 1, 39003: 1 }); // the roster, profile, role definitions and group state are the relay's own
-    expect(st.events).toBe(12);
+    expect(byKind).toEqual({ 1: 2, 7: 1, 0: 2, 13534: 1, 30166: 1, 33534: 2, 39000: 1, 39001: 1, 39002: 1, 39003: 1 }); // the roster, profile, discovery record, role definitions and group state are the relay's own
+    expect(st.events).toBe(13);
     expect(st.eventBytes).toBeGreaterThan(0);
     expect(st.retention).toEqual([{ kind: 7, days: 30 }, { kind: null, days: 100 }]);
 
@@ -527,7 +527,7 @@ describe("storage: retention and purge", () => {
     expect((await rpc(host, owner, "purgekind", 1, 10)).result).toEqual({ deleted: 1 });
     expect((await rpc(host, owner, "purgekind", 7, 0)).result).toEqual({ deleted: 1 });
     st = (await rpc(host, owner, "storagestats")).result;
-    expect(st.events).toBe(10);
+    expect(st.events).toBe(11);
 
     // Rules travel with the configuration; removing one is days 0.
     const cfg = (await rpc(host, owner, "exportconfig")).result;
@@ -540,6 +540,6 @@ describe("storage: retention and purge", () => {
     expect((await rpc(host, owner, "purgekind", 13534, 0)).status).toBe(400);
     await rpc(host, owner, "setretention", null, 1);
     expect((await rpc(host, owner, "purgekind", null, 0)).result.deleted).toBe(1); // the fresh note; profile, roster and group state stay
-    expect((await rpc(host, owner, "storagestats")).result.kinds.map((k: any) => k.kind).sort((a: number, b: number) => a - b)).toEqual([0, 13534, 33534, 39000, 39001, 39002, 39003]);
+    expect((await rpc(host, owner, "storagestats")).result.kinds.map((k: any) => k.kind).sort((a: number, b: number) => a - b)).toEqual([0, 13534, 30166, 33534, 39000, 39001, 39002, 39003]);
   });
 });

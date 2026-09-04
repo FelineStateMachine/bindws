@@ -7,6 +7,7 @@ import { KIND_AUTH, KIND_VANISH, difficulty, expiration, hasTag, isPrivate, now,
 import { match, parseFilter, type Filter } from "./filter.ts";
 import { hllOffset } from "./hll.ts";
 import { Negentropy, bytesToHex, hexToBytes } from "./negentropy.ts";
+import { KIND_RELAY_DISCOVERY, discovery } from "./nip66.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected, SUCCESSION_WARN_DAYS } from "./settings.ts";
 import { manage } from "./manage.ts";
@@ -71,8 +72,9 @@ export interface Env {
 // The less obvious numbers: 43 is added by info() once the relay has an
 // identity; 62 is request-to-vanish (store.vanish); 67 is the EOSE hint
 // array at the end of the subscription handler; 70 is the "-" tag check in
-// gate(); 77 is negentropy sync (handleSync).
-export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 67, 70, 77, 86, 98];
+// gate(); 66 is the discovery record the relay signs about itself
+// (publishDiscovery); 77 is negentropy sync (handleSync).
+export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
 export const KIND_REPORT = 1984;
 // NIP-46 remote signing traffic: ephemeral, encrypted end to end, never stored.
 export const KIND_NOSTR_CONNECT = 24133;
@@ -250,6 +252,25 @@ export class Relay extends DurableObject<Env> {
     events.push(...this.identity.group(f, t));
     this.emit(events, t);
     this.markView("profiles");
+    await this.publishDiscovery();
+  }
+
+  // publishDiscovery signs the NIP-66 record the relay keeps about itself
+  // (nip66.ts), under its primary name, and only when what it would say has
+  // changed: the rules, the kind rules, the identity fields and the fuel
+  // state all show in it. Called with the membership records and daily
+  // from the alarm, so a change made by a method that publishes nothing
+  // else still reaches the record within a day.
+  async publishDiscovery() {
+    if (this.settings.policy.owner === "") return;
+    await this.identity.ensure();
+    const d = discovery(this, this.slug + "." + this.domain);
+    const fp = JSON.stringify([d.tags, d.content]);
+    const row = this.sql.exec<{ created_at: number }>(`SELECT created_at FROM events WHERE kind=? AND pubkey=? ORDER BY created_at DESC LIMIT 1`, KIND_RELAY_DISCOVERY, this.identity.pubkey).toArray()[0];
+    if (row && fp === (await this.ctx.storage.get<string>("nip66-fp"))) return;
+    const t = now();
+    this.emit([this.identity.sign(KIND_RELAY_DISCOVERY, d.tags, d.content, Math.max(t, (row?.created_at ?? 0) + 1))], t);
+    await this.ctx.storage.put("nip66-fp", fp);
   }
 
   // ---- views (views.ts) ----
@@ -1458,6 +1479,7 @@ export class Relay extends DurableObject<Env> {
     this.store.drain();
     this.sweepRetention(t);
     await this.viewsTick(t);
+    await this.publishDiscovery();
     // Fuel notice: once when it turns low, then once a day while it stays low.
     if (this.settings.policy.notify.fuel) {
       const low = fuelLow(this.fuelStatus());

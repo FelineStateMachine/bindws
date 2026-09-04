@@ -116,4 +116,4 @@ Names: `profiles`, `relays`, `calendar`, `moderation`, `articles`, `zaps`, `pres
 
 ## Websocket
 
-The relay itself: `wss://<name>.bind.ws`. NIP-01 with 09, 13, 17 and 59 as private kinds, 29 and 43 for the group, 40, 42, 45, 50, 56, 62, 70 and 77, an `AUTH` challenge on connect, and `EOSE` hints per NIP-67. Kind 24133 passes the write and read rules so a NIP-46 signer or client can use the relay as transport: it is delivered to a socket that has proved a party's key with `AUTH`, or to a subscription that names one in `#p` or `authors`, and never to a bare subscription to the kind.
+The relay itself: `wss://<name>.bind.ws`. NIP-01 with 09, 13, 17 and 59 as private kinds, 29 and 43 for the group, 40, 42, 45, 50, 56, 62, 66 as a kind 30166 record signed by the relay about itself, 70 and 77, an `AUTH` challenge on connect, and `EOSE` hints per NIP-67. Kind 24133 passes the write and read rules so a NIP-46 signer or client can use the relay as transport: it is delivered to a socket that has proved a party's key with `AUTH`, or to a subscription that names one in `#p` or `authors`, and never to a bare subscription to the kind.

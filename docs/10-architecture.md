@@ -147,4 +147,4 @@ The daily alarm runs daily views once a day and hourly views once an hour. Write
 
 ## Protocol surface
 
-NIP-01, 05, 09, 11, 13, 17 and 59 private kinds, 29, 40, 42, 43, 45 with HLL counts, 46 as transport, 50, 56, 57, 62, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 03 by way of the lists, 04, 06, 08 and 09. `test/conformance` is a black-box suite that runs against any relay URL.
+NIP-01, 05, 09, 11, 13, 17 and 59 private kinds, 29, 40, 42, 43, 45 with HLL counts, 46 as transport, 50, 56, 57, 62, 66 as a record the relay signs about itself, 67, 70, 77, 86, 94, 96, 98, and Blossom BUD-01, 02, 03 by way of the lists, 04, 06, 08 and 09. `test/conformance` is a black-box suite that runs against any relay URL.

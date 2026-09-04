@@ -363,6 +363,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
       const k = num(0);
       if (!Number.isInteger(k) || k < 0 || k > 65535) return reply({ error: "invalid: kind out of range" }, 400);
       s.setKind(k, method === "allowkind" ? "allow" : method === "disallowkind" ? "block" : null);
+      await relay.publishDiscovery();
       return reply({ result: true });
     }
     case "storagestats": {

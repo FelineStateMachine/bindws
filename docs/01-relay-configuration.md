@@ -77,6 +77,8 @@ Name, description, icon and contact appear in your relay's public information do
 
 Banner is a wide image for the same document. Posting policy and privacy policy are links to pages you host elsewhere; both must be https. Tags, languages and countries are short lists that tell relay directories what the relay is about: topic words, language codes such as `en` or `pt-BR`, and two-letter country codes.
 
+The relay also publishes a discovery record for relay directories (NIP-66, kind 30166), signed with its own key under its `wss://<name>.bind.ws/` address: the NIPs it supports, whether reads need a signature, whether writes are restricted, proof of work and payment, the tags and languages above, and the kind allow and block lists, with the information document as its content. It is re-signed only when one of those changes. Anyone can read it with `{"kinds":[30166],"authors":["<the relay's own key>"]}`; the key is `self` in the information document.
+
 **Your own domain** puts the relay under a hostname you control: add it, create the CNAME shown, **Check** until it reads live, **Remove** to take it down. At most three per relay, never part of the exported configuration. See [Your relay on the web](05-your-relay-on-the-web.md#your-own-domain).
 
 ### Your relay lists
