@@ -11,35 +11,28 @@ import { discovery } from "./nip66.ts";
 import { Audit } from "./audit.ts";
 import { ERR_DUPLICATE, ERR_TOO_BIG, Store, type Access } from "./store.ts";
 import { Settings, isReplaceable, isProtected } from "./settings.ts";
-import { manage } from "./manage.ts";
 import { Succession } from "./succession.ts";
-import { nip11 } from "./nip11.ts";
+import { isGated, route } from "./routes.ts";
 import { guestPass, readGate, writeGate } from "./gates.ts";
-import { dashboard } from "./dashboard.ts";
-import { Fuel, fuelConfig, acceptReceipt, fuelInvoice, type Fetcher, type LnurlParams } from "./fuel.ts";
+import { Fuel, fuelConfig, acceptReceipt, type Fetcher, type LnurlParams } from "./fuel.ts";
 import { Identity } from "./identity.ts";
 import { Bucket } from "./ratelimit.ts";
-import { bridge } from "./bridge.ts";
-import { blossom, blobBytes, isBlobPath } from "./blossom.ts";
-import { nip96 } from "./nip96.ts";
-import { dumpBytes, dumpDue, dumpDownload, writeDump } from "./dumps.ts";
-import { importBytes, importUpload } from "./imports.ts";
+import { blobBytes } from "./blossom.ts";
+import { dumpBytes, dumpDue, writeDump } from "./dumps.ts";
+import { importBytes } from "./imports.ts";
 import { DIGEST_DAYS, digestText } from "./notify.ts";
-import { claimFromProfile, nip05Document } from "./nip05.ts";
+import { claimFromProfile } from "./nip05.ts";
 import { checkInvite, claimInviteRequest, invitePage, termsPage } from "./invites.ts";
 import { verifyNIP98, whoAsks } from "./auth.ts";
-import { FAVICON_SVG } from "./ui.ts";
 import type { PullFilter, PullJob, PullResult } from "./pull.ts";
 import { leaseDays, leaseNames, validName } from "./names.ts";
 import { MAX_JOBS, MAX_STANDING, checkJob, finishRun, newJobID, pruneFinished, pullView, runRound, startRun, type Job, type JobSpec } from "./jobs.ts";
 import { Hostnames, forgetDomains } from "./domains.ts";
 import { hostOf } from "./edge.ts";
 import { groupFacts, handleGroupEvent, isGroupManagement, isNIP43Request } from "./groups.ts";
-import { SIGNER_JS } from "./gen/signer.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { notify, fuelLow, fuelText } from "./notify.ts";
-import { card } from "./card.ts";
-import { markView, notePresence, serveView, viewsTick } from "./views.ts";
+import { markView, notePresence, viewsTick } from "./views.ts";
 import type { Blob } from "./blossom.ts";
 import { KIND_VANISH, KIND_AUTH, KIND_REPORT, KIND_NOSTR_CONNECT, KIND_GROUP_MEMBERS, KIND_GROUP_PINS, KIND_RELAY_DISCOVERY } from "./kinds.ts";
 
@@ -79,7 +72,6 @@ export interface Env {
 }
 
 export const MAX_MESSAGE = 1024 * 1024;
-const FAVICON = FAVICON_SVG;
 const MAX_SYNC = 100_000;
 // How long a leased relay keeps everything, so a claim inherits a bounded
 // window until the owner resets the rules.
@@ -745,70 +737,14 @@ export class Relay extends DurableObject<Env> {
     const url = new URL(req.url);
     // Relays claimed before identities existed get theirs on first contact.
     if (this.settings.policy.owner && !this.identity.pubkey) await this.publishMembership();
-    // A blocked address gets no socket and no door that writes or reads
-    // events or files. The page, NIP-11 and management stay reachable, so
-    // an owner who blocked their own address can undo it.
+    // A blocked address gets no socket and no gated door (routes.ts).
     const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
-    const door = upgrade || (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count" || url.pathname === "/api/invites/claim" || url.pathname === "/fuel/invoice")) || url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname);
-    if (door && this.settings.isIPBlocked(clientIP(req))) {
+    if ((upgrade || isGated(url, req)) && this.settings.isIPBlocked(clientIP(req))) {
       const msg = "blocked: this address is blocked from this relay";
       return new Response(JSON.stringify({ error: msg }), { status: 403, headers: { "content-type": "application/json", "x-reason": msg, "access-control-allow-origin": "*" } });
     }
     if (upgrade) return this.acceptWebSocket(req);
-    if (req.headers.get("accept")?.includes("application/nostr+json")) {
-      return Response.json(nip11(this, url.host), {
-        headers: { "content-type": "application/nostr+json", "access-control-allow-origin": "*" },
-      });
-    }
-    if (req.method === "POST" && req.headers.get("content-type")?.includes("application/nostr+json+rpc")) return manage(this, req);
-    if (req.method === "POST" && (url.pathname === "/events" || url.pathname === "/query" || url.pathname === "/count")) return bridge(this, req);
-    if (url.pathname === "/.well-known/nostr.json") {
-      const who = whoAsks(req, "", null);
-      if (typeof who === "string") return Response.json({ error: who }, { status: 401, headers: { "access-control-allow-origin": "*" } });
-      return Response.json(nip05Document(this.settings, url.searchParams.get("name"), this.relayURL(url.host), who.pubkeys), { headers: { "access-control-allow-origin": "*" } });
-    }
-    if (url.pathname === "/people" && req.method === "GET") {
-      const p = this.settings.policy;
-      const who = whoAsks(req, "", null);
-      if (typeof who === "string") return Response.json({ error: who }, { status: 401, headers: { "access-control-allow-origin": "*" } });
-      const listed = p.owner !== "" && this.settings.mayList(who.pubkeys) === "";
-      const people = listed ? this.settings.members().map((m) => ({ pubkey: m.pubkey, role: m.role, name: m.name })) : [];
-      return Response.json({ public: p.directoryPublic, self: this.identity.pubkey, host: url.host, people }, { headers: { "access-control-allow-origin": "*" } });
-    }
-    if (url.pathname === "/terms" && req.method === "GET") {
-      const terms = this.settings.policy.joinTerms;
-      if (!terms) return new Response("this relay has no terms", { status: 404 });
-      return new Response(termsPage(this.settings.policy.name || this.slug, url.host, terms), { headers: { "content-type": "text/html; charset=utf-8" } });
-    }
-    if (url.pathname.startsWith("/invite/") && req.method === "GET") {
-      const code = url.pathname.slice(8);
-      const status = this.settings.policy.owner === "" ? "invite_invalid" : checkInvite(this.sql, code, now());
-      return new Response(invitePage(this.settings.policy.name || this.slug, url.host, code, status, this.settings.policy.joinTerms), { headers: { "content-type": "text/html; charset=utf-8" } });
-    }
-    if (url.pathname === "/api/join-policy" && req.method === "GET") {
-      return Response.json({ terms: this.settings.policy.joinTerms }, { headers: { "access-control-allow-origin": "*" } });
-    }
-    if (url.pathname === "/api/invites/claim" && req.method === "POST") return claimInviteRequest(this, req);
-    if (url.pathname.startsWith("/dumps/") && req.method === "GET") return dumpDownload(this, req);
-    if (url.pathname.startsWith("/view/") && req.method === "GET") return serveView(this, req, verifyNIP98);
-    if (url.pathname === "/import" && req.method === "PUT") return importUpload(this, req);
-    if (url.pathname === "/upload" || url.pathname === "/mirror" || url.pathname === "/report" || url.pathname.startsWith("/list/") || isBlobPath(url.pathname)) return blossom(this, req);
-    if (url.pathname === "/.well-known/nostr/nip96.json" || url.pathname === "/nip96" || url.pathname.startsWith("/nip96/")) return nip96(this, req);
-    if (url.pathname === "/fuel" && req.method === "GET") {
-      // Meters and prices for anyone who might top up; who paid is the
-      // owner's, in the stats method.
-      return Response.json(this.fuelStatus(), { headers: { "access-control-allow-origin": "*" } });
-    }
-    if (url.pathname === "/fuel/invoice" && req.method === "POST") return fuelInvoice(this, req);
-    if (url.pathname === "/card.json" || url.pathname === "/card.nostr" || url.pathname === "/card.svg" || url.pathname === "/qr.svg") return card(this, req);
-    if (req.method === "OPTIONS") {
-      return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } });
-    }
-    if (isPagePath(url.pathname) && req.method === "GET") return pages(this, req);
-    if (url.pathname === "/") return new Response(dashboard(),{ headers: { "content-type": "text/html; charset=utf-8" } });
-    if (url.pathname === "/signer.js") return new Response(SIGNER_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=604800, immutable" } });
-    if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
-    return new Response("not found", { status: 404 });
+    return route(this, req, url);
   }
 
   connections(): number {
