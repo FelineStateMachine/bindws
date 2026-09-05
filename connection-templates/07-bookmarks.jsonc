@@ -1,0 +1,20 @@
+// The viewer's own bookmarks and lists (kinds 10003 and 30003), in Listr,
+// whose user page takes an npub (erskingardner/listr src/params/user.ts and
+// src/routes/(app)/[userId=user]/+page.svelte; both kinds are in
+// src/lib/utils/lists.ts SUPPORTED_LIST_KINDS). noStrudel takes an nprofile
+// at /bookmarks/<pointer> (hzrd149/nostrudel src/views/bookmarks/routes.tsx).
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Bookmarks",
+  "about": "Your bookmarks and lists in a list manager; add this relay in its settings so they land here.",
+  "app": "Listr",
+  "where": "web",
+  "icon": "bookmark",
+  "visibility": "auth",
+  "links": [
+    { "label": "Open", "href": "https://listr.lol/{user:npub}" },
+    { "label": "Open in noStrudel", "href": "https://nostrudel.ninja/bookmarks/{user:nprofile}" },
+    { "label": "Copy relay URL", "copy": "{relay:url}" }
+  ]
+}

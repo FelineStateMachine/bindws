@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://bind.ws/relay-config.schema.json",
   "title": "bind.ws relay configuration",
-  "description": "A relay's rules, identity, people and lists as one document: what exportconfig writes and importconfig reads. A section left out is left alone. The relay's parser (src/config.ts) is the last word; this schema is for the editor.",
+  "description": "A relay's rules, identity, people, lists and app shortcuts as one document: what exportconfig writes and importconfig reads. A section left out is left alone. The relay's parser (src/config.ts) is the last word; this schema is for the editor.",
   "type": "object",
   "required": ["format"],
   "additionalProperties": false,
@@ -149,6 +149,23 @@
     "retention": {
       "type": "array",
       "items": { "type": "object", "required": ["kind", "days"], "additionalProperties": false, "properties": { "kind": { "oneOf": [{ "$ref": "#/definitions/kind" }, { "type": "null" }] }, "days": { "type": "integer", "minimum": 1, "maximum": 36500 } } }
+    },
+    "connections": {
+      "type": "array",
+      "maxItems": 24,
+      "description": "the Connect fold's app shortcuts, in order: each names a connection template from connection-templates/",
+      "items": {
+        "type": "object",
+        "required": ["template"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string", "pattern": "^[a-z0-9-]{1,40}$", "description": "a file in connection-templates/, by name" },
+          "visibility": { "enum": ["public", "auth", "members", "owner"], "description": "who sees it: anyone, anyone signed in, members, the owner; the template's own when left out" },
+          "title": { "type": "string", "maxLength": 40, "description": "the owner's title instead of the template's" },
+          "about": { "type": "string", "maxLength": 200, "description": "the owner's sentence instead of the template's" },
+          "inputs": { "type": "object", "additionalProperties": { "type": "string", "maxLength": 500 }, "description": "the template's inputs, by name" }
+        }
+      }
     }
   },
   "definitions": {

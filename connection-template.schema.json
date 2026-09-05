@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://bind.ws/connection-template.schema.json",
+  "title": "bind.ws connection template",
+  "description": "One app shortcut for a relay's Connect fold: the app, what it does with this relay, and the links that hand a viewer over to it. Links carry {relay:*}, {owner:*}, {user:*} and {input:*} placeholders the relay fills in. The relay's parser (src/connections.ts) is the last word; this schema is for the editor.",
+  "type": "object",
+  "required": ["format", "title", "about", "app", "links"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "enum": ["bind.ws/connection-template/1"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 40, "description": "what the shortcut is for, in the owner's words: Repos, Notes, Photo library" },
+    "about": { "type": "string", "minLength": 1, "maxLength": 200, "description": "one sentence on what opens and what it does with this relay" },
+    "app": { "type": "string", "minLength": 1, "maxLength": 40, "description": "the app the shortcut hands over to" },
+    "where": { "type": "string", "maxLength": 40, "description": "where the app runs: web, phone, iPhone, Android, desktop, terminal" },
+    "icon": { "enum": ["notes", "blog", "bookmark", "photo", "site", "git", "chat", "person", "files", "key", "search", "feed", "lock", "app"], "description": "one of the console's icons" },
+    "feature": { "enum": ["search", "sync", "count", "discovery", "names", "files", "pages", "signer", "sites", "marmot", "grasp", "push"], "description": "the shortcut is shown only while this feature is on" },
+    "visibility": { "enum": ["public", "auth", "members", "owner"], "description": "who sees the shortcut when the owner adds it without saying: anyone, anyone signed in, members, the owner" },
+    "links": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["label"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "href": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "a link to open: https://, or nostr: for the viewer's own app" },
+          "copy": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "text to put on the clipboard instead of a link" }
+        },
+        "oneOf": [{ "required": ["href"] }, { "required": ["copy"] }]
+      }
+    },
+    "qr": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "what the QR code carries; the first link's href when left out" },
+    "inputs": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["name", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,23}$", "description": "the {input:name} placeholder it fills" },
+          "label": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "placeholder": { "type": "string", "maxLength": 200 },
+          "default": { "type": "string", "maxLength": 500, "description": "the value when the owner leaves it blank" }
+        }
+      }
+    }
+  }
+}

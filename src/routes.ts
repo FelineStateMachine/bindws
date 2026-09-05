@@ -22,6 +22,7 @@ import { blossom, isBlobPath } from "./blossom.ts";
 import { nip96 } from "./nip96.ts";
 import { fuelInvoice } from "./fuel.ts";
 import { card } from "./card.ts";
+import { connectDoor } from "./connections.ts";
 import { isPagePath, pages } from "./pages.ts";
 import { dashboard } from "./dashboard.ts";
 import { SIGNER_JS } from "./gen/signer.ts";
@@ -116,6 +117,8 @@ export const ROUTES: Route[] = [
   { when: post(is("/fuel/invoice")), gated: true, answer: fuelInvoice },
   // The card (card.ts).
   { when: is("/card.json", "/card.nostr", "/card.svg", "/qr.svg"), answer: card },
+  // The Connect fold's app shortcuts, as the asker may see them (connections.ts).
+  { when: get(is("/connect.json")), answer: connectDoor },
   // CORS preflight for everything above.
   { when: (_, req) => req.method === "OPTIONS", answer: () => new Response(null, { headers: { ...CORS, "access-control-allow-headers": "authorization, content-type, accept", "access-control-allow-methods": "GET, POST, OPTIONS" } }) },
   // Notes and articles as pages, the feed (pages.ts).

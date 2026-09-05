@@ -1,0 +1,19 @@
+// The relay's NIP-29 group as a room: Flotilla opens the relay as a space
+// on the web and on a phone, and any group-aware app takes the naddr. The
+// QR carries the group address for a phone.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Group",
+  "about": "The relay as a space, with its group as a room.",
+  "app": "Flotilla",
+  "where": "web, phone",
+  "icon": "chat",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://app.flotilla.social/spaces/{relay:host|enc}" },
+    { "label": "Open group in app", "href": "nostr:{relay:naddr}" },
+    { "label": "Copy naddr", "copy": "{relay:naddr}" }
+  ],
+  "qr": "nostr:{relay:naddr}"
+}

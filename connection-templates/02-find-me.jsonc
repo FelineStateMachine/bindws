@@ -1,0 +1,20 @@
+// Feed apps have no relay pages. They meet this relay through the owner's
+// profile with the relay attached as the hint, and keep it once it is in
+// the app's relay settings. The nostr: link opens whatever app the viewer
+// has set for it; the web link is Primal.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Find me here",
+  "about": "The owner's profile with this relay attached, for feed apps.",
+  "app": "Primal",
+  "where": "web, phone",
+  "icon": "person",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://primal.net/p/{owner:nprofile}" },
+    { "label": "Open in app", "href": "nostr:{owner:nprofile}" },
+    { "label": "Copy relay URL", "copy": "{relay:url}" }
+  ],
+  "qr": "nostr:{owner:nprofile}"
+}

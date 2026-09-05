@@ -1,0 +1,21 @@
+// The owner's long-form articles (kind 30023), in YakiHonne, which reads
+// and writes them and opens a profile at /profile/<nprofile>, the pattern
+// the console already uses. Habla has a /p/<nprofile> route in its source
+// (verbiricha/habla.news src/pages/p/[nprofile].tsx) but habla.news
+// answered 404 on 2026-09-05, so the second link is the nostr: handoff.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Blog",
+  "about": "The owner's articles, with this relay attached so a reader finds the rest of them.",
+  "app": "YakiHonne",
+  "where": "web, phone",
+  "icon": "blog",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://yakihonne.com/profile/{owner:nprofile}" },
+    { "label": "Open in app", "href": "nostr:{owner:nprofile}" },
+    { "label": "Copy relay URL", "copy": "{relay:url}" }
+  ],
+  "qr": "nostr:{owner:nprofile}"
+}

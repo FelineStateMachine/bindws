@@ -23,6 +23,7 @@ import { DUMP_NAME_RE, deleteDump, dumpBytes, listDumps, writeDump } from "./dum
 import { can, type Action, type Role } from "./roles.ts";
 import { detailOf } from "./audit.ts";
 import { PRESETS, applyPreset, findPreset } from "./presets.ts";
+import { CONNECTION_TEMPLATES, parseConnections } from "./connections.ts";
 import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from "./domains.ts";
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
@@ -563,7 +564,27 @@ export const METHODS: Record<string, Method> = {
   listpresets: {
     action: "read", reads: true,
     run: ({ reply }) => {
-      return reply({ result: PRESETS.map((x) => ({ name: x.name, title: x.title, about: x.about, source: x.source, every: x.every })) });
+      return reply({ result: PRESETS.map((x) => ({ name: x.name, title: x.title, about: x.about, source: x.source, every: x.every, connections: x.connections })) });
+    },
+  },
+  // The Connect fold's app shortcuts (connections.ts): the library the
+  // owner picks from, with whether each template's feature is on, the
+  // owner's list, and the list replaced whole, in the order given.
+  listconnectiontemplates: {
+    action: "read", reads: true,
+    run: ({ p, reply }) => reply({ result: CONNECTION_TEMPLATES.map((t) => ({ ...t, available: !t.feature || featureOn(p, t.feature) })) }),
+  },
+  listconnections: { action: "read", reads: true, run: ({ s, reply }) => reply({ result: s.connections() }) },
+  setconnections: {
+    action: "rules",
+    run: ({ s, params, reply }) => {
+      // (list): every entry must fit; the console builds the list from the
+      // library, so a bad one is a mistake to report, not to drop.
+      const parsed = parseConnections(params[0]);
+      if (typeof parsed === "string") return reply({ error: parsed }, 400);
+      if (parsed.warnings.length) return reply({ error: "invalid: " + parsed.warnings.join("; ") }, 400);
+      s.setConnections(parsed.list);
+      return reply({ result: s.connections() });
     },
   },
   applypreset: {

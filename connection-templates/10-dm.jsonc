@@ -1,0 +1,19 @@
+// Private messages (NIP-17): the owner in a DM app by the nostr: handoff,
+// since DM apps open a profile and not a relay. 0xchat is the reference,
+// on phone and desktop with NIP-17 (0xchat-app/0xchat-core README). The
+// relay URL goes in the app's DM inbox list (kind 10050) so messages land here.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Messages",
+  "about": "Message the owner privately; put this relay in your DM inbox list (kind 10050) so replies land here.",
+  "app": "0xchat",
+  "where": "phone, desktop",
+  "icon": "chat",
+  "visibility": "public",
+  "links": [
+    { "label": "Open in app", "href": "nostr:{owner:nprofile}" },
+    { "label": "Copy relay URL", "copy": "{relay:url}" }
+  ],
+  "qr": "nostr:{owner:nprofile}"
+}

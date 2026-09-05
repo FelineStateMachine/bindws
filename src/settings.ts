@@ -117,6 +117,27 @@ export interface Features {
   marmot: boolean; // Marmot's opaque MLS transport events
 }
 export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false, grasp02: false, grasp03: false, grasp05: false, grasp06: false, push: false };
+
+// A connection is one app shortcut on the Connect fold (connections.ts): a
+// template from connection-templates/, who may see it, the owner's own
+// title and about when they changed the template's, and the template's
+// inputs as the owner filled them. The list is kept in the order shown.
+export const VISIBILITIES = ["public", "auth", "members", "owner"] as const;
+export type Visibility = (typeof VISIBILITIES)[number];
+export interface Connection {
+  template: string;
+  visibility: Visibility;
+  title?: string;
+  about?: string;
+  inputs?: Record<string, string>;
+}
+// What a relay shows until its owner picks: the feed, the profile handoff
+// for feed apps, and the group. A saved list, even an empty one, replaces it.
+export const DEFAULT_CONNECTIONS: Connection[] = [
+  { template: "notes", visibility: "public" },
+  { template: "find-me", visibility: "public" },
+  { template: "group", visibility: "public" },
+];
 export const featureOn = (p: Policy, f: Feature): boolean => {
   if (f === "sites") return p.features.sites.enabled;
   if (["grasp02", "grasp03", "grasp05", "grasp06"].includes(f) && p.features[f] !== true) return false;
@@ -453,6 +474,9 @@ export class Settings {
   private blockedKinds = new Set<number>();
   // Days to keep events of a kind; RETENTION_ANY is the rule for kinds without one.
   private retention = new Map<number, number>();
+  // The Connect fold's shortcuts; null until the owner saves a list, when
+  // the defaults show.
+  private connectionList: Connection[] | null = null;
 
   constructor(private sql: SqlStorage) {}
 
@@ -483,6 +507,15 @@ export class Settings {
       (r.rule === "allow" ? this.allowedKinds : this.blockedKinds).add(r.kind);
     }
     for (const r of this.sql.exec<{ kind: number; days: number }>(`SELECT kind, days FROM retention`)) this.retention.set(r.kind, r.days);
+    const saved = this.sql.exec<{ value: string }>(`SELECT value FROM settings WHERE key='connections'`).toArray()[0];
+    if (saved) {
+      try {
+        const list = JSON.parse(saved.value) as unknown;
+        this.connectionList = Array.isArray(list) ? (list as Connection[]) : [];
+      } catch {
+        this.connectionList = [];
+      }
+    }
     if (this.policy.writes === "wot") this.rebuildWot();
   }
 
@@ -599,6 +632,20 @@ export class Settings {
   }
   setPins(tags: string[][]) {
     this.sql.exec(`INSERT INTO settings(key,value) VALUES('pins',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, JSON.stringify(tags));
+  }
+
+  // ---- connections: the Connect fold's app shortcuts, in order ----
+
+  // connections is the owner's list, or the defaults while there is none.
+  // Entries are checked against the library when they are written
+  // (connections.ts, parseConnections) and again when the fold resolves
+  // them, so a template that left the library is skipped, not shown broken.
+  connections(): Connection[] {
+    return (this.connectionList ?? DEFAULT_CONNECTIONS).map((c) => ({ ...c }));
+  }
+  setConnections(list: Connection[]) {
+    this.connectionList = list.map((c) => ({ ...c }));
+    this.sql.exec(`INSERT INTO settings(key,value) VALUES('connections',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, JSON.stringify(this.connectionList));
   }
 
   isOwner(pubkey: string) {

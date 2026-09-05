@@ -1,0 +1,21 @@
+// The relay's Blossom store for members: bouquet browses, uploads and
+// syncs across Blossom and NIP-96 servers (flox1an/bouquet README) once
+// this relay is in its server list, which is why the server URL and the
+// NIP-96 discovery document are copy links. The discovery path is the
+// relay's own (src/nip96.ts).
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Files",
+  "about": "This relay's file store, for members, in a media manager that takes it as a server.",
+  "app": "bouquet",
+  "where": "web",
+  "icon": "files",
+  "feature": "files",
+  "visibility": "members",
+  "links": [
+    { "label": "Open", "href": "https://bouquet.slidestr.net/" },
+    { "label": "Copy Blossom server URL", "copy": "{relay:web}" },
+    { "label": "Copy NIP-96 URL", "copy": "{relay:web}/.well-known/nostr/nip96.json" }
+  ]
+}

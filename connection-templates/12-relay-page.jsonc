@@ -1,0 +1,17 @@
+// The relay's own page in Coracle: its feed and its people, by host, the
+// pattern the console already uses. The host is encoded as the console
+// does, which a plain hostname passes through unchanged.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Relay page",
+  "about": "This relay's page in Coracle: its feed and its people.",
+  "app": "Coracle",
+  "where": "web",
+  "icon": "feed",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://coracle.social/relays/{relay:host|enc}" },
+    { "label": "Copy relay URL", "copy": "{relay:url}" }
+  ]
+}
