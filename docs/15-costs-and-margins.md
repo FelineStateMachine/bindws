@@ -20,10 +20,10 @@ prices, since another deployment can set different rates and allowances.
 
 | Fuel line | Usage and allowance fields | What the meter includes |
 |---|---|---|
-| Events stored | `eventBytes`, `freeEventBytes` | Allocated SQLite storage, including relay metadata as well as events |
-| Files stored | `mediaBytes`, `freeMediaBytes` | Uploaded files, dumps, imports, mirrored site files and reserved Git storage |
+| Events stored | `eventBytes`, `freeEventBytes` | Allocated SQLite storage, including relay metadata, events and SQLite-backed Git repositories |
+| Files stored | `mediaBytes`, `freeMediaBytes` | Uploaded files, dumps, imports and mirrored site files |
 | Time awake | `activeMs`, `freeActiveMs` | An estimate from relay entrypoints, including client requests, jobs and alarms |
-| Rows written | `rowsWritten`, `freeRowsWritten` | Writes counted by the relay's event store |
+| Rows written | `rowsWritten`, `freeRowsWritten` | SQLite rows written by event storage and the Git object backend |
 
 `rates` gives storage prices in sats per GB-month, awake time in sats per
 hour and writes in sats per million rows. Balance and credited or charged
@@ -34,13 +34,17 @@ use the usage accumulated in `month` against their monthly allowances.
 `bytesIn`, `bytesOut` and `rowsRead` are diagnostics with no fuel price.
 A request can still increase awake time or stored data even when its traffic
 is unpriced. Sites, Marmot and Git share the existing allowances; enabling a
-feature creates neither a separate allowance nor a request surcharge.
+feature creates neither a separate allowance nor a request surcharge. Git
+repositories use the relay's SQLite allowance. The configured
+public rates remain separate: SQLite events are 400 sats per GB-month and R2
+files are 30 sats per GB-month. The storage path alone does not establish
+which option costs less for a repository.
 
 The meters describe application accounting, not a complete provider bill.
 Awake time is estimated from entrypoint gaps capped at ten seconds, rather
-than timing each job to completion. Direct SQL bookkeeping outside the event
-store is not included in the row meter. Usage is flushed in batches, so it is
-not a durable record of every request. Applications use the reported balance
+than timing each job to completion. Git object reads and writes report their
+SQLite row work to the same meter. Usage is flushed in batches, so it is not a
+durable record of every request. Applications use the reported balance
 and `outOfFuel` for admission status rather than reconstructing charges from
 traffic, event counts or wall-clock timings.
 
@@ -51,62 +55,63 @@ traffic, event counts or wall-clock timings.
 | Events and Marmot messages | Event storage and database writes; encrypted envelopes still occupy space | Restrict admitted writers and set retention for kinds that do not need permanent history |
 | Blossom files, dumps and imports | File storage alongside database metadata | Bound uploads and remove stored copies that are no longer needed |
 | Sites | Manifests occupy event storage; mirrored files occupy file storage; remote fetches and mirrors wake the relay | Reuse unchanged files and choose whether the relay mirrors remote content |
-| Git | Packs, transaction receipts and retained metadata occupy file storage; clone, fetch and push wake the relay | Budget for repository history and ref updates, not just the checked-out files |
+| Git | Repositories occupy SQLite storage as compressed chunks, refs, receipts and indexes; clone, fetch and push wake the relay | Budget for repository history and ref updates, not just the checked-out files |
 | Pulls, backfills and scheduled dumps | Jobs wake the relay and can add events, rows and files without a connected client | Use once-only jobs for one-time transfers and remove recurring jobs that no longer serve the application |
 
 [Relay templates](../relay-templates/README.md) provide starting policies.
 [Data and names](04-data-and-names.md) describes retention, dumps and jobs.
 Feature limits still apply below the fuel allowance: a positive balance does
-not increase a maximum upload size, Git transaction limit or repository cap.
+not increase a maximum upload size or repository cap.
 The limits and admission rules are in
 [GRASP-01 Git hosting](22-grasp-01-git-hosting.md) and
 [HTTP reference](14-http-reference.md).
 
 ## Account for retained Git storage
 
-Git storage has no fixed reservation per repository. It grows with packs,
-transaction receipts and metadata, including ref-only updates. Removing a
-branch, hiding an announcement or expiring a PR does not remove its immutable
-history. Retained objects continue to count toward file usage and the relay's
-Git storage cap. There is no automatic Git garbage collector.
+Git storage has no fixed allocation per repository. It grows with compressed
+objects, chunks, refs, transaction receipts and metadata, including ref-only
+updates. Removing a branch, hiding an announcement or expiring a PR does not
+remove its immutable history. Repositories retain these bytes in SQLite
+and they count toward `eventBytes`. There is no automatic Git garbage
+collector.
 
-A reservation records bytes before an object write. A confirmed result
-reconciles the size; an uncertain result keeps the reservation because the
-write may have succeeded. The reservation total can therefore exceed the
-physical objects currently listed. It is not a second charge on top of those
-objects. Repository format upgrades also retain history; they are not a way
-to reclaim storage.
+Git publication stores compressed object chunks, refs and retry receipts in
+SQLite. Native SQL transactions publish them atomically, so a retry receipt
+and its ref changes commit with the accepted objects. The physical database
+meter includes indexes and metadata as well as compressed chunks. A logical
+Git byte total is diagnostic and is not added to the fuel meter a second time.
 
 The relay owner can inspect one hosted repository with the `gitstorage`
 management method. It takes the repository owner's hex public key and the
 repository identifier. The repository owner can differ from the relay owner.
+The report identifies the backend and gives compressed payload bytes, raw
+object bytes and metadata bytes for a SQLite repository. Those diagnostics
+explain the SQLite total; they are not additional fuel lines.
 [Scripts and agents](13-scripts-and-agents.md) describes signing the call;
 [HTTP reference](14-http-reference.md) defines its responses.
 
 | Report field | Interpretation |
 |---|---|
-| `inventory.listed` | Physical objects found in the repository's storage namespace |
-| `inventory.live` | Objects referenced by the captured storage root, including retained receipts and packs; not a reachability check of every Git object inside a pack |
-| `inventory.unreferenced` | Recognized objects outside that root's dependency set; older readers or unpublished writes can still need them |
-| `inventory.unknown` | Listed keys the inventory cannot classify |
-| `reservations` | The repository's quota reservations, included in file usage |
+| `backend` | `sqlite`, the repository's object and ref backend |
+| `objects` | `count`, `rawBytes`, `compressedBytes` and `metadataBytes` for retained objects |
+| `refs` | Number of stored refs |
+| `receipts` | Number of retained retry receipts |
+| `physicalDatabaseBytes` | The relay's complete SQLite size, including Git, events, indexes and metadata |
 
-`reservationMinusListedBytes` compares the reservation and physical byte
-totals. A difference is a diagnostic, not proof that particular reservations
-can be removed. Neither `live` nor `unreferenced` grants deletion authority.
-The report changes no stored objects, reservations or fuel rates.
+The object byte fields explain the repository's logical and compressed
+payloads. `physicalDatabaseBytes` is shared by all relay data and is the value
+used by `eventBytes`; it must not be added to `objects.compressedBytes`. The
+report changes no stored objects, refs, receipts or fuel rates.
 
-Inventory is a manual diagnostic, not a health poll. It reads storage and
-holds the relay's admission owner while it runs, so competing Git requests
-and mutations receive a retry response. Server limits bound reads and listing
-work; an incomplete scan returns an error instead of partial totals. The
-60-second cooldown limits repeated scans in a live instance and resets when
-that instance restarts. It is not a recommended polling interval.
+Inventory is a manual diagnostic, not a health poll. It reads bounded SQLite
+metadata and holds the relay's admission owner while it runs, so competing Git
+requests and mutations receive a retry response. The 60-second cooldown limits
+repeated scans in a live instance and resets when that instance restarts. It is
+not a recommended polling interval.
 
-`operations` and `inventory.observed` describe the scan's requests and read
-bytes. They help explain the work a scan performs, but are not tenant billing
-meters or a complete hosting cost. Existing activity and storage accounting
-still applies; there is no separate inventory fee.
+`operations` reports zero R2 gets and lists for the SQLite backend. The SQL
+metadata queries still contribute rows to the ordinary SQLite row meter. The
+diagnostic fields are not a second storage charge or a separate inventory fee.
 
 ## Handle limits without multiplying work
 

@@ -91,7 +91,7 @@ PR must carry the exact signer PR clone URL and a valid repository coordinate
 with the same identifier. The signed PR or update and its `c` tip authorize the
 ref. Unknown events may upload first, but remain hidden until the event is
 accepted; their deadline is fixed at 20 minutes. Expiry removes refs, while
-immutable WAL packs and orphaned objects remain retained and charged because
+immutable objects and orphaned chunks remain retained and charged because
 the service has no garbage collector.
 
 Promotion checks for relevant pending events before loading Git packs. An
@@ -135,60 +135,53 @@ CORS headers. `OPTIONS` returns 204. GET and POST are the allowed methods;
 allowed request headers. The NIP-5A site origins remain isolated from relay
 events and repository data.
 
-The Worker depends on the `ntig` package, whose source and package artifact
-are recorded in [Vendored dependencies](../vendor/README.md). Its object-store seam validates pack
+The relay Durable Object's SQLite database stores compressed Git object chunks,
+refs and receipts. The backend removes the former R2 per-push root and
+transaction ceiling while preserving accepted-state authority, retry receipts
+and purgatory behavior. It keeps bounded object, byte, ref and receipt limits,
+and does not promise lower cost for every repository. SQLite storage is charged
+through the existing events allowance. The Worker depends on the `ntig` package, whose source and package artifact
+are recorded in [Vendored dependencies](../vendor/README.md). Its repository contract validates pack
 structure, deltas, object dependencies, trees and commits before publication.
 The hard limits are:
 
 | Scope | Limit | What it controls |
 |---|---:|---|
-| Relay | 16 repositories, 320 MiB Git storage | accepted repositories and billed retained Git objects across the relay |
-| Repository | 4 MiB per pack, 16 MiB packed history | one upload and the aggregate packed history read into memory |
-| Repository | 1,024 refs, 4,096 objects | ref maps and verified object graphs |
-| Format 1 | 128 transactions | legacy WAL replay |
-| Format 2 | 128 unique packs, 2 MiB manifest | explicitly migrated repository metadata |
+| Relay | 16 repositories, 320 MiB Git storage | accepted repositories and retained compressed Git objects plus metadata across the relay |
+| Repository | 4 MiB per pack or object | one upload and one stored object |
+| Repository | 16 MiB raw, 16 MiB compressed and 16 MiB metadata | retained object payloads and their SQL records |
+| Repository | 1,024 refs, 4,096 objects and 65,536 graph edges | ref maps and verified object graphs |
+| Repository | receipt metadata within the metadata limit | retry records without a separate transaction-count ceiling |
 
-ntig 0.3.0 reads both formats, but installing it leaves existing roots alone
-and new repositories still use format 1. Bindws exposes no checkpoint action
-or scheduled migration. The backend's explicit `checkpoint()` upgrade is
-one-way: every reader and writer must support format 2 before an isolated
-repository is migrated. Versions 0.1.x cannot read the upgraded root.
-Migration retains old data and receipts; it does not reclaim storage. Bulk
-construction publishes the final receipt-index nodes without storing each
-intermediate index from the migration. Existing roots are unchanged.
+The SQL object store reads and writes chunks, refs and receipts in native SQL
+transactions. Full clone, fetch and push load bounded Git data, while
+selective object reads use the object index. Compaction, orphan collection,
+large-pack streaming and production capacity measurements remain follow-up
+work. Expired unknown
+PR refs stay hidden when cleanup cannot commit, while immutable object history
+keeps its bytes until the relay is torn down.
 
-Format-2 ref advertisements read the root and manifest without downloading
-packs. They retain the same accepted HEAD and hidden PR rules. Full clone,
-fetch and push still load the stored packs; selective object reads,
-compaction, orphan collection, large-pack streaming and production capacity
-measurements remain follow-up work. Once a format-1 repository reaches its
-transaction limit, all further Git writes are refused, including
-the timed cleanup transaction. An expired unknown PR ref therefore stays
-hidden when cleanup cannot commit, while immutable WAL history keeps its old
-object bytes billed until the relay is torn down. The same retention behavior
-applies when a ref is cleaned after its 20-minute window.
-
-Each Git HTTP request reuses immutable object bytes within its existing
-authority fence. The read session retains at most 2 MiB of payload and 512
-entries; larger objects are read normally. Roots are never cached, every
-write still passes through storage reservations, and each new request
-rechecks authority. The session closes on return or error. This bounds the
-cache, not total request memory, and does not skip Git validation or pending
-promotion.
+Git HTTP walks indexed object metadata to check reachability and filters before
+loading selected object bodies. Every write rechecks authority inside the SQL
+transaction, which publishes objects, refs, receipts and pending-event
+visibility together. The relay admits one repository operation at a time.
 
 The owner can request `gitstorage <repository-owner-hex> <identifier>` through
-the management API to compare physical Git objects with quota reservations.
-The report breaks storage down by object class and distinguishes current-root
-references, unreferenced objects and unknown keys. Unreferenced bytes are not
-safe-to-delete bytes: readers and unpublished writes can still need them.
-The scan does not change roots, reservations or stored objects.
+the management API to inspect the repository's object, ref and receipt totals.
+The report includes compressed payload, raw object and metadata bytes plus the
+relay's complete SQLite size. The diagnostic does not change stored objects,
+refs or receipts.
 
-Scans run manually with fixed read limits and a 60-second cooldown per live
-relay instance. A restart resets that cooldown. A limit, corrupt dependency or
-changed root returns an error rather than a partial report. Git requests,
+Reports read indexed SQL totals with a 60-second cooldown per live relay
+instance. A restart resets that cooldown. Git requests,
 event writes and configuration changes receive a retry response while a scan
 owns the relay. See [HTTP reference](14-http-reference.md) for the method and
 [Costs and margins](15-costs-and-margins.md) for its host costs and limits.
+
+Portable relay backups include compressed Git objects, refs and retry receipts
+within the archive's 8 MiB and 12,000-entry limits. Restore verifies repository
+identity, object hashes, dependency graphs and the receipt chain before writing
+the fresh target. See [Data and names](04-data-and-names.md).
 
 ## Proactive synchronization and archive
 
@@ -256,8 +249,8 @@ origins.
 
 One Git operation runs at a time for a relay. The operation fence also blocks
 relay-side event and control mutations while a Git transaction reads or
-writes its object graph. This bounds Worker memory and keeps the WAL root and
-the relay's authority view from changing underneath one operation.
+writes its object graph. This bounds Worker memory and keeps the SQL object
+snapshot and the relay's authority view from changing underneath one operation.
 
 Git requests consume the relay's normal address rate limits. A busy fence or
 rate limit answers `429` with a retry reason. Fuel exhaustion, an unclaimed

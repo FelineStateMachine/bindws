@@ -35,7 +35,12 @@ src/
   sites.ts      NIP-5A manifest validation, label parsing and site serving
   site-mirror.ts proxy and alarm-driven copies of missing site blobs
   site-auth.ts  NIP-07 challenge and relay-signed site cookie
-  grasp.ts      GRASP-01 Git Smart HTTP and the object-store boundary
+  grasp.ts      GRASP-01 Git Smart HTTP and atomic event visibility
+  git-sqlite.ts compressed Git objects, refs and retry receipts in SQLite
+  git-objects.ts bounded indexed object graphs for Git reconciliation
+  git-catalog.ts repository identities, quota totals and SQL work accounting
+  git-storage.ts owner-only Git storage diagnostics
+  git-backup.ts verified portable SQLite Git snapshots
   grasp-state.ts NIP-34 authority events, purgatory and cleanup state
   grasp-policy.ts GRASP-01 NIP-34 repository and ref policy
   card.ts       the status card, signed and as SVG

@@ -36,28 +36,30 @@ Dumps, the JSONL files the Data tab can write on a schedule, live next to upload
 
 **Rows written** is database work. A note costs a few rows. Reactions and other small events cost about the same.
 
-The newer doors use these same meters. NIP-5A files mirrored into the relay and
-GRASP Git objects are part of **Files stored**; a site cache miss, site mirror,
+The newer doors use these same meters. NIP-5A files mirrored into the relay are
+part of **Files stored**. Git repositories store compressed chunks, refs and
+receipts in the relay's SQLite database, so they are part of **Events stored**.
+A site cache miss, site mirror,
 Git clone or Git push also wakes the relay and can write events or accounting
 rows. Marmot KeyPackages and encrypted group envelopes are ordinary stored
 events, so they use **Events stored** and **Rows written**. HTTP request and
 response bytes are shown as traffic for your information, but traffic has no
 fuel price. There is no separate tenant charge for a site, Marmot or GRASP
-request. The relay's existing write, read, storage and rate rules still decide
-whether the request is admitted.
+request. There is no separate tenant charge for Git requests.
 
-GRASP allows 4 MiB per pack, 16 MiB packed history and 128 transactions per
-repository, with at most 16 repositories and 320 MiB retained Git data per
-relay. These limits share the existing file allowance rather than adding a
+GRASP keeps bounded object, decoded-pack, retained-history, ref and repository
+limits. It has no transaction-count ceiling, but it still bounds
+its object, byte and receipt work. These limits share the existing storage allowances rather than adding a
 new one. Signed events wait for their required Git objects before publication.
 Deleting a ref or expiring metadata does not reclaim immutable Git history;
-those bytes remain in file storage until the relay is deleted. See
+those bytes remain in SQLite until the relay is deleted. See
 [GRASP-01 Git hosting](22-grasp-01-git-hosting.md) for the full limits.
 
-Git file usage includes transaction receipts and retained bookkeeping as
-well as packed files. It is not a fixed reservation per repository: the
-total grows with its history, including ref-only updates. The Health tab
-shows the combined file total, not a breakdown of these Git components.
+Git storage includes transaction receipts and retained bookkeeping as well as
+objects. It is not a fixed reservation per repository: the total grows with
+its history, including ref-only updates. The Health tab shows the combined
+storage total. The `gitstorage` management method gives owners a bounded
+backend-specific breakdown without authorizing deletion.
 
 ## Prices past the allowance
 

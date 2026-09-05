@@ -160,7 +160,7 @@ reach relay doors.
 and state parsing, recursive maintainers, exact ref comparison and the
 temporary `refs/nostr/<event-id>` namespace. The Git Smart HTTP door uses the
 accepted state as its authorization boundary and passes Git objects through
-the object-store seam. It stays separate from the NIP-5A site door, so a site
+the repository contract. It stays separate from the NIP-5A site door, so a site
 hostname cannot reach relay events or repository data.
 
 `repository-access.ts` gives one live Durable Object operation the repository
@@ -171,21 +171,29 @@ operation receives a retry response. Async context carries the token, so the
 fence replaces separate Git and control flags without becoming a durable lock.
 Management reads and verifies the request before taking ownership, so an
 incomplete unauthenticated body cannot hold the relay's admission token.
-It does not coordinate a crashed instance, another R2 client or another object
-using the prefix, and it never authorizes garbage collection.
+SQLite transactions provide the durable publication boundary. The admission
+token only coordinates in-flight work.
 
 `git-storage.ts` implements the owner-only `gitstorage` management method. It
-walks one accepted repository's physical R2 objects within explicit budgets,
-compares them with the live dependency inventory and reports physical, live,
-unreferenced and unknown objects by class alongside SQL reservations and their
-difference from listed bytes. An incomplete, over-budget or changed-root walk
-returns an error and no partial report. The manual scan has a 60-second
-per-instance cooldown and does not delete or reclaim storage.
+reads one accepted repository's SQLite metadata within explicit budgets and
+reports its object count, raw bytes, compressed bytes, metadata bytes, ref
+count, receipt count and the relay's complete physical database size. The
+physical database includes relay metadata and indexes, so the logical Git
+figures are diagnostics and are not billed again. The manual scan has a
+60-second per-instance cooldown and does not delete or reclaim storage.
+
+Git repositories use compressed chunk rows in the relay's SQLite database.
+The database size is charged once through `eventBytes`, which includes its
+indexes and relay metadata. The SQLite backend removes the former R2 per-push
+root and transaction ceiling, but it does not promise lower cost for every
+repository. SQLite storage, compression, rows, indexes, awake time and request
+work all affect the result. Portable backups export Git through the same
+bounded section because a Durable Object database is not a portable archive.
 
 [Tangled knots](https://docs.tangled.org/knot-self-hosting-guide) provide
 useful prior art: AT Protocol identity sits above a filesystem Git host with
-repository maintenance. Bindws instead publishes immutable objects through
-an R2 root. The storage layout and recovery contract determine which old
+repository maintenance. Bindws publishes immutable objects through compressed
+SQLite chunks. The storage layout and recovery contract determine which old
 objects can be reclaimed; decentralized identity does not require retaining
 every superseded manifest. A collection protocol still needs to protect old
 readers, unpublished writes and retained transaction receipts.

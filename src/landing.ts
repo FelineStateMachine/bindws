@@ -62,7 +62,7 @@ const MAP = `<svg viewBox="0 0 640 470" role="img" aria-label="how a request rea
 <text x="126" y="310">alarm     sweep, retention, fuel</text>
 <text x="126" y="338" class="k">hibernates when idle</text>
 <path class="e" d="M270 356v26" marker-end="url(#ar)"/>
-<rect class="sh" x="224" y="390" width="100" height="34" rx="10"/><rect class="n" x="220" y="386" width="100" height="34" rx="10"/><text class="k" x="270.0" y="407.0" text-anchor="middle">r2</text><text class="d" x="330" y="407">files, dumps, Git objects</text>
+<rect class="sh" x="224" y="390" width="100" height="34" rx="10"/><rect class="n" x="220" y="386" width="100" height="34" rx="10"/><text class="k" x="270.0" y="407.0" text-anchor="middle">r2</text><text class="d" x="330" y="407">files, dumps</text>
 <text class="k" x="600" y="266" text-anchor="end">zap</text><text class="d" x="600" y="250" text-anchor="end">kind 9735</text><path class="e" d="M556 262H432" marker-end="url(#ar)"/>
 <text class="k" x="600" y="330" text-anchor="end">leave</text><text class="d" x="600" y="314" text-anchor="end">nip-77</text><path class="e" d="M432 326H556" marker-end="url(#ar)"/>
 </svg>`;
@@ -70,7 +70,7 @@ const MAP = `<svg viewBox="0 0 640 470" role="img" aria-label="how a request rea
 const NOTES = `<div class="notes">
 <h3 id="o">durable object</h3><p>Each name has one object. The object holds the SQLite database and the relay's open sockets. The <b>owner</b> is the pubkey that signed the first <b>claim</b>. After the claim, all management is done via NIP-86 calls signed by that key. The relay page is a client of this API. The object can hibernate between frames; retained storage and scheduled work still count.</p>
 <h3 id="l">lease</h3><p>A lease is a relay at a name picked for you, open to everyone, for a fixed number of days. <b>POST /lease</b> returns one; no key needed. A claim before it expires keeps it, events and files included. After that, the object is wiped and the name is free again.</p>
-<h3 id="f">fuel</h3><p>Fuel prices four values: events stored, files stored, estimated hours awake and metered rows written. Mirrored site files and retained Git data share the file allowance. Traffic is visible but uncharged. Below the allowances, you owe nothing. Above them, a zap adds balance. The Health tab and public <b>/fuel</b> show usage and prices.</p>
+<h3 id="f">fuel</h3><p>Fuel prices four values: events stored, files stored, estimated hours awake and metered rows written. Mirrored site files share the file allowance; Git repositories use SQLite storage and the events allowance. Traffic is visible but uncharged. Below the allowances, you owe nothing. Above them, a zap adds balance. The Health tab and public <b>/fuel</b> show usage and prices.</p>
 <h3 id="x">leave</h3><p>NIP-77 sync copies readable events to a different relay. Copy site files through Blossom and clone Git repositories separately; event sync does not copy their bytes.</p>
 </div>`;
 
@@ -156,7 +156,7 @@ export function landing(req: Request, env: Env): Response {
     <h2>Limits</h2>${limits}
     <h2>Metering</h2>${metering}
     <p class="desc">Below the allowances, you owe nothing. With no balance past an allowance, event writes and uploads stop; GRASP requests and remote site fetches also stop. Fuel exhaustion does not delete stored data.</p>
-    <p class="desc">The meters are relay totals, not a bill per feature. Git history remains in file storage after refs expire. Provider requests and object operations are host overhead, not separate tenant charges. <a href="${REPO}/blob/main/docs/02-understanding-fuel.md">Understanding fuel</a> explains the shared allowances and metering limits.</p>
+    <p class="desc">The meters are relay totals, not a bill per feature. Git history remains in retained SQLite storage after refs expire. Provider requests and object operations are host overhead, not separate tenant charges. <a href="${REPO}/blob/main/docs/02-understanding-fuel.md">Understanding fuel</a> explains the shared allowances and metering limits.</p>
     <h2>Protocol</h2>${protocol}
   </div>
   <footer class="foot"><a href="${REPO}">-&gt; github.com/FelineStateMachine/bindws</a><span class="muted">v${VERSION}</span></footer>

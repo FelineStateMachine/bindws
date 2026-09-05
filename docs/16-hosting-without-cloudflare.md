@@ -14,6 +14,7 @@ celld is Deno's self-hosted, distributed implementation of Durable Objects and W
 | | On Cloudflare | On celld |
 |---|---|---|
 | The relay objects | Durable Objects | cells, same code, same SQLite |
+| Git objects, refs and receipts | the relay's SQLite database | the same SQLite tables inside the cell |
 | Media, dumps, imports | R2 | the R2 binding on the fleet bucket |
 | TLS and names | Universal SSL, wildcard route | your proxy, one of two ways below |
 | Custom domains | Cloudflare for SaaS from the console | you map them with `celld kv put` |
