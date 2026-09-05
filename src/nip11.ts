@@ -16,7 +16,7 @@ import { nip11Views } from "./views.ts";
 // (publishDiscovery); 77 is negentropy sync (handleSync).
 export const SUPPORTED_NIPS = [1, 5, 9, 11, 13, 17, 29, 40, 42, 45, 46, 50, 56, 59, 62, 66, 67, 70, 77, 86, 98];
 // The numbers a switched-off feature takes with it (settings.ts, features).
-export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [], grasp: [], push: [] };
+export const FEATURE_NIPS: Record<Feature, number[]> = { search: [50], sync: [77], count: [45], discovery: [66], names: [5], files: [], pages: [], signer: [46], sites: [], marmot: [], grasp: [], grasp02: [], grasp03: [], grasp05: [], grasp06: [], push: [] };
 
 // Lettered identifiers retain their protocol spelling, never decimal values.
 // New draft capabilities belong here only alongside their implementation.
@@ -79,7 +79,8 @@ export function nip11(relay: Relay, host: string) {
   if (p.succession && relay.succession.warn) doc.succession_pending = new Date((relay.succession.warn.since + SUCCESSION_WARN_DAYS * 86400) * 1000).toISOString().slice(0, 10);
   if (relay.settings.isLeased() && p.lease) doc.lease = { expires_at: p.lease.until, holder: p.lease.holder || undefined, claim_url: host ? "https://" + host + "/" : undefined };
   if (featureOn(p, "grasp") && p.reads === "open") {
-    doc.supported_grasps = ["GRASP-01"];
+    // The bounded sync previews remain unadvertised pending interoperability audit.
+    doc.supported_grasps = ["GRASP-01", ...(featureOn(p, "grasp06") ? ["GRASP-06"] : [])];
     const access = {
       open: "Anyone may announce a repository.",
       allowlist: "Allowlist hosting: only the relay owner and members may announce repositories.",
@@ -92,7 +93,8 @@ export function nip11(relay: Relay, host: string) {
       : p.writes !== "open" && p.openKinds.includes(KIND_REPO) ? "Anyone may announce a repository through the guest exception for kind 30617."
       : access[p.writes];
     const guests = p.writes !== "open" && p.openKinds.length ? ` Guest write exceptions apply to kinds ${p.openKinds.join(", ")}.` : "";
-    doc.repo_acceptance_criteria = `${eligibility} Repository announcements name this service in clone and relays. State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.`;
+    const listing = featureOn(p, "grasp05") ? "Archive preview accepts repository announcements without naming this service in clone and relays." : "Repository announcements name this service in clone and relays.";
+    doc.repo_acceptance_criteria = `${eligibility} ${listing} State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.`;
     if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
   }
   if (featureOn(p, "sites")) doc.nsites = {

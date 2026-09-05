@@ -17,6 +17,10 @@ CREATE TRIGGER IF NOT EXISTS grasp_removed AFTER DELETE ON events BEGIN DELETE F
 CREATE TABLE IF NOT EXISTS grasp_tick (id INTEGER PRIMARY KEY CHECK(id=1), coordinate TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS grasp_pr_refs (repo TEXT NOT NULL, ref TEXT NOT NULL, until INTEGER NOT NULL, PRIMARY KEY(repo,ref));
 CREATE TABLE IF NOT EXISTS grasp_objects (key TEXT PRIMARY KEY, owner TEXT NOT NULL, size INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS grasp_git_sync (id TEXT PRIMARY KEY, due INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS grasp_event_sync (id TEXT PRIMARY KEY, source TEXT NOT NULL, scope TEXT NOT NULL, windows TEXT NOT NULL, live_since INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS grasp_event_sync_due ON grasp_event_sync(due,id);
+CREATE TABLE IF NOT EXISTS grasp_sync_status (id INTEGER PRIMARY KEY CHECK(id=1), partial INTEGER NOT NULL DEFAULT 0);
 `;
 
 // graspEvents includes purgatory for write authority, but never expired or
@@ -59,8 +63,8 @@ export function graspGate(relay: Relay, e: Event, host: string): string {
     const listed = serviceListed(r, origin + gitRepositoryPath(npubEncode(e.pubkey), r.identifier), origin.replace(/^http/, "ws"));
     const all = announcements(relay);
     const related = hostedAnnouncements(relay).some((root) => root.owner !== e.pubkey && root.identifier === r.identifier && recursiveMaintainers(root, all)?.has(e.pubkey));
-    if (!listed && !related) return "restricted: repository clone and relays tags must name this service";
-    if (listed && !repository(relay, r.owner, r.identifier) && hostedAnnouncements(relay).length >= MAX_REPOSITORIES) return `restricted: at most ${MAX_REPOSITORIES} repositories per relay`;
+    if (!listed && !related && !featureOn(relay.settings.policy, "grasp05")) return "restricted: repository clone and relays tags must name this service";
+    if ((listed || featureOn(relay.settings.policy, "grasp05")) && !repository(relay, r.owner, r.identifier) && hostedAnnouncements(relay).length >= MAX_REPOSITORIES) return `restricted: at most ${MAX_REPOSITORIES} repositories per relay`;
   }
   if (e.kind === KIND_REPO_STATE) {
     const p = parseRepositoryState(e);
@@ -69,7 +73,22 @@ export function graspGate(relay: Relay, e: Event, host: string): string {
     if (!all.some((r) => r.identifier === p.value!.identifier && recursiveMaintainers(r, all)?.has(e.pubkey))) return "restricted: state author is not an accepted repository maintainer";
   }
   if (e.kind === KIND_GIT_PR || e.kind === KIND_GIT_PR_UPDATE) {
-    if (!eventRepository(relay, e)) return "restricted: pull request must name an accepted repository";
+    // GRASP-06 permits a contributor to publish a PR before the target
+    // repository announcement reaches this relay. Keep the repository
+    // coordinate mandatory; the PR namespace will authorize its matching
+    // objects once the event is stored.
+    const hosted = eventRepository(relay, e);
+    if (!hosted && !featureOn(relay.settings.policy, "grasp06")) return "restricted: pull request must name an accepted repository";
+    if (!hosted && !relatedRepositoryCoordinates(e).some((c) => {
+      const p = c.split(":");
+      return p.length >= 3 && p[0] === "30617" && /^[0-9a-f]{64}$/.test(p[1]) && !!p.slice(2).join(":");
+    })) return "restricted: pull request must name a repository";
+    if (!hosted) {
+      const origin = relay.webURL(host || `${relay.slug}.${relay.domain}`);
+      const paths = relatedRepositoryCoordinates(e).map(c => origin + "/prs" + gitRepositoryPath(npubEncode(e.pubkey), c.split(":").slice(2).join(":")));
+      const listed = e.tags.filter(t => t[0] === "clone").flatMap(t => t.slice(1)).some(raw => { try { const u = new URL(raw); return !u.username && !u.password && paths.includes(u.href.replace(/\/$/u, "")); } catch { return false; } });
+      if (!listed) return "restricted: pull request clone must name this service's signer PR path";
+    }
     const tips = tagValues(e, "c");
     if (tips.length !== 1 || !/^[0-9a-f]{40}$/.test(tips[0]) || /^0+$/.test(tips[0])) return "invalid: pull request needs one SHA-1 c tag";
   }
@@ -83,7 +102,8 @@ export function holdGrasp(relay: Relay, e: Event, host: string): boolean {
   if (e.kind === KIND_REPO) {
     const r = parseRepositoryAnnouncement(e).value!;
     const origin = relay.webURL(host || `${relay.slug}.${relay.domain}`);
-    if (!serviceListed(r, origin + gitRepositoryPath(npubEncode(e.pubkey), r.identifier), origin.replace(/^http/, "ws"))) return false;
+    const listed = serviceListed(r, origin + gitRepositoryPath(npubEncode(e.pubkey), r.identifier), origin.replace(/^http/, "ws"));
+    if (!listed && !featureOn(relay.settings.policy, "grasp05")) return false;
     relay.sql.exec(`INSERT OR REPLACE INTO grasp_hosted(id) VALUES(?)`, e.id);
   }
   relay.sql.exec(`INSERT OR REPLACE INTO grasp_pending(id,until) VALUES(?,?)`, e.id, now() + PURGATORY_SECONDS);

@@ -29,7 +29,7 @@ export type BackupArchive = {
   events: string[];
   blobs: (Payload & { sha256: string; type: string; uploader: string; uploaded: number })[];
   git: (Payload & { key: string })[];
-  state?: { listHistory: string[]; hidden: string[]; hosted: string[]; pending: { id: string; until: number }[] };
+  state?: { listHistory: string[]; hidden: string[]; hosted: string[]; pending: { id: string; until: number }[]; prRefs?: { repo: string; ref: string; until: number }[] };
 };
 
 const enc = new TextEncoder();
@@ -116,12 +116,12 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
   }
   const config = exportConfig(relay.settings, relay.slug);
   if (!reserve(enc.encode(JSON.stringify(config)).length)) return "restricted: backup exceeds its bounded size or object limit";
-  const state = { listHistory: [] as string[], hidden: [...relay.settings.hiddenEvents], hosted: relay.sql.exec<{ id: string }>(`SELECT id FROM grasp_hosted`).toArray().map((r) => r.id), pending: relay.sql.exec<{ id: string; until: number }>(`SELECT id,until FROM grasp_pending`).toArray() };
+  const state = { listHistory: [] as string[], hidden: [...relay.settings.hiddenEvents], hosted: relay.sql.exec<{ id: string }>(`SELECT id FROM grasp_hosted`).toArray().map((r) => r.id), pending: relay.sql.exec<{ id: string; until: number }>(`SELECT id,until FROM grasp_pending`).toArray(), prRefs: relay.sql.exec<{ repo: string; ref: string; until: number }>(`SELECT repo,ref,until FROM grasp_pr_refs`).toArray() };
   for (const row of relay.sql.exec<{ raw: string }>(`SELECT raw FROM list_history WHERE expires=0 OR expires>? ORDER BY saved_at`, now())) {
     if (!reserve(enc.encode(row.raw).length)) return "restricted: backup history exceeds its bounded size";
     state.listHistory.push(row.raw);
   }
-  if (!reserve(enc.encode(JSON.stringify({ ...state, listHistory: [] })).length, state.hidden.length + state.hosted.length + state.pending.length)) return "restricted: backup state exceeds its bounded size";
+  if (!reserve(enc.encode(JSON.stringify({ ...state, listHistory: [] })).length, state.hidden.length + state.hosted.length + state.pending.length + state.prRefs.length)) return "restricted: backup state exceeds its bounded size";
   const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: git.length, archiveSha256: "" }, config, events, blobs, git, state } as BackupArchive;
   archive.manifest.archiveSha256 = "0".repeat(64);
   for (let i = 0; i < 4; i++) archive.manifest.bytes = bytesOf(archive).length;
@@ -162,7 +162,8 @@ const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
   const state = archive.state;
   if (state) {
     if (!Array.isArray(state.listHistory) || !Array.isArray(state.hidden) || !Array.isArray(state.hosted) || !Array.isArray(state.pending)) return "invalid: backup state malformed";
-    if (archive.events.length + archive.blobs.length + archive.git.length + state.listHistory.length + state.hidden.length + state.hosted.length + state.pending.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
+    if (state.prRefs !== undefined && (!Array.isArray(state.prRefs) || state.prRefs.some(r => !r || typeof r.repo !== "string" || !/^(?:pr|30617):[0-9a-f]{64}:.+$/u.test(r.repo) || new TextEncoder().encode(r.repo).length > 327 || typeof r.ref !== "string" || !/^refs\/nostr\/[0-9a-f]{64}$/u.test(r.ref) || !Number.isSafeInteger(r.until) || r.until < 0))) return "invalid: backup PR deadlines malformed";
+    if (archive.events.length + archive.blobs.length + archive.git.length + (state.prRefs?.length ?? 0) + state.listHistory.length + state.hidden.length + state.hosted.length + state.pending.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
     const hex = (v: unknown) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
     if (state.hidden.some((v) => !hex(v)) || state.hosted.some((v) => !hex(v)) || state.pending.some((v) => !v || !hex(v.id) || !Number.isSafeInteger(v.until))) return "invalid: backup state malformed";
     for (const raw of state.listHistory) {
@@ -213,6 +214,7 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
       for (const id of archive.state?.hidden ?? []) relay.settings.setEvent(id, "hide");
       for (const id of archive.state?.hosted ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_hosted(id) SELECT id FROM events WHERE id=?`, id);
       for (const row of archive.state?.pending ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_pending(id,until) SELECT id,? FROM events WHERE id=?`, row.until, row.id);
+      for (const row of archive.state?.prRefs ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_pr_refs(repo,ref,until) VALUES(?,?,?)`, row.repo, row.ref, row.until);
       for (const b of archive.blobs) relay.sql.exec(`INSERT OR REPLACE INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, b.sha256, b.size, b.type, b.uploader, b.uploaded);
       for (const g of archive.git) relay.sql.exec(`INSERT OR REPLACE INTO grasp_objects(key,owner,size) VALUES(?,?,?)`, `${relay.slug}/${g.key}`, caller, g.size);
     });
@@ -226,6 +228,7 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
   await relay.syncSites();
   await relay.publishMembership();
   await relay.publishDiscovery();
+  if (relay.sql.exec("SELECT 1 FROM grasp_pending UNION ALL SELECT 1 FROM grasp_pr_refs LIMIT 1").toArray().length || relay.settings.policy.features.grasp02) await relay.ensureAlarm(now() + 1);
   return { restored: true, owner: caller, sourceRelayIdentity: archive.manifest.relayIdentity, targetRelayIdentity: relay.identity.pubkey, events: archive.events.length, blobs: archive.blobs.length, git: archive.git.length, bytes: bytes.length };
 }
 

@@ -93,7 +93,7 @@ export type ViewSetting = (typeof VIEW_SETTINGS)[number];
 // is not one: the console runs on it. What is off leaves supported_nips
 // (nip11.ts), answers 404 at its door (routes.ts) and is refused at the
 // socket (gates.ts, relay.ts).
-export const FEATURE_NAMES = ["search", "sync", "count", "discovery", "names", "files", "pages", "signer", "sites", "marmot", "grasp", "push"] as const;
+export const FEATURE_NAMES = ["search", "sync", "count", "discovery", "names", "files", "pages", "signer", "sites", "marmot", "grasp", "grasp02", "grasp03", "grasp05", "grasp06", "push"] as const;
 export type Feature = (typeof FEATURE_NAMES)[number];
 export type SearchMode = "full" | "prose" | "off";
 export interface Features {
@@ -106,12 +106,24 @@ export interface Features {
   pages: boolean; // notes and articles as pages, the feed
   sites: { enabled: boolean; mirror: boolean }; // NIP-5A hosting and automatic blob copies
   grasp: boolean; // GRASP Git repositories and accepted repository state
+  grasp02: boolean; // GRASP-02 proactive repository synchronization
+  grasp03: boolean; // GRASP-03 outbox discussion synchronization
+  grasp05: boolean; // GRASP-05 archive admission
+  grasp06: boolean; // GRASP-06 alternative PR hosting
   signer: boolean; // NIP-46 traffic carried for anyone
   push: boolean; // NIP-9a relay-to-callback delivery
   marmot: boolean; // Marmot's opaque MLS transport events
 }
-export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false, push: false };
-export const featureOn = (p: Policy, f: Feature): boolean => f === "sites" ? p.features.sites.enabled : p.features[f] !== false && p.features[f] !== "off";
+export const DEFAULT_FEATURES: Features = { search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false, grasp02: false, grasp03: false, grasp05: false, grasp06: false, push: false };
+export const featureOn = (p: Policy, f: Feature): boolean => {
+  if (f === "sites") return p.features.sites.enabled;
+  if (["grasp02", "grasp03", "grasp05", "grasp06"].includes(f) && p.features[f] !== true) return false;
+  if (p.features[f] === false || p.features[f] === "off") return false;
+  if (f === "grasp02") return featureOn(p, "grasp");
+  if (f === "grasp03" || f === "grasp05") return featureOn(p, "grasp02");
+  if (f === "grasp06") return featureOn(p, "grasp");
+  return true;
+};
 
 export function featureFields(patch: Record<string, unknown>, cur: Features): Partial<Policy> {
   if (!patch.features || typeof patch.features !== "object") return {};

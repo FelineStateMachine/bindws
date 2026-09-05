@@ -10,7 +10,7 @@ import { now } from "./event.ts";
 import type { Relay } from "./relay.ts";
 import { CODE_RE, inviteCreator, listClaims, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
-import { badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
+import { featureOn, badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
 import { deliveryStatus } from "./delivery.ts";
 import { applyConfig, exportConfig, parseConfig, planConfig } from "./config.ts";
 import { isReplaceable, isProtected, validIP } from "./settings.ts";
@@ -500,7 +500,10 @@ export const METHODS: Record<string, Method> = {
     run: ({ relay, s, reply }) => {
       const kinds = relay.store.kindStats().map((k) => ({ ...k, days: s.retentionDays(k.kind), replaceable: isReplaceable(k.kind), protected: isProtected(k.kind) }));
       const blobs = relay.sql.exec<{ n: number | null; bytes: number | null }>(`SELECT count(*) AS n, sum(size) AS bytes FROM blobs`).one();
-      return reply({ result: { kinds, events: kinds.reduce((a, k) => a + k.n, 0), eventBytes: kinds.reduce((a, k) => a + k.bytes, 0), databaseBytes: relay.eventBytes(), blobs: blobs.n ?? 0, mediaBytes: blobs.bytes ?? 0, dumps: listDumps(relay.sql).length, dumpBytes: dumpBytes(relay.sql), retention: s.listRetention() } });
+      const eventSync = relay.sql.exec<{ jobs: number; failed: number; history: number; due: number | null }>(`SELECT count(*) AS jobs, coalesce(sum(error!=''),0) AS failed, coalesce(sum(windows!='[]'),0) AS history, min(due) AS due FROM grasp_event_sync`).one();
+      const gitSync = relay.sql.exec<{ jobs: number; failed: number; due: number | null }>(`SELECT count(*) AS jobs, coalesce(sum(error!=''),0) AS failed, min(due) AS due FROM grasp_git_sync`).one();
+      const partial = relay.sql.exec<{ partial: number }>(`SELECT partial FROM grasp_sync_status WHERE id=1`).toArray()[0]?.partial === 1;
+      return reply({ result: { graspSync: { enabled: featureOn(s.policy, "grasp02"), partial, events: eventSync, git: gitSync }, kinds, events: kinds.reduce((a, k) => a + k.n, 0), eventBytes: kinds.reduce((a, k) => a + k.bytes, 0), databaseBytes: relay.eventBytes(), blobs: blobs.n ?? 0, mediaBytes: blobs.bytes ?? 0, dumps: listDumps(relay.sql).length, dumpBytes: dumpBytes(relay.sql), retention: s.listRetention() } });
     },
   },
   gitstorage: {
@@ -834,6 +837,7 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     if (resp.status === 200 && !m.reads && !dryRun && method !== "deleterelay") {
       const { target, detail } = detailOf(method, params);
       relay.audit.record(t, caller, method, target, detail);
+      if (["setpolicy", "importconfig", "applypreset"].includes(method) && (featureOn(s.policy, "grasp02") || featureOn(s.policy, "grasp06"))) await relay.ensureAlarm(now() + 1);
     }
     return resp;
   }, () => new Response(JSON.stringify({ error: "restricted: relay operation in progress; retry" }), { status: 429, headers: { ...cors, "retry-after": "1" } }));

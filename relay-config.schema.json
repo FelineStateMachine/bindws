@@ -87,6 +87,10 @@
               ]
             },
             "grasp": { "type": "boolean" },
+            "grasp02": { "type": "boolean" },
+            "grasp03": { "type": "boolean" },
+            "grasp05": { "type": "boolean" },
+            "grasp06": { "type": "boolean" },
             "push": { "type": "boolean" }
           }
         }
