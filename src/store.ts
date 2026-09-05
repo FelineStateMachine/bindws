@@ -7,7 +7,7 @@ import { ftsQuery, searchTerms, type Filter } from "./filter.ts";
 import { SITE_SCHEMA, SITE_KINDS } from "./sites.ts";
 import { HLL } from "./hll.ts";
 import { hexToBytes, type SyncItem } from "./negentropy.ts";
-import { archiveCurrent, clearForDelete, clearList, listHistory, restoreHistory, LIST_HISTORY_SCHEMA, type ListHistoryRow } from "./list-history.ts";
+import { archiveCurrent, clearForDelete, clearList, isListKind, listHistory, restoreHistory, LIST_HISTORY_SCHEMA, type ListHistoryRow } from "./list-history.ts";
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
@@ -90,6 +90,7 @@ export class Store {
   init() {
     this.sql.exec(SCHEMA);
     this.sql.exec(LIST_HISTORY_SCHEMA);
+    try { this.sql.exec(`ALTER TABLE list_history ADD COLUMN expires INTEGER NOT NULL DEFAULT 0`); } catch { /* already migrated */ }
     this.sql.exec(SITE_SCHEMA);
     this.sql.exec(GRASP_SCHEMA);
   }
@@ -140,15 +141,19 @@ export class Store {
     if (isReplaceable(e.kind)) {
       if (has(`SELECT 1 FROM events WHERE pubkey=? AND kind=? AND (created_at>? OR (created_at=? AND id<?)) LIMIT 1`, e.pubkey, e.kind, e.created_at, e.created_at, e.id))
         return ERR_REPLACED;
-      const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=?`, e.pubkey, e.kind).toArray()[0];
-      if (current) archiveCurrent(this.historySQL, JSON.parse(current.raw) as Event, now);
+      if (isListKind(e.kind)) {
+        const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=?`, e.pubkey, e.kind).toArray()[0];
+        if (current) archiveCurrent(this.historySQL, JSON.parse(current.raw) as Event, now);
+      }
       this.x(`DELETE FROM events WHERE pubkey=? AND kind=?`, e.pubkey, e.kind);
     } else if (isAddressable(e.kind)) {
       d = tag(e, "d");
       if (has(`SELECT 1 FROM events WHERE pubkey=? AND kind=? AND d=? AND (created_at>? OR (created_at=? AND id<?)) LIMIT 1`, e.pubkey, e.kind, d, e.created_at, e.created_at, e.id))
         return ERR_REPLACED;
-      const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=? AND d=?`, e.pubkey, e.kind, d).toArray()[0];
-      if (current) archiveCurrent(this.historySQL, JSON.parse(current.raw) as Event, now);
+      if (isListKind(e.kind)) {
+        const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=? AND d=?`, e.pubkey, e.kind, d).toArray()[0];
+        if (current) archiveCurrent(this.historySQL, JSON.parse(current.raw) as Event, now);
+      }
       this.x(`DELETE FROM events WHERE pubkey=? AND kind=? AND d=?`, e.pubkey, e.kind, d);
     } else if (e.kind === 5) {
       for (const t of e.tags) {
@@ -161,9 +166,10 @@ export class Store {
           clearForDelete(this.historySQL, e.pubkey, t[1]);
         } else if (t[0] === "a") {
           const parts = t[1].split(":");
-          if (parts.length === 3 && parts[1] === e.pubkey) {
-            this.x(`DELETE FROM events WHERE kind=? AND pubkey=? AND d=? AND created_at<=?`, parseInt(parts[0], 10) || 0, e.pubkey, parts[2], e.created_at);
-            clearList(this.historySQL, e.pubkey, parseInt(parts[0], 10) || 0, parts[2], e.created_at);
+          if (parts.length >= 3 && parts[1] === e.pubkey) {
+            const addressD = parts.slice(2).join(":");
+            this.x(`DELETE FROM events WHERE kind=? AND pubkey=? AND d=? AND created_at<=?`, parseInt(parts[0], 10) || 0, e.pubkey, addressD, e.created_at);
+            clearList(this.historySQL, e.pubkey, parseInt(parts[0], 10) || 0, addressD, e.created_at);
           }
         }
       }
@@ -394,13 +400,13 @@ export class Store {
 
   // listHistory returns only metadata for versions signed by owner; raw event
   // content stays behind restoreHistory and the same owner check.
-  listHistory(owner: string): Omit<ListHistoryRow, "owner" | "raw">[] {
-    return listHistory(this.historySQL, owner);
+  listHistory(owner: string, now: number): Omit<ListHistoryRow, "owner" | "raw">[] {
+    return listHistory(this.historySQL, owner, now);
   }
 
   // restoreHistory returns a fresh unsigned draft and its current-list diff.
-  restoreHistory(owner: string, eventID: string): ReturnType<typeof restoreHistory> {
-    return restoreHistory(this.historySQL, owner, eventID);
+  restoreHistory(owner: string, eventID: string, now: number): ReturnType<typeof restoreHistory> {
+    return restoreHistory(this.historySQL, owner, eventID, now);
   }
 
   // dumpPage reads a page of raw events by sequence for the JSONL dump.

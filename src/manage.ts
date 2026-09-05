@@ -260,13 +260,13 @@ export const METHODS: Record<string, Method> = {
   },
   listlisthistory: {
     action: "read", reads: true, ownListHistory: true,
-    run: ({ relay, caller, reply }) => reply({ result: relay.store.listHistory(caller) }),
+    run: ({ relay, caller, t, reply }) => reply({ result: relay.store.listHistory(caller, t) }),
   },
   restorelist: {
     action: "read", reads: true, ownListHistory: true,
     run: ({ relay, caller, params, str, hex64, reply }) => {
       if (params.length !== 1 || !hex64(str(0))) return reply({ error: "invalid: give one saved list event id" }, 400);
-      const restored = relay.store.restoreHistory(caller, str(0));
+      const restored = relay.store.restoreHistory(caller, str(0), now());
       return typeof restored === "string" ? reply({ error: restored }, 404) : reply({ result: restored });
     },
   },

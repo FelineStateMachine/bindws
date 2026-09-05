@@ -1,4 +1,4 @@
-import type { Event } from "./event.ts";
+import { expiration, type Event } from "./event.ts";
 
 export type UnsignedEvent = { kind: number; created_at: number; tags: string[][]; content: string };
 type HistorySQL = <T extends Record<string, SqlStorageValue>>(q: string, ...args: unknown[]) => SqlStorageCursor<T>;
@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS list_history (
   event_id   TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   saved_at   INTEGER NOT NULL,
+  expires    INTEGER NOT NULL DEFAULT 0,
   raw        TEXT NOT NULL,
   PRIMARY KEY (owner, kind, d, event_id)
 );
@@ -26,6 +27,7 @@ CREATE INDEX IF NOT EXISTS list_history_list ON list_history(owner, kind, d, cre
 `;
 
 const listKind = (kind: number) => (LIST_KINDS as readonly number[]).includes(kind);
+export const isListKind = listKind;
 const listD = (e: Pick<Event, "kind" | "tags">) => e.kind >= 30000 ? e.tags.find((t: Event["tags"][number]) => t[0] === "d")?.[1] ?? "" : "";
 
 // archiveCurrent records the version about to be replaced, then trims the
@@ -34,7 +36,7 @@ const listD = (e: Pick<Event, "kind" | "tags">) => e.kind >= 30000 ? e.tags.find
 export const archiveCurrent = (x: HistorySQL, e: Event, savedAt: number) => {
   if (!listKind(e.kind)) return;
   const d = listD(e);
-  x(`INSERT OR IGNORE INTO list_history(owner,kind,d,event_id,created_at,saved_at,raw) VALUES(?,?,?,?,?,?,?)`, e.pubkey, e.kind, d, e.id, e.created_at, savedAt, JSON.stringify(e));
+  x(`INSERT OR IGNORE INTO list_history(owner,kind,d,event_id,created_at,saved_at,expires,raw) VALUES(?,?,?,?,?,?,?,?)`, e.pubkey, e.kind, d, e.id, e.created_at, savedAt, expiration(e), JSON.stringify(e));
   x(`DELETE FROM list_history WHERE owner=? AND kind=? AND d=? AND event_id NOT IN (SELECT event_id FROM list_history WHERE owner=? AND kind=? AND d=? ORDER BY created_at DESC, event_id ASC LIMIT ?)`, e.pubkey, e.kind, d, e.pubkey, e.kind, d, LIST_HISTORY_LIMIT);
   x(`DELETE FROM list_history WHERE owner=? AND event_id NOT IN (SELECT event_id FROM list_history WHERE owner=? ORDER BY saved_at DESC, event_id ASC LIMIT ?)`, e.pubkey, e.pubkey, LIST_HISTORY_OWNER_LIMIT);
   x(`DELETE FROM list_history WHERE event_id NOT IN (SELECT event_id FROM list_history ORDER BY saved_at DESC, event_id ASC LIMIT ?)`, LIST_HISTORY_GLOBAL_LIMIT);
@@ -53,11 +55,14 @@ export const clearList = (x: HistorySQL, owner: string, kind: number, d: string,
 
 export interface ListHistoryRow { owner: string; kind: number; d: string; event_id: string; created_at: number; saved_at: number; raw: string; }
 
-export const listHistory = (x: HistorySQL, owner: string): Omit<ListHistoryRow, "owner" | "raw">[] =>
-  x<Omit<ListHistoryRow, "owner" | "raw">>(`SELECT kind,d,event_id,created_at,saved_at FROM list_history WHERE owner=? ORDER BY saved_at DESC LIMIT ?`, owner, LIST_HISTORY_OWNER_LIMIT).toArray();
+export const listHistory = (x: HistorySQL, owner: string, now: number): Omit<ListHistoryRow, "owner" | "raw">[] => {
+  x(`DELETE FROM list_history WHERE owner=? AND expires>0 AND expires<=?`, owner, now);
+  return x<Omit<ListHistoryRow, "owner" | "raw">>(`SELECT kind,d,event_id,created_at,saved_at FROM list_history WHERE owner=? AND (expires=0 OR expires>?) ORDER BY saved_at DESC LIMIT ?`, owner, now, LIST_HISTORY_OWNER_LIMIT).toArray();
+};
 
-export const restoreHistory = (x: HistorySQL, owner: string, eventID: string): { draft: UnsignedEvent; diff: { addedTags: string[][]; removedTags: string[][]; contentChanged: boolean } } | string => {
-  const row = x<{ raw: string }>(`SELECT raw FROM list_history WHERE owner=? AND event_id=?`, owner, eventID).toArray()[0];
+export const restoreHistory = (x: HistorySQL, owner: string, eventID: string, now: number): { draft: UnsignedEvent; diff: { addedTags: string[][]; removedTags: string[][]; contentChanged: boolean } } | string => {
+  x(`DELETE FROM list_history WHERE owner=? AND expires>0 AND expires<=?`, owner, now);
+  const row = x<{ raw: string }>(`SELECT raw FROM list_history WHERE owner=? AND event_id=? AND (expires=0 OR expires>?)`, owner, eventID, now).toArray()[0];
   if (!row) return "not found";
   try {
     const event = JSON.parse(row.raw) as Event;
