@@ -79,6 +79,9 @@ function doors(f: Fixture): { path: string; host?: string; method?: string; gate
     { path: "/terms", gated: false },
     { path: "/api/join-policy", gated: false },
     { path: "/.well-known/nostr/nip96.json", gated: false },
+    { path: "/backups/private", gated: true },
+    { path: "/backups/preview", method: "POST", gated: true },
+    { path: "/backups/restore", method: "POST", gated: true },
   ];
 }
 

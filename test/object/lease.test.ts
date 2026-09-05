@@ -192,7 +192,7 @@ describe("pull from another relay", () => {
     expect(last.skipped).toBe(1);
   });
 
-  it("gives up on a source that refuses to sync, and says why", async () => {
+  it("falls back from sync and records a source that also refuses ordinary queries", async () => {
     const owner = generateSecretKey();
     const closedHost = "closed.bind.ws";
     await rpc(closedHost, owner, "claim");
@@ -200,7 +200,9 @@ describe("pull from another relay", () => {
     const host = "puller.bind.ws";
     await rpc(host, owner, "claim");
     const last = await pull(host, owner, "wss://" + closedHost);
-    expect(last.error).toMatch(/^sync refused: auth-required/);
-    expect(last.rounds).toBe(3);
+    expect(last.error).toMatch(/import source.*incomplete/);
+    expect(last.rounds).toBe(2);
+    const jobs = (await rpc(host, owner, "listjobs")).result;
+    expect(jobs[0].last.sources[0]).toMatchObject({ mode: "query", status: "refused", error: expect.stringContaining("auth-required") });
   });
 });

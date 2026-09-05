@@ -125,6 +125,43 @@ describe("rebroadcast", () => {
   });
 });
 
+describe("rebroadcast cursor safety", () => {
+  it("preserves a failed target independently and resumes it after a successful target", async () => {
+    const owner = generateSecretKey(), targetOwner = generateSecretKey();
+    const src = "mixed-source.bind.ws", good = "mixed-good.bind.ws", bad = "mixed-bad.bind.ws";
+    const events = Array.from({ length: 6 }, (_, i) => ev(owner, 1, "mixed " + i));
+    await relay(src, owner, events);
+    await relay(good, targetOwner);
+    const blocked = await relay(bad, targetOwner);
+    await rpc(bad, targetOwner, "setpolicy", { writes: "owner" });
+    const added = await rpc(src, owner, "addjob", { kind: "push", relays: ["wss://" + good, "wss://" + bad], filter: { kinds: [1] } });
+    let job = (await drive(src, owner)).find((j) => j.id === added.result.id)!;
+    expect(job.targetCursors?.["wss://" + good]).toBeGreaterThan(0);
+    expect(job.targetCursors?.["wss://" + bad]).toBe(0);
+    expect(job.last?.error).toBeTruthy();
+    await rpc(bad, targetOwner, "setpolicy", { writes: "open" });
+    await rpc(src, owner, "runjob", job.id);
+    job = (await drive(src, owner)).find((j) => j.id === added.result.id)!;
+    expect(job.last?.sent).toBe(6);
+    expect((await blocked.req({ kinds: [1] })).map((e) => e.id).sort()).toEqual(events.map((e) => e.id).sort());
+  });
+
+  it("does not advance a target past an unprocessed refusal tail", async () => {
+    const owner = generateSecretKey();
+    const src = "cursor-tail.bind.ws", target = "cursor-tail-target.bind.ws";
+    const events = Array.from({ length: 6 }, (_, i) => ev(owner, 7, "tail-" + i));
+    await relay(src, owner, events);
+    const targetOwner = generateSecretKey();
+    await relay(target, targetOwner);
+    await rpc(target, targetOwner, "setpolicy", { writes: "owner" });
+    const started = await rpc(src, owner, "addjob", { kind: "push", relays: ["wss://" + target], filter: { kinds: [7] } });
+    const jobs = await drive(src, owner);
+    const job = jobs.find((j) => j.id === started.result.id)!;
+    expect(job.targetCursors?.["wss://" + target]).toBe(0);
+    expect((await (await WS.connect(target)).req({ kinds: [7] })).length).toBe(0);
+  });
+});
+
 describe("standing jobs", () => {
   it("runs a recurring pull on its interval, caps standing jobs, and can be removed", async () => {
     const owner = generateSecretKey();

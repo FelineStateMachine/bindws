@@ -3,6 +3,8 @@
 // relay.go; policy is per relay and owner-managed (see manage.ts).
 import { callbackOrigins } from "./push-policy.ts";
 import { pushTick, queuePush, nextPush, PUSH_SCHEMA } from "./push.ts";
+import { BACKUP_SCHEMA, backupBytes } from "./backups.ts";
+import { DELIVERY_SCHEMA, deliveryTick, queueDelivery } from "./delivery.ts";
 import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
 import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
 import { queueMirrors } from "./site-mirror.ts";
@@ -156,7 +158,9 @@ export class Relay extends DurableObject<Env> {
       this.store.init();
       this.settings.load();
       this.sql.exec(PUSH_SCHEMA);
-    this.store.hidden = this.settings.hiddenEvents;
+      this.sql.exec(DELIVERY_SCHEMA);
+      this.sql.exec(BACKUP_SCHEMA);
+      this.store.hidden = this.settings.hiddenEvents;
       this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
@@ -498,6 +502,8 @@ export class Relay extends DurableObject<Env> {
     this.store.init();
     this.settings.load();
     this.sql.exec(PUSH_SCHEMA);
+    this.sql.exec(DELIVERY_SCHEMA);
+    this.sql.exec(BACKUP_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
@@ -705,6 +711,7 @@ export class Relay extends DurableObject<Env> {
     // A finished run is worth a word to the owner, when they asked for one.
     const finish = (error: string) => {
       finishRun(job, error, now());
+      error = job.last?.error ?? error;
       const where = (job.kind === "push" ? "to " : "from ") + job.relays.join(", ");
       const outcome = error ? `failed after ${job.rounds} rounds: ${error}` : job.kind === "push" ? `finished: ${job.sent} events sent${job.refused ? ", " + job.refused + " refused" : ""}` : `finished: ${job.stored} events${job.blobs ? " and " + job.blobs + " files" : ""}${job.skipped ? ", " + job.skipped + " skipped" : ""}`;
       void notify(this, "jobs", `${job.label} ${where} ${outcome}.`, "jobs on " + this.slug);
@@ -764,7 +771,7 @@ export class Relay extends DurableObject<Env> {
 
   // Files and dumps both live in R2 and both cost media storage.
   mediaBytes(): number {
-    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this);
+    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this) + backupBytes(this);
   }
 
   fuelStatus() {
@@ -1127,6 +1134,7 @@ export class Relay extends DurableObject<Env> {
         await this.teardown();
         return;
       }
+      const deliveryAt = await deliveryTick(this);
       const graspAt = await graspTick(this);
       await this.syncSites();
       await queueMirrors(this);
@@ -1185,6 +1193,7 @@ export class Relay extends DurableObject<Env> {
       if (graspAt && graspAt < at) at = graspAt;
       const pushAt = nextPush(this);
       if (pushAt) at = Math.min(at, Math.max(pushAt, now() + 1));
+      if (deliveryAt) at = Math.min(at, Math.max(deliveryAt, now() + 1));
       await this.ctx.storage.setAlarm(at * 1000 + 500);
     }, async () => { await this.ctx.storage.setAlarm(Date.now() + 1000); });
   }
@@ -1226,8 +1235,9 @@ export class Relay extends DurableObject<Env> {
     return [...(f.authors ?? []), ...(f.tags.p ?? [])].some((k) => parties.includes(k));
   }
 
-  broadcast(e: Event) {
+  broadcast(e: Event, route = true) {
     if (!graspVisible(this, e.id)) return;
+    if (route && queueDelivery(this, e)) this.ctx.waitUntil(this.ensureAlarm(now() + 1));
     if (queuePush(this, e)) this.ctx.waitUntil(this.ensureAlarm(now() + 1));
     const raw = canonical(e);
     for (const ws of this.ctx.getWebSockets()) {

@@ -11,17 +11,31 @@ What your relay holds, how it moves and how a name can do one job.
 
 The Data tab shows bytes by kind, the files people uploaded and a keep-for rule per kind. Kinds the relay depends on, such as profiles, contact lists, relay lists, zap receipts and the roster, are never expired or purged. The controls are in [Relay configuration](01-relay-configuration.md#data).
 
+## Recover a list
+
+The Data tab keeps older versions of your follows, relay lists and bookmarks (kinds 3, 10002, 10003 and 30003). Versions stay private to the publishing key and stay outside event queries, search and ordinary dumps. History starts when a newer version replaces a stored list.
+
+Choose **Restore** to preview added and removed tags and whether the content changed. Your extension or remote signer signs the old contents with a newer timestamp, then the console publishes it through the normal event door. The relay never receives your private key. History keeps at most twelve versions per list, 96 per publishing key and 4,096 per relay. Author deletions and vanish remove matching saved history.
+
 ## Jobs
 
-A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why.
+A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why. A pull retries a failing source three times, then continues with the next source. An explicit refusal skips that source immediately.
 
 A job runs once, or every hour, six hours or day. Up to five standing jobs and 20 jobs in all per relay. Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
 
-**Pull** copies what another relay has and yours lacks, by sync (NIP-77). Run it again and only new events come over. Files come along when the other relay is on bind.ws and the pull has no filter. With an interval, a pull is a standing mirror that keeps your name in step with the other relay. The other relay has to let anyone read.
+**Pull** copies what another relay has and yours lacks. It tries sync (NIP-77) first, then ordinary NIP-01 queries if sync is unavailable. Query progress survives between rounds and relay restarts. Run it again and events already stored are deduplicated. Files come along when the other relay is on bind.ws and the pull has no filter. With an interval, a pull is a standing mirror that keeps your name in step with the other relay. The other relay has to let anyone read.
+
+The Jobs table exposes **Source results** with mode, status, counts and any refusal or coverage warning for each relay. A completed NIP-77 sync is marked complete. Query scans are best effort: relays may silently cap or omit history. Full query windows split by time; a full one-second window is explicitly partial because more events may share its timestamp. Imports stop at 2,048 pages per source and 500 events per query. Narrow the author or time filter and run again if a source reaches a limit. Imports never send your signing key or authenticate on your behalf.
 
 **Fetch my history** pulls your own events from every relay in your relay list, if a client has published that list here. Or give it relays to fetch from, separated by commas.
 
-**Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. A target that refuses five events in a row is left alone for that round. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
+**Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. Each target has its own saved cursor and status, so a failing destination cannot skip history because another succeeded. A target that refuses five events in a row is left alone for that round; unacknowledged history remains available for a later retry. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
+
+## Automatic delivery
+
+Enable **Automatic NIP-65 delivery** on the Rules tab to send newly accepted public events by you and your members to the author's write relays and tagged people's read relays. Routing uses the kind 10002 relay lists already stored here. It is off by default, with eight targets per event and a configurable maximum of one through sixteen.
+
+The Sync tab shows recent event/target results: pending, accepted or rejected, attempts and the last error. Each target gets up to four attempts. The queue holds at most 512 pending deliveries and 1,024 terminal results, kept for at most seven days. A full queue can omit new deliveries. This is best effort and costs fuel. Private kinds, protected events, imports and relay-generated events are excluded. Members-only relays never route automatically. Pending deliveries recheck the current event, membership and routing before sending.
 
 ## Import a file
 
@@ -30,6 +44,14 @@ The reverse of a dump. Under **Import a file** on the Data tab, pick a JSONL of 
 ## Dumps
 
 Under **Dumps**, choose daily or weekly and how many to keep, seven by default. The relay writes every event as one JSONL file and keeps the newest few. **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading takes your signature; the files are never a public link.
+
+## Portable backups
+
+On the Data tab, **Create and download** makes a private archive with configuration, signed events, saved list history, hidden and pending state, site/media blobs and Git objects. Existing archives can be downloaded or deleted. Each binary object and the archive have SHA-256 integrity checks; event signatures are checked on restore. Stored archives count toward fuel.
+
+Open a fresh, unclaimed relay and choose the archive in **Restore a backup**. Sign with the original owner's key, preview its source identity, counts and configuration, then restore. The target must be empty and unleased. Restore stages files before applying the database in one transaction. The source identity is recorded; the target gets a new relay key. Signed site and Git references still name their original URLs, so publish updated service references from your client after moving.
+
+This portable format is for small relays: at most 8 MiB per archive and 12,000 entries, including state records. Memory budgeting can refuse an archive below the wire limit. Larger relays need the separate event dump, configuration export, Blossom download and Git clone paths. Credentials, fuel credits, custom domains, leases, succession, callback registrations, existing dumps/backups and transient jobs are excluded. Configure those again on the target. Owner archives contain private relay data; keep the downloaded file private.
 
 ## Presets and one name per job
 
@@ -75,7 +97,7 @@ Your data is yours. A relay that speaks sync can pull the events your read rule 
 nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
 ```
 
-Or download a dump.
+Or download a dump or a portable backup.
 
 Event sync and JSONL dumps do not contain site files or Git packs. An unfiltered
 bind.ws pull can copy Blossom files, but it does not copy GRASP repositories.

@@ -335,6 +335,8 @@
     renderFeatures(p.features || {});
     $("#push-policy-form").elements.origins.value = (p.pushCallbacks || []).join("\n");
     $("#push-policy-form").elements.lettered.checked = !!p.letteredNips;
+    $("#push-policy-form").elements.delivery.checked = !!p.delivery?.enabled;
+    $("#push-policy-form").elements.deliveryMax.value = p.delivery?.maxTargets || 8;
     fi.name.value = p.name; fi.contact.value = p.contact; fi.description.value = p.description; fi.icon.value = p.icon;
     const fj = $("#joinform"); fj.joinTerms.value = p.joinTerms; fj.directoryPublic.checked = !!p.directoryPublic;
     loadCard();
@@ -437,10 +439,10 @@
     ev.preventDefault();
     const form = ev.target;
     const origins = form.elements.origins.value.split(/\s+/).filter(Boolean);
-    const updated = await rpc("setpolicy", { pushCallbacks: origins, letteredNips: form.elements.lettered.checked });
+    const updated = await rpc("setpolicy", { pushCallbacks: origins, letteredNips: form.elements.lettered.checked, delivery: { enabled: form.elements.delivery.checked, maxTargets: Math.max(1, Math.min(16, Math.floor(+form.elements.deliveryMax.value || 8))) } });
     if (JSON.stringify(updated.pushCallbacks) !== JSON.stringify([...new Set(origins.map((s) => s.replace(/\/$/, "")))])) throw new Error("Use up to sixteen exact HTTPS origins, with no path or credentials.");
     policy = updated;
-    toast("Saved callback policy"); await loadInfo();
+    toast("Saved delivery policy"); await loadInfo();
   }));
 
   async function loadViews() {
@@ -471,6 +473,11 @@
     $("#dumps-count").textContent = list.length || "";
     $("#dumps").innerHTML = list.length ? list.map((d) => '<li><i class="ev">jsonl</i><span><b class="mono">' + esc(d.name) + '</b> <span class="dim">' + d.events.toLocaleString() + " events, " + fmtBytes(d.bytes) + "</span></span><span>" + ib("copy", "Download", "downloaddump", d.name) + ib("trash", "Delete", "deletedump", d.name, "danger") + "</span></li>").join("") : '<li class="empty">no dumps yet</li>';
   }
+  async function loadBackups() {
+    const list = await rpc("listbackups");
+    $("#backups-count").textContent = list.length || "";
+    $("#backups").innerHTML = list.length ? list.map((b) => '<li><i class="ev">backup</i><span><b class="mono">' + esc(b.id) + '</b> <span class="dim">' + fmtBytes(b.bytes) + '</span></span><span>' + ib("copy", "Download", "downloadbackup", b.id) + ib("trash", "Delete", "deletebackup", b.id, "danger") + '</span></li>').join("") : '<li class="empty">no backups yet</li>';
+  }
   // A dump is fetched with a signed request and handed to the browser as a file.
   async function downloadDump(name) {
     if (!signer.ready()) throw new Error(NO_SIGNER);
@@ -480,6 +487,11 @@
     if (!resp.ok) throw new Error((await resp.json()).error || "download failed");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + name; a.click(); URL.revokeObjectURL(a.href);
+  }
+  async function downloadBackup(id) {
+    const resp = await backupRequest("/backups/" + encodeURIComponent(id), "GET");
+    if (!resp.ok) throw new Error("backup download failed");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + id + ".json"; a.click(); URL.revokeObjectURL(a.href);
   }
   // A plain member's own invites, when the owner lets members invite.
   async function loadMine() {
@@ -496,6 +508,7 @@
     pollJobs();
     loadViews();
     loadDumps().catch(() => {});
+    loadBackups().catch(() => {});
     const st = storage;
     const top = st.kinds.slice(0, 4), rest = st.kinds.slice(4).reduce((a, k) => a + k.bytes, 0);
     const parts = [...top.map((k, i) => [k.kind + " " + kindName(k.kind), "k" + (i + 1), k.bytes]), ...(rest ? [["other", "k5", rest]] : [])];
@@ -517,6 +530,13 @@
       return '<tr class="' + (k.kind === null ? "any" : "") + '" data-kind="' + key + '"><td>' + pill + '</td><td class="r mono">' + (k.n === undefined ? "" : k.n.toLocaleString()) + '</td><td class="r mono">' + (k.bytes === undefined ? "" : fmtBytes(k.bytes)) + '</td><td class="dim">' + (k.oldest ? esc(fmtDay(k.oldest)) : "") + "</td>" + cells + "</tr>";
     };
     $("#kinds tbody").innerHTML = [...st.kinds, { kind: null, days: any ? any.days : 0 }].map(row).join("");
+    loadListHistory().catch(() => {});
+  }
+
+  async function loadListHistory() {
+    const rows = await rpc("listlisthistory");
+    const labels = { 3: "follows", 10002: "relay list", 10003: "bookmarks", 30003: "bookmark list" };
+    $("#listhistory tbody").innerHTML = rows.length ? rows.map((r) => '<tr><td>' + esc((labels[r.kind] || ("kind " + r.kind)) + (r.d ? " / " + r.d : "")) + '</td><td class="dim">' + esc(fmtTime(r.created_at)) + '</td><td class="dim">' + esc(fmtTime(r.saved_at)) + '</td><td class="r">' + ib("undo", "Restore this version", "restorelist", r.event_id) + '</td></tr>').join("") : '<tr><td colspan="4" class="muted">no older list versions yet</td></tr>';
   }
 
   let searchQuery = "";
@@ -593,13 +613,22 @@
     const l = j.last;
     const count = (stored, blobs, sent, refused) => (j.kind === "mirror" ? blobs.toLocaleString() + " files mirrored" : j.kind === "import" ? stored.toLocaleString() + " events" + ((j.last ? j.last.duplicates : j.duplicates) ? ", " + (j.last ? j.last.duplicates : j.duplicates) + " already here" : "") : j.kind === "pull" ? stored.toLocaleString() + " events" + (blobs ? ", " + blobs + " files" : "") : sent.toLocaleString() + " sent" + (refused ? ", " + refused + " refused" : ""));
     const res = j.running ? "running: " + count(j.stored, j.blobs, j.sent, j.refused) + "..." : !l ? "waiting" : l.error ? "failed: " + l.error : count(l.stored, l.blobs, l.sent, l.refused) + (l.skipped ? ", " + l.skipped + " skipped" : "") + ", " + fmtTime(l.finishedAt);
-    return "<tr><td>" + what + "</td><td class=\"mono\">" + j.relays.map(esc).join("<br>") + "</td><td>" + (f.join(", ") || "everything") + "</td><td>" + when + "</td><td>" + esc(res) + "</td><td>" + (j.running ? "" : ib("undo", "Run now", "runjob", j.id)) + ib("x", "Remove", "removejob", j.id) + "</td></tr>";
+    const sources = j.running ? j.pullSources : l?.sources;
+    const details = sources?.length ? '<details><summary>Source results</summary>' + sources.map((s) => '<p><code>' + esc(s.url) + '</code>: ' + esc(s.status) + ', ' + s.stored + ' stored, ' + s.skipped + ' skipped' + (s.error || s.warning ? '<br>' + esc(s.error || s.warning) : '') + '</p>').join('') + '</details>' : '';
+    const targets = j.kind === "push" && j.targetStatus ? "<br><small>" + Object.entries(j.targetStatus).map(([u, s]) => esc(u) + ": " + esc(s.status)).join("<br>") + "</small>" : "";
+    return "<tr><td>" + what + "</td><td class=\"mono\">" + j.relays.map(esc).join("<br>") + targets + "</td><td>" + (f.join(", ") || "everything") + "</td><td>" + when + "</td><td>" + esc(res) + details + "</td><td>" + (j.running ? "" : ib("undo", "Run now", "runjob", j.id)) + ib("x", "Remove", "removejob", j.id) + "</td></tr>";
   };
   async function pollJobs() {
     clearTimeout(jobsTimer);
     let jobs;
     try { jobs = await rpc("listjobs"); } catch { return; }
     $("#jobs tbody").innerHTML = jobs.length ? jobs.map(fmtJob).join("") : '<tr><td colspan="6" class="muted">no jobs yet</td></tr>';
+    if (myRole === "owner") {
+      try {
+        const deliveries = await rpc("deliverystatus");
+        $("#deliveries tbody").innerHTML = deliveries.length ? deliveries.map((d) => '<tr><td class="mono" title="' + esc(d.event_id) + '">' + esc(d.event_id.slice(0, 12)) + '</td><td class="mono">' + esc(d.target) + '</td><td>' + esc(d.status) + '</td><td>' + d.attempts + '</td><td>' + esc(d.error || "") + '</td></tr>').join("") : '<tr><td colspan="5" class="muted">no automatic deliveries yet</td></tr>';
+      } catch { /* unavailable to non-owners */ }
+    }
     if (jobs.some((j) => j.running || (j.nextRun && j.nextRun <= Math.floor(Date.now() / 1000) + 1))) jobsTimer = setTimeout(pollJobs, 3000);
   }
   const urls = (s) => s.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
@@ -856,6 +885,19 @@
     ev.target.reset(); toast("Importing " + fmtBytes(r.bytes)); await pollJobs();
   });
   $("#dumpnow").onclick = guard(async () => { const d = await rpc("dumpnow"); toast("Dumped " + d.events.toLocaleString() + " events"); await loadStorage(); });
+  async function backupRequest(path, method, body) {
+    if (!signer.ready()) throw new Error(NO_SIGNER);
+    const hash = await sha256hex(body || "");
+    const token = await signer.signEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["u", location.origin + path], ["method", method], ["payload", hash]] });
+    return fetch(path, { method, headers: { authorization: "Nostr " + btoa(JSON.stringify(token)), ...(body ? { "content-type": "application/json" } : {}) }, body });
+  }
+  $("#backupnow").onclick = guard(async () => { const id = $("#backupid").value.trim() || "backup"; const r = await rpc("backupnow", id); const resp = await backupRequest("/backups/" + id, "GET"); if (!resp.ok) throw new Error("backup download failed"); const a = document.createElement("a"); a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + id + ".json"; a.click(); URL.revokeObjectURL(a.href); toast("Backup downloaded"); await loadStorage(); void r; });
+  async function selectedBackup() { const f = $("#backupfile").files[0]; if (!f) throw new Error("Choose a backup archive first."); if (f.size > 8 * 1024 * 1024) throw new Error("Backups are limited to 8 MB."); return { file: f, body: await f.text() }; }
+  let backupPreview = null;
+  $("#backupfile").onchange = () => { backupPreview = null; $("#backup-preview").textContent = ""; $("#backuprestore").disabled = true; };
+  $("#backupremote").onclick = () => showRemote(null);
+  $("#backuppreview").onclick = guard(async () => { const selected = await selectedBackup(); const r = await (await backupRequest("/backups/preview", "POST", selected.body)).json(); if (r.error) throw new Error(r.error); backupPreview = { file: selected.file, body: selected.body }; $("#backuprestore").disabled = false; const s = r.result.source; $("#backup-preview").innerHTML = '<p><b>Ready to restore.</b> ' + esc(String(r.result.events)) + ' events, ' + esc(String(r.result.blobs)) + ' files, ' + esc(String(r.result.git)) + ' Git objects, ' + esc(fmtBytes(r.result.bytes)) + '.</p><p>Source relay identity: <code>' + esc(s.relayIdentity || "unknown") + '</code></p><pre>' + esc(JSON.stringify(r.result.config, null, 2)) + '</pre>'; });
+  $("#backuprestore").onclick = guard(async () => { const selected = await selectedBackup(); if (!backupPreview || backupPreview.file !== selected.file || backupPreview.body !== selected.body) throw new Error("Preview this exact archive before restoring."); if (!confirm("Restore this archive onto this fresh relay? This cannot be undone.")) return; const r = await (await backupRequest("/backups/restore", "POST", selected.body)).json(); if (r.error) throw new Error(r.error); me = await signer.getPublicKey(); localStorage.setItem("me", me); toast("Backup restored"); await loadInfo(); await loadFuel(); await loadAdmin(); await loadPeople(); });
   $("#treeform").onsubmit = guard(async (ev) => {
     const f = ev.target;
     policy = await rpc("setpolicy", { memberInvites: { depth: Math.max(0, Math.floor(+f.depth.value || 0)), quota: Math.max(0, Math.floor(+f.quota.value || 0)) } });
@@ -962,6 +1004,25 @@
     if (act === "deleteblob" && !confirm("Delete this file for good?")) return;
     if (act === "deletedump" && !confirm("Delete this dump?")) return;
     if (act === "downloaddump") { b.disabled = true; try { await downloadDump(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "deletebackup" && !confirm("Delete this backup?")) return;
+    if (act === "downloadbackup") { b.disabled = true; try { await downloadBackup(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "deletebackup") { b.disabled = true; try { await rpc("deletebackup", id); toast("Backup deleted"); await loadBackups(); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "restorelist") {
+      if (!signer.ready()) { toast(NO_SIGNER); return; }
+      try {
+        const preview = await rpc("restorelist", id);
+        const d = preview.diff || {};
+        const added = (d.addedTags || []).map((t) => "+ " + JSON.stringify(t)).join("\n");
+        const removed = (d.removedTags || []).map((t) => "- " + JSON.stringify(t)).join("\n");
+        const changes = [added, removed, d.contentChanged ? "content changed" : "content unchanged"].filter(Boolean).join("\n");
+        if (!confirm("Restore this list version?\n\n" + (changes || "No tag or content changes") + "\n\nIt will be signed and published as the newest version.")) return;
+        const signed = await signer.signEvent(preview.draft);
+        const result = await bridge("/events", signed);
+        if (!result.accepted) throw new Error(result.message || "The relay refused the restored list.");
+        toast("List restored"); await loadListHistory(); await loadStorage();
+      } catch (e) { toast(e.message); } finally { b.disabled = false; }
+      return;
+    }
     if ((act === "removemember" || act === "banpubkey") && (window.__members || []).some((m) => m.invited_by === id) && confirm("Also remove everyone this member invited, and everyone they invited in turn?")) {
       b.disabled = true;
       try { const r = await rpc("removesubtree", id); if (act === "banpubkey") await rpc("banpubkey", id, "", erase); toast("Removed " + r.removed.length); await refresh(); } catch (e) { toast(e.message); } finally { b.disabled = false; }

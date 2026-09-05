@@ -77,6 +77,8 @@ export interface Policy {
   features: Features;
   pushCallbacks: string[]; // HTTPS origins approved by the owner and the host operator
   letteredNips: boolean; // opt into mixed NIP-11 identifiers; push also requires them
+  // Opt-in NIP-65 routing of locally-authored public events to their relays.
+  delivery: { enabled: boolean; maxTargets: number };
 }
 
 export const VIEW_NAMES = ["profiles", "relays", "calendar", "moderation", "articles", "zaps", "presence"];
@@ -134,6 +136,10 @@ export function policyPatch(patch: Record<string, unknown>, cur: Policy): Partia
   const clean: Record<string, unknown> = {};
   for (const k of ["name", "description", "icon", "contact"]) if (typeof patch[k] === "string") clean[k] = (patch[k] as string).slice(0, 2000);
   Object.assign(clean, publicFields(patch), dumpFields(patch), gateFields(patch), viewFields(patch, cur.views), featureFields(patch, cur.features));
+  if (patch.delivery && typeof patch.delivery === "object") {
+    const d = patch.delivery as Record<string, unknown>;
+    clean.delivery = { enabled: typeof d.enabled === "boolean" ? d.enabled : cur.delivery.enabled, maxTargets: Number.isInteger(d.maxTargets) ? Math.max(1, Math.min(16, d.maxTargets as number)) : cur.delivery.maxTargets };
+  }
   if (isWriteRule(patch.writes)) clean.writes = patch.writes;
   if (patch.reads === "open" || patch.reads === "auth" || patch.reads === "members") clean.reads = patch.reads;
   if (typeof patch.joinTerms === "string") clean.joinTerms = patch.joinTerms.slice(0, 20000);
@@ -201,6 +207,7 @@ export const DEFAULT_POLICY: Policy = {
   features: { ...DEFAULT_FEATURES },
   pushCallbacks: [],
   letteredNips: false,
+  delivery: { enabled: false, maxTargets: 8 },
 };
 
 export const SETTINGS_SCHEMA = `

@@ -40,6 +40,8 @@ const announcement = (sk: Uint8Array, host: string, identifier: string) => ev(sk
 ]);
 
 describe("GRASP checkpoint integration", () => {
+  // Each migration performs 260 sequential commits and retained-object scans.
+  // Hosted CI takes over 30 seconds for the growing-ref fixture.
   it.each(["growing", "fixed"])("migrates an isolated %s-ref repository and reconciles retained storage", async (workload) => {
     const host = `grasp-checkpoint-${workload}.bind.ws`;
     const owner = generateSecretKey();
@@ -139,7 +141,7 @@ describe("GRASP checkpoint integration", () => {
     expect(measurements.retained.currentBytes).toBeLessThan(measurements.retained.physicalBytes);
     expect(measurements.retained.categories["unreferenced/records"]).toBeUndefined();
     expect(measurements.retained.categories["unreferenced/packs"]).toBeUndefined();
-  });
+  }, 90_000);
 
   it("retains a reservation when an immutable checkpoint write is ambiguous", async () => {
     const host = "grasp-checkpoint-ambiguous.bind.ws";

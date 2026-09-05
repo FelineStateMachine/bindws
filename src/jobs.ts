@@ -6,7 +6,7 @@
 // fuel, which is the right signal for work nobody asked a client for.
 import { hasTag, isPrivate, now, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
-import { Socket, dial, checkPullURL, runPullRound, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
+import { Socket, dial, checkPullURL, runPullRound, newPullProgress, type PullConnect, type PullSource, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 import { runMirrorRound } from "./site-mirror.ts";
 import { runImportRound } from "./imports.ts";
@@ -25,6 +25,7 @@ export interface JobResult {
   sent: number;
   refused: number;
   duplicates?: number;
+  sources?: PullSource[];
 }
 
 export interface Job {
@@ -43,6 +44,11 @@ export interface Job {
   failures: number;
   relayIndex: number; // pull: which source is being synced
   cursor: number; // push: last sequence number forwarded, kept across runs
+  // Newer push jobs keep independent cursors. `cursor` remains for old job
+  // readers and is the greatest cursor reached by any target.
+  targetCursors?: Record<string, number>;
+  targetStatus?: Record<string, { status: "pending" | "accepted" | "rejected"; error: string; at: number }>;
+  targetAttempts?: Record<string, number>;
   stored: number;
   skipped: number;
   blobs: number;
@@ -54,6 +60,7 @@ export interface Job {
   size?: number; // import: the object's size in bytes
   carry?: string; // import: the partial last line of the previous round, base64
   last: JobResult | null;
+  pullSources?: PullSource[];
 }
 
 export const MAX_STANDING = 5;
@@ -102,7 +109,7 @@ export function checkJob(raw: unknown, relay: Relay): JobSpec | string {
   const every = r.every === undefined ? 0 : Number(r.every);
   if (!(EVERY as readonly number[]).includes(every)) return "invalid: every must be 0, 1, 6 or 24 hours";
   if (kind === "push" && relay.settings.policy.reads === "members" && filter.kinds?.some(isPrivate)) return "restricted: a members-only relay does not rebroadcast private kinds";
-  return { kind, label, relays, filter, every, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null };
+  return { kind, label, relays, filter, every, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, targetCursors: {}, targetStatus: {}, targetAttempts: {}, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null };
 }
 
 // relaysFromList reads the owner's kind 10002 stored on this relay and
@@ -131,17 +138,32 @@ export async function runRound(relay: Relay, job: Job): Promise<{ more: boolean;
 
 // A pull job syncs its sources one after another; each source is a pull
 // in the sense of pull.ts, with the job's filter.
-async function runPullSourceRound(relay: Relay, job: Job): Promise<{ more: boolean; error: string }> {
+export async function runPullSourceRound(relay: Relay, job: Job, connect?: PullConnect): Promise<{ more: boolean; error: string }> {
   if (job.relayIndex >= job.relays.length) return { more: false, error: "" };
-  const sub: PullJob = { url: job.relays[job.relayIndex], startedAt: job.startedAt, rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0 };
+  const sources = job.pullSources ??= job.relays.map((url) => ({ url, ...newPullProgress(), stored: 0, skipped: 0, blobs: 0 }));
+  const source = sources[job.relayIndex];
+  const sub: PullJob = { url: source.url, startedAt: job.startedAt, rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0, progress: source };
   if (job.filter.authors || job.filter.kinds || job.filter.since) sub.filter = job.filter;
-  const r = await runPullRound(relay, sub);
+  const r = await runPullRound(relay, sub, connect);
   job.rounds++;
   job.stored += sub.stored;
   job.skipped += sub.skipped;
   job.blobs += sub.blobs;
-  if (r.error) return r;
-  if (!r.more) job.relayIndex++;
+  source.stored += sub.stored;
+  source.skipped += sub.skipped;
+  source.blobs += sub.blobs;
+  if (r.error) {
+    source.failures++;
+    const refused = /auth-required:|query refused:|files refused:/.test(r.error);
+    if (!refused && source.failures < 3) return r;
+    source.status = refused ? "refused" : "failed";
+    source.error = r.error;
+    job.relayIndex++;
+  } else {
+    source.failures = 0;
+    source.error = "";
+    if (!r.more) job.relayIndex++;
+  }
   return { more: job.relayIndex < job.relays.length, error: "" };
 }
 
@@ -155,34 +177,47 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
   if (job.filter.authors) f.authors = job.filter.authors;
   if (job.filter.kinds) f.kinds = job.filter.kinds;
   if (job.filter.since) f.since = job.filter.since;
-  const rows = relay.store.after(job.cursor, f, PUSH_BATCH, now());
-  if (rows.length === 0) return { more: false, error: "" };
+  job.targetCursors ??= {};
+  job.targetStatus ??= {};
+  job.targetAttempts ??= {};
   const membersOnly = relay.settings.policy.reads === "members";
-  const events: Event[] = [];
-  for (const r of rows) {
-    const e = JSON.parse(r.raw) as Event;
-    if (hasTag(e, "-") || (membersOnly && isPrivate(e.kind))) {
-      job.skipped++;
-      continue;
-    }
-    events.push(e);
-  }
-  let failed = "";
-  let reached = 0;
+  let more = false, failed = "", reached = 0;
+  const legacyCursor = job.cursor;
+  // Materialize every target's starting point before any target can advance
+  // the legacy cursor. This is the compatibility bridge for old jobs.
+  for (const url of job.relays) if (job.targetCursors[url] === undefined) job.targetCursors[url] = legacyCursor;
   for (const url of job.relays) {
+    if ((job.targetAttempts[url] ?? 0) >= 3) continue;
+    const cursor = job.targetCursors[url] ?? 0;
+    const rows = relay.store.after(cursor, f, PUSH_BATCH, now());
+    if (rows.length === 0) { job.targetStatus[url] = { status: "accepted", error: "", at: now() }; continue; }
+    more = more || rows.length === PUSH_BATCH;
+    const events: Event[] = [];
+    for (const row of rows) {
+      const e = JSON.parse(row.raw) as Event;
+      if (hasTag(e, "-") || (membersOnly && isPrivate(e.kind))) { job.skipped++; continue; }
+      events.push(e);
+    }
     try {
+      const refusedBefore = job.refused;
       await pushTo(relay, url, events, job);
       reached++;
+      job.targetCursors[url] = rows[rows.length - 1].seq;
+      job.targetStatus[url] = { status: job.refused > refusedBefore ? "rejected" : "accepted", error: job.refused > refusedBefore ? "Some events were explicitly refused." : "", at: now() };
+      job.targetAttempts[url] = 0;
+      job.cursor = Math.max(job.cursor, rows[rows.length - 1].seq);
     } catch (err) {
       failed = url + ": " + (err instanceof Error ? err.message : String(err));
+      job.targetAttempts[url] = (job.targetAttempts[url] ?? 0) + 1;
+      job.targetStatus[url] = { status: job.targetAttempts[url] >= 3 ? "rejected" : "pending", error: failed, at: now() };
+      more = true;
     }
   }
-  if (reached === 0 && events.length) return { more: false, error: failed };
-  job.cursor = rows[rows.length - 1].seq;
-  return { more: rows.length === PUSH_BATCH, error: "" };
+  if (reached === 0 && failed) return { more: true, error: failed };
+  return { more, error: "" };
 }
 
-async function pushTo(relay: Relay, url: string, events: Event[], job: Job) {
+async function pushTo(relay: Relay, url: string, events: Event[], job: Job): Promise<void> {
   if (events.length === 0) return;
   const sock = new Socket(await dial(relay, url));
   try {
@@ -193,7 +228,7 @@ async function pushTo(relay: Relay, url: string, events: Event[], job: Job) {
       for (const e of batch) sock.send("EVENT", e);
       const deadline = Date.now() + PUSH_TIMEOUT_MS;
       while (pending.size && Date.now() < deadline) {
-        const m = await sock.recv();
+        const m = await sock.recv(deadline - Date.now());
         if (m[0] !== "OK" || typeof m[1] !== "string" || !pending.has(m[1])) continue;
         pending.delete(m[1]);
         const msg = String(m[3] ?? "");
@@ -209,7 +244,7 @@ async function pushTo(relay: Relay, url: string, events: Event[], job: Job) {
         job.refused += pending.size;
         throw new Error("the relay stopped answering");
       }
-      if (refusedInARow >= REFUSALS_PER_TARGET) return;
+      if (refusedInARow >= REFUSALS_PER_TARGET) throw new Error("target refused too many events");
     }
   } finally {
     sock.close();
@@ -230,11 +265,16 @@ export function startRun(job: Job, t: number) {
   job.sent = 0;
   job.refused = 0;
   job.duplicates = 0;
+  if (job.kind === "push") job.targetAttempts = {};
+  if (job.kind === "pull") job.pullSources = job.relays.map((url) => ({ url, ...newPullProgress(), stored: 0, skipped: 0, blobs: 0 }));
 }
 
 // finishRun closes the current run and schedules the next one.
 export function finishRun(job: Job, error: string, t: number) {
-  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0 };
+  if (!error && job.kind === "push" && Object.values(job.targetStatus ?? {}).some((s) => s.status === "rejected")) error = "Some delivery targets refused events or exhausted retries; inspect target results.";
+  const incomplete = job.pullSources?.filter((s) => ["partial", "refused", "failed"].includes(s.status));
+  if (!error && incomplete?.length) error = `${incomplete.length} import source(s) incomplete; inspect Source results for details.`;
+  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0, ...(job.pullSources ? { sources: structuredClone(job.pullSources) } : {}) };
   job.running = false;
   job.nextRun = job.every > 0 ? t + job.every * 3600 : 0;
 }

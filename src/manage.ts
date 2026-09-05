@@ -11,6 +11,7 @@ import type { Relay } from "./relay.ts";
 import { CODE_RE, inviteCreator, listClaims, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
+import { deliveryStatus } from "./delivery.ts";
 import { applyConfig, exportConfig, parseConfig, planConfig } from "./config.ts";
 import { isReplaceable, isProtected, validIP } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
@@ -26,6 +27,7 @@ import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 import { gitStorage } from "./git-storage.ts";
+import { createBackup, deleteBackup, listBackups } from "./backups.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -56,6 +58,7 @@ interface Method {
   reads?: true;
   // Plain members may manage their own invitations when the tree is open.
   ownInvites?: true;
+  ownListHistory?: true;
   run: (c: Call) => Response | Promise<Response>;
 }
 
@@ -254,6 +257,18 @@ export const METHODS: Record<string, Method> = {
     run: ({ relay, t, caller, role, params, reply }) => {
       if (params.length !== 0) return reply({ error: "invalid: listclaims takes no parameters" }, 400);
       return reply({ result: listClaims(relay.sql, t, role === "member" ? caller : "") });
+    },
+  },
+  listlisthistory: {
+    action: "read", reads: true, ownListHistory: true,
+    run: ({ relay, caller, t, reply }) => reply({ result: relay.store.listHistory(caller, t) }),
+  },
+  restorelist: {
+    action: "read", reads: true, ownListHistory: true,
+    run: ({ relay, caller, params, str, hex64, reply }) => {
+      if (params.length !== 1 || !hex64(str(0))) return reply({ error: "invalid: give one saved list event id" }, 400);
+      const restored = relay.store.restoreHistory(caller, str(0), now());
+      return typeof restored === "string" ? reply({ error: restored }, 404) : reply({ result: restored });
     },
   },
   createclaim: {
@@ -618,6 +633,7 @@ export const METHODS: Record<string, Method> = {
   },
   pullstatus: { action: "jobs", reads: true, run: async ({ relay, reply }) => reply({ result: await relay.pullStatus() }) },
   listjobs: { action: "jobs", reads: true, run: async ({ relay, reply }) => reply({ result: await relay.jobs() }) },
+  deliverystatus: { action: "jobs", reads: true, run: ({ relay, reply }) => reply({ result: deliveryStatus(relay) }) },
   addjob: {
     action: "jobs",
     run: async ({ relay, params, reply }) => {
@@ -665,6 +681,16 @@ export const METHODS: Record<string, Method> = {
     },
   },
   dumpnow: { action: "storage", run: async ({ relay, t, reply }) => reply({ result: await writeDump(relay, t) }) },
+  backupnow: {
+    action: "storage",
+    run: async ({ relay, params, reply }) => {
+      const id = typeof params[0] === "string" && params[0] ? params[0] : `backup-${now()}`;
+      const result = await createBackup(relay, id);
+      return typeof result === "string" ? reply({ error: result }, result.startsWith("invalid:") ? 400 : 403) : reply({ result: { ...result.manifest, url: "/backups/" + id } });
+    },
+  },
+  listbackups: { action: "storage", reads: true, run: async ({ relay, reply }) => reply({ result: await listBackups(relay) }) },
+  deletebackup: { action: "storage", run: async ({ relay, str, reply }) => reply({ result: await deleteBackup(relay, str(0)) }) },
   setsuccession: {
     action: "transfer",
     run: async ({ relay, s, params, str, num, hex64, reply }) => {
@@ -794,8 +820,9 @@ export async function manage(relay: Relay, req: Request): Promise<Response> {
     // A plain member reaches their own invites when the owner opened the
     // invite tree (memberInvites); the invite methods keep them to their own.
     const ownInvites = role === "member" && p.memberInvites.depth > 0 && m.ownInvites;
+    const ownListHistory = role !== null && m.ownListHistory;
     if (role === "owner") void relay.succession.seen(caller);
-    if (!ownInvites && !can(role, m.action)) {
+    if (!ownInvites && !ownListHistory && !can(role, m.action)) {
       const why = role === "moderator" ? "restricted: moderators cannot do that" : p.owner !== "" ? "restricted: not the relay owner" : s.isLeased() ? "restricted: this is a temporary relay; claim it first" : "restricted: this relay is unclaimed";
       return reply({ error: why }, 403);
     }
