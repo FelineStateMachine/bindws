@@ -2,7 +2,6 @@
 // physical byte meter already includes these objects, refs and retry receipts.
 import { repository } from "./grasp-state.ts";
 import { gitStoragePrefix } from "./grasp.ts";
-import { DEFAULT_GIT_SQLITE_LIMITS } from "./git-sqlite.ts";
 import { featureOn } from "./settings.ts";
 import { now } from "./event.ts";
 import type { Relay } from "./relay.ts";
@@ -27,6 +26,6 @@ export async function gitStorage(relay: Relay, owner: string, identifier: string
     const counts = relay.sql.exec<{ refs: number; receipts: number }>("SELECT (SELECT count(*) FROM git_sqlite_refs WHERE repository=?) AS refs, (SELECT count(*) FROM git_sqlite_receipts WHERE repository=?) AS receipts", namespace, namespace);
     const { refs, receipts } = counts.one();
     relay.meterPush(cursor.rowsRead + counts.rowsRead, cursor.rowsWritten + counts.rowsWritten);
-    return { body: { result: { repository: { owner, identifier, announcement: repo.id }, backend: "sqlite", objects, refs, receipts, physicalDatabaseBytes: relay.eventBytes(), operations: { gets: 0, lists: 0 }, limits: DEFAULT_GIT_SQLITE_LIMITS, cooldownSeconds: 60, capturedAt: now() } }, status: 200 };
+    return { body: { result: { repository: { owner, identifier, announcement: repo.id }, backend: "sqlite", objects, refs, receipts, physicalDatabaseBytes: relay.eventBytes(), operations: { gets: 0, lists: 0 }, limits: relay.settings.policy.git, cooldownSeconds: 60, capturedAt: now() } }, status: 200 };
   }, () => failure("restricted: relay operation in progress; retry", 429));
 }

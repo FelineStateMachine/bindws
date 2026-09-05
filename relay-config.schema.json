@@ -48,6 +48,26 @@
         "joinTerms": { "type": "string", "maxLength": 20000 },
         "directoryPublic": { "type": "boolean" },
         "maxBlobMB": { "type": "integer", "minimum": 1, "maximum": 95 },
+        "git": {
+          "type": "object",
+          "description": "GRASP Git retained-storage and request limits. Byte fields are bytes; these maxima mirror src/git-limits.ts.",
+          "additionalProperties": false,
+          "properties": {
+            "maxRepositories": { "type": "integer", "minimum": 1, "maximum": 4096, "description": "Maximum accepted repositories on this relay." },
+            "maxRelayBytes": { "type": "integer", "minimum": 1, "maximum": 6442450944, "description": "Total retained Git bytes, including compressed objects and metadata." },
+            "maxPackBytes": { "type": "integer", "minimum": 1, "maximum": 99614720, "description": "Maximum pack upload or response size." },
+            "maxObjectBytes": { "type": "integer", "minimum": 1, "maximum": 67108864, "description": "Maximum one Git object body." },
+            "maxObjects": { "type": "integer", "minimum": 1, "maximum": 500000 },
+            "maxRawBytes": { "type": "integer", "minimum": 1, "maximum": 68719476736 },
+            "maxTransactionRawBytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+            "maxTransactionObjects": { "type": "integer", "minimum": 1, "maximum": 100000 },
+            "maxCompressedBytes": { "type": "integer", "minimum": 1, "maximum": 6442450944, "description": "Retained compressed Git object payload per repository." },
+            "maxMetadataBytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 },
+            "maxRefs": { "type": "integer", "minimum": 1, "maximum": 16384 },
+            "maxGraphEdges": { "type": "integer", "minimum": 1, "maximum": 4000000 },
+            "maxFetchBytes": { "type": "integer", "minimum": 1, "maximum": 6442450944 }
+          }
+        },
         "eventsPerMinute": { "type": "integer", "minimum": 1 },
         "reqsPerMinute": { "type": "integer", "minimum": 1 },
         "minPow": { "type": "integer", "minimum": 0, "maximum": 64 },

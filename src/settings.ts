@@ -1,4 +1,5 @@
 // Per-relay settings and policy, kept in the same SQLite database.
+import { DEFAULT_GIT_LIMITS, gitLimitPatch, type GitLimits } from "./git-limits.ts";
 import { callbackOrigins } from "./push-policy.ts";
 import { notifySettings, type NotifySettings } from "./notify.ts";
 import type { CustomHost } from "./domains.ts";
@@ -57,6 +58,7 @@ export interface Policy {
   joinTerms: string; // shown before an invite is accepted (markdown-ish plain text)
   directoryPublic: boolean; // whether the people directory is shown to visitors
   maxBlobMB: number; // Blossom upload size cap
+  git: GitLimits; // per-relay Git storage and transfer capacity
   eventsPerMinute: number; // per-connection write rate
   reqsPerMinute: number; // per-connection query rate
   minPow: number;
@@ -162,6 +164,10 @@ export function policyPatch(patch: Record<string, unknown>, cur: Policy): Partia
   const notifyPatch = notifySettings(patch.notify, cur.notify);
   if (notifyPatch) clean.notify = notifyPatch;
   Object.assign(clean, limitFields(patch));
+  if (patch.git !== undefined) {
+    const git = gitLimitPatch(patch.git, cur.git);
+    if (git) clean.git = git;
+  }
   return clean as Partial<Policy>;
 }
 
@@ -205,6 +211,7 @@ export const DEFAULT_POLICY: Policy = {
   joinTerms: "",
   directoryPublic: true,
   maxBlobMB: 25,
+  git: { ...DEFAULT_GIT_LIMITS },
   eventsPerMinute: 120,
   reqsPerMinute: 240,
   minPow: 0,
@@ -454,7 +461,7 @@ export class Settings {
     const row = this.sql.exec<{ value: string }>(`SELECT value FROM settings WHERE key='policy'`).toArray()[0];
     if (row) {
       const stored = JSON.parse(row.value) as Partial<Policy>;
-      this.policy = { ...DEFAULT_POLICY, ...stored, features: { ...DEFAULT_FEATURES, ...(stored.features ?? {}) } };
+      this.policy = { ...DEFAULT_POLICY, ...stored, git: gitLimitPatch(stored.git) ?? { ...DEFAULT_GIT_LIMITS }, features: { ...DEFAULT_FEATURES, ...(stored.features ?? {}) } };
       // Views were on or off before they had triggers.
       const views: Record<string, ViewSetting> = {};
       for (const [k, v] of Object.entries((stored.views ?? {}) as Record<string, unknown>)) {

@@ -1,5 +1,6 @@
 // GRASP's accepted Nostr authority and purgatory. Git objects and refs live
 // in the SQLite backend; these tables record visibility and cleanup deadlines.
+import { MAX_GIT_LIMITS } from "./git-limits.ts";
 import { now, tag, tagValues, type Event } from "./event.ts";
 import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";
 import { featureOn } from "./settings.ts";
@@ -7,7 +8,7 @@ import { parseRepositoryAnnouncement, parseRepositoryState, recursiveMaintainers
 import { npubEncode } from "nostr-tools/nip19";
 import type { Relay } from "./relay.ts";
 
-export const MAX_REPOSITORIES = 16;
+
 export const PURGATORY_SECONDS = 1800;
 export const PR_REF_SECONDS = 1200;
 export const GRASP_SCHEMA = `
@@ -25,10 +26,17 @@ CREATE TABLE IF NOT EXISTS grasp_sync_status (id INTEGER PRIMARY KEY CHECK(id=1)
 // graspEvents includes purgatory for write authority, but never expired or
 // moderated records. A pending signed state authorizes the data it awaits.
 export function graspEvents(relay: Relay, kind: number): Event[] {
-  return relay.sql.exec<{ raw: string }>(`SELECT raw FROM events WHERE kind=? AND (expires=0 OR expires>?) AND NOT EXISTS (SELECT 1 FROM grasp_pending WHERE grasp_pending.id=events.id AND until<=?) ORDER BY created_at DESC,id ASC LIMIT 1025`, kind, now(), now()).toArray().map((r) => JSON.parse(r.raw) as Event).filter((e) => !relay.settings.isEventHidden(e.id) && !relay.settings.isEventBanned(e.id) && !relay.settings.isBanned(e.pubkey));
+  return relay.sql.exec<{ raw: string }>(`SELECT raw FROM events WHERE kind=? AND (expires=0 OR expires>?) AND NOT EXISTS (SELECT 1 FROM grasp_pending WHERE grasp_pending.id=events.id AND until<=?) ORDER BY created_at DESC,id ASC LIMIT ?`, kind, now(), now(), MAX_GIT_LIMITS.maxRepositories * 4 + 1).toArray().map((r) => JSON.parse(r.raw) as Event).filter((e) => !relay.settings.isEventHidden(e.id) && !relay.settings.isEventBanned(e.id) && !relay.settings.isBanned(e.pubkey));
 }
 export const announcements = (relay: Relay): RepositoryAnnouncement[] => graspEvents(relay, KIND_REPO).flatMap((e) => { const p = parseRepositoryAnnouncement(e); return p.value ? [p.value] : []; });
-export const hostedAnnouncements = (relay: Relay): RepositoryAnnouncement[] => announcements(relay).filter((r) => relay.sql.exec(`SELECT 1 FROM grasp_hosted WHERE id=?`, r.id).toArray().length > 0);
+// Query admitted repositories directly: companion announcements or a lower
+// intake quota must not evict an existing repository from the discovery window.
+export const hostedAnnouncements = (relay: Relay): RepositoryAnnouncement[] => relay.sql.exec<{ raw: string }>(`SELECT events.raw FROM grasp_hosted JOIN events ON events.id=grasp_hosted.id WHERE events.kind=? AND (events.expires=0 OR events.expires>?) ORDER BY events.created_at DESC,events.id`, KIND_REPO, now()).toArray().flatMap(row => {
+  const event = JSON.parse(row.raw) as Event;
+  if (relay.settings.isEventHidden(event.id) || relay.settings.isEventBanned(event.id) || relay.settings.isBanned(event.pubkey)) return [];
+  const parsed = parseRepositoryAnnouncement(event);
+  return parsed.value ? [parsed.value] : [];
+});
 export const repository = (relay: Relay, owner: string, identifier: string) => hostedAnnouncements(relay).find((r) => r.owner === owner && r.identifier === identifier) ?? null;
 export function repositoryState(relay: Relay, repo: RepositoryAnnouncement) {
   const states = graspEvents(relay, KIND_REPO_STATE).flatMap((e) => { const p = parseRepositoryState(e); return p.value ? [p.value] : []; });
@@ -63,7 +71,7 @@ export function graspGate(relay: Relay, e: Event, host: string): string {
     const all = announcements(relay);
     const related = hostedAnnouncements(relay).some((root) => root.owner !== e.pubkey && root.identifier === r.identifier && recursiveMaintainers(root, all)?.has(e.pubkey));
     if (!listed && !related && !featureOn(relay.settings.policy, "grasp05")) return "restricted: repository clone and relays tags must name this service";
-    if ((listed || featureOn(relay.settings.policy, "grasp05")) && !repository(relay, r.owner, r.identifier) && hostedAnnouncements(relay).length >= MAX_REPOSITORIES) return `restricted: at most ${MAX_REPOSITORIES} repositories per relay`;
+    if ((listed || featureOn(relay.settings.policy, "grasp05")) && !repository(relay, r.owner, r.identifier) && hostedAnnouncements(relay).length >= relay.settings.policy.git.maxRepositories) return `restricted: at most ${relay.settings.policy.git.maxRepositories} repositories per relay`;
   }
   if (e.kind === KIND_REPO_STATE) {
     const p = parseRepositoryState(e);

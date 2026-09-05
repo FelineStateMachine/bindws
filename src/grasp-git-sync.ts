@@ -1,6 +1,7 @@
 // GRASP-02 Git reconciliation uses signed event targets and one bounded source
 // attempt per alarm. Durable due times survive restarts and rotate failed sources.
 import { fetchGitPack, encodePack, sha256, classifyError } from "ntig";
+import { gitPackLimits } from "./git-limits.ts";
 import { now, tag, type Event } from "./event.ts";
 import { featureOn } from "./settings.ts";
 import { KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";
@@ -81,8 +82,8 @@ async function reconcile(relay: Relay, task: Task, attempt: number): Promise<boo
       const local = await gitRepository(relay, address, true);
       const ref = `refs/nostr/${task.event.id}`;
       if ((await local.loadRefs()).refs[ref] === tag(task.event, "c")) {
-        const available = await gitGraph(local, missing);
-        pack = await encodePack(available);
+        const available = await gitGraph(local, missing, relay.settings.policy.git);
+        pack = await encodePack(available, gitPackLimits(relay.settings.policy.git));
       }
     }
   }
@@ -92,6 +93,10 @@ async function reconcile(relay: Relay, task: Task, attempt: number): Promise<boo
     const source = sources[attempt % sources.length];
     const fetched = await fetchGitPack(source, {
       wants: missing,
+      maxPackBytes: relay.settings.policy.git.maxPackBytes,
+      maxResponseBytes: relay.settings.policy.git.maxPackBytes + 1024 * 1024,
+      maxRefs: relay.settings.policy.git.maxRefs,
+      gitLimits: gitPackLimits(relay.settings.policy.git),
       fetch: request => sourceFetch(relay, request),
       timeoutMs: 10_000,
       observe: event => relay.meterBytes(event.responseBytes, event.requestBytes),

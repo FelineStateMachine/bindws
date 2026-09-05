@@ -187,8 +187,9 @@ The database size is charged once through `eventBytes`, which includes its
 indexes and relay metadata. The SQLite backend removes the former R2 per-push
 root and transaction ceiling, but it does not promise lower cost for every
 repository. SQLite storage, compression, rows, indexes, awake time and request
-work all affect the result. Portable backups export Git through the same
-bounded section because a Durable Object database is not a portable archive.
+work all affect the result. Portable backups can include Git when it fits the
+bounded archive, or omit Git so larger repositories can be recovered with a
+client-side mirror or bundle.
 
 [Tangled knots](https://docs.tangled.org/knot-self-hosting-guide) provide
 useful prior art: AT Protocol identity sits above a filesystem Git host with

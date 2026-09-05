@@ -12,12 +12,17 @@ import { KIND_PUSH_REGISTRATION } from "./kinds.ts";
 import { archiveCurrent, isListKind } from "./list-history.ts";
 import { Settings } from "./settings.ts";
 import { exportGitBackup, prepareGitBackup, restoreGitBackup, type GitBackup, type PreparedGit } from "./git-backup.ts";
+import { DEFAULT_GIT_SQLITE_LIMITS, type GitSqliteLimits } from "./git-sqlite.ts";
 
 export const BACKUP_FORMAT = "bind.ws/relay-backup/1";
 // JSON parsing, base64 expansion and integrity copies coexist in the Worker
-// heap, so the portable form stays well below the platform heap ceiling.
-export const BACKUP_MAX_BYTES = 8 * 1024 * 1024;
-export const BACKUP_MAX_OBJECTS = 12_000;
+// heap.  This is an archive/operation budget, independent from retained Git
+// capacity; hosts may raise it when their execution/memory budget permits.
+export interface BackupLimits { maxBytes: number; maxEntries: number; includeGit?: boolean; gitLimits?: Readonly<GitSqliteLimits>; }
+export const DEFAULT_BACKUP_LIMITS: Readonly<BackupLimits> = Object.freeze({ maxBytes: 8 * 1024 * 1024, maxEntries: 12_000, includeGit: true, gitLimits: DEFAULT_GIT_SQLITE_LIMITS });
+// Kept as named exports for callers compiled against the original API.
+export const BACKUP_MAX_BYTES = DEFAULT_BACKUP_LIMITS.maxBytes;
+export const BACKUP_MAX_OBJECTS = DEFAULT_BACKUP_LIMITS.maxEntries;
 export const BACKUP_SCHEMA = `CREATE TABLE IF NOT EXISTS backups (id TEXT PRIMARY KEY, bytes INTEGER NOT NULL);`;
 export const backupBytes = (relay: Relay): number => relay.sql.exec<{ n: number }>(`SELECT coalesce(sum(bytes),0) n FROM backups`).one().n;
 export const BACKUP_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
@@ -59,7 +64,7 @@ const unsignedBytes = (archive: BackupArchive) => {
 
 // createBackup snapshots the visible database and every tenant-owned media
 // object. The cap makes the bounded in-memory archive explicit.
-export async function createBackup(relay: Relay, id: string): Promise<{ manifest: BackupArchive["manifest"]; key: string } | string> {
+export async function createBackup(relay: Relay, id: string, limits: Readonly<BackupLimits> = DEFAULT_BACKUP_LIMITS): Promise<{ manifest: BackupArchive["manifest"]; key: string } | string> {
   if (!BACKUP_ID_RE.test(id)) return "invalid: backup id must be 3 to 64 lowercase letters, digits, dash or underscore";
   if (relay.settings.isUnclaimed() || relay.settings.leaseExpired(now())) return "restricted: relay is not active";
   const owner = relay.settings.policy.owner;
@@ -70,7 +75,7 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
   const reserve = (bytes: number, count = 1) => {
     // JSON strings and base64 coexist with decoded buffers during sealing.
     const next = estimate + Math.ceil(bytes * 2) + 256;
-    if (next > BACKUP_MAX_BYTES || entries + count > BACKUP_MAX_OBJECTS) return false;
+    if (next > limits.maxBytes || entries + count > limits.maxEntries) return false;
     estimate = next;
     entries += count;
     return true;
@@ -101,10 +106,12 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
     blobs.push({ ...b, data: toB64(data), sha256: b.sha256, size: data.length });
   }
   const git: BackupArchive["git"] = [];
-  const sqlGit = exportGitBackup(relay, reserve);
+  const sqlGit = limits.includeGit === false ? undefined : exportGitBackup(relay, reserve, limits.gitLimits, limits.maxEntries);
   if (typeof sqlGit === "string") return sqlGit;
-  const verifiedGit = await prepareGitBackup(sqlGit);
-  if (typeof verifiedGit === "string") return verifiedGit;
+  if (sqlGit !== undefined) {
+    const verifiedGit = await prepareGitBackup(sqlGit, limits.maxEntries, limits.gitLimits);
+    if (typeof verifiedGit === "string") return verifiedGit;
+  }
   const config = exportConfig(relay.settings, relay.slug);
   if (!reserve(enc.encode(JSON.stringify(config)).length)) return "restricted: backup exceeds its bounded size or object limit";
   const state = { listHistory: [] as string[], hidden: [...relay.settings.hiddenEvents], hosted: relay.sql.exec<{ id: string }>(`SELECT id FROM grasp_hosted`).toArray().map((r) => r.id), pending: relay.sql.exec<{ id: string; until: number }>(`SELECT id,until FROM grasp_pending`).toArray(), prRefs: relay.sql.exec<{ repo: string; ref: string; until: number }>(`SELECT repo,ref,until FROM grasp_pr_refs`).toArray() };
@@ -113,12 +120,12 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
     state.listHistory.push(row.raw);
   }
   if (!reserve(enc.encode(JSON.stringify({ ...state, listHistory: [] })).length, state.hidden.length + state.hosted.length + state.pending.length + state.prRefs.length)) return "restricted: backup state exceeds its bounded size";
-  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: sqlGit.repositories.reduce((count, repo) => count + repo.objects.length, 0), archiveSha256: "" }, config, events, blobs, git, sqlGit, state } as BackupArchive;
+  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: sqlGit?.repositories.reduce((count, repo) => count + repo.objects.length, 0) ?? 0, archiveSha256: "" }, config, events, blobs, git, ...(sqlGit ? { sqlGit } : {}), state } as BackupArchive;
   archive.manifest.archiveSha256 = "0".repeat(64);
   for (let i = 0; i < 4; i++) archive.manifest.bytes = bytesOf(archive).length;
   archive.manifest.archiveSha256 = digest(unsignedBytes(archive));
   const finalBytes = bytesOf(archive);
-  if (finalBytes.length > BACKUP_MAX_BYTES) return "restricted: backup exceeds 8 MiB; use smaller retention or separate Git repositories";
+  if (finalBytes.length > limits.maxBytes) return "restricted: backup exceeds the portable archive size; use includeGit:false with a separate Git mirror or reduce retained data";
   relay.sql.exec(`INSERT OR REPLACE INTO backups(id,bytes) VALUES(?,?)`, id, finalBytes.length);
   await relay.media.put(archiveKey(relay, id), finalBytes, { httpMetadata: { contentType: "application/json" } });
   relay.meterBytes(0, finalBytes.length);
@@ -138,13 +145,13 @@ export async function deleteBackup(relay: Relay, id: string) {
 }
 
 const preparedArchives = new WeakMap<BackupArchive, PreparedGit[]>();
-const checkedArchive = async (bytes: Uint8Array): Promise<BackupArchive | string> => {
-  if (bytes.length > BACKUP_MAX_BYTES) return "restricted: backup exceeds 8 MiB";
+const checkedArchive = async (bytes: Uint8Array, limits: Readonly<BackupLimits> = DEFAULT_BACKUP_LIMITS): Promise<BackupArchive | string> => {
+  if (bytes.length > limits.maxBytes) return "restricted: backup exceeds configured archive size";
   let archive: BackupArchive;
   try { archive = JSON.parse(dec.decode(bytes)) as BackupArchive; } catch { return "invalid: backup is not JSON"; }
   if (!archive || archive.format !== BACKUP_FORMAT || !archive.manifest || !Array.isArray(archive.events) || !Array.isArray(archive.blobs) || !Array.isArray(archive.git)) return "invalid: unsupported backup format";
   if (archive.manifest.archiveSha256 !== digest(unsignedBytes(archive))) return "invalid: backup integrity check failed";
-  if (archive.events.length + archive.blobs.length + archive.git.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
+  if (archive.events.length + archive.blobs.length + archive.git.length > limits.maxEntries) return "restricted: backup object limit reached";
   for (const raw of archive.events) {
     try { if (typeof raw !== "string" || (validate(JSON.parse(raw) as Event) || JSON.parse(raw).kind === KIND_PUSH_REGISTRATION)) return "invalid: backup contains an invalid event"; }
     catch { return "invalid: backup contains malformed event JSON"; }
@@ -155,7 +162,7 @@ const checkedArchive = async (bytes: Uint8Array): Promise<BackupArchive | string
   if (state) {
     if (!Array.isArray(state.listHistory) || !Array.isArray(state.hidden) || !Array.isArray(state.hosted) || !Array.isArray(state.pending)) return "invalid: backup state malformed";
     if (state.prRefs !== undefined && (!Array.isArray(state.prRefs) || state.prRefs.some(r => !r || typeof r.repo !== "string" || !/^(?:pr|30617):[0-9a-f]{64}:.+$/u.test(r.repo) || new TextEncoder().encode(r.repo).length > 327 || typeof r.ref !== "string" || !/^refs\/nostr\/[0-9a-f]{64}$/u.test(r.ref) || !Number.isSafeInteger(r.until) || r.until < 0))) return "invalid: backup PR deadlines malformed";
-    if (archive.events.length + archive.blobs.length + archive.git.length + (state.prRefs?.length ?? 0) + state.listHistory.length + state.hidden.length + state.hosted.length + state.pending.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
+    if (archive.events.length + archive.blobs.length + archive.git.length + (state.prRefs?.length ?? 0) + state.listHistory.length + state.hidden.length + state.hosted.length + state.pending.length > limits.maxEntries) return "restricted: backup object limit reached";
     const hex = (v: unknown) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
     if (state.hidden.some((v) => !hex(v)) || state.hosted.some((v) => !hex(v)) || state.pending.some((v) => !v || !hex(v.id) || !Number.isSafeInteger(v.until))) return "invalid: backup state malformed";
     for (const raw of state.listHistory) {
@@ -164,7 +171,7 @@ const checkedArchive = async (bytes: Uint8Array): Promise<BackupArchive | string
     }
   }
   const usedEntries = archive.events.length + archive.blobs.length + (state?.prRefs?.length ?? 0) + (state?.listHistory.length ?? 0) + (state?.hidden.length ?? 0) + (state?.hosted.length ?? 0) + (state?.pending.length ?? 0);
-  const git = await prepareGitBackup(archive.sqlGit, BACKUP_MAX_OBJECTS - usedEntries);
+  const git = await prepareGitBackup(archive.sqlGit, limits.maxEntries - usedEntries, limits.gitLimits);
   if (typeof git === "string") return git;
   preparedArchives.set(archive, git);
   return archive;
@@ -173,8 +180,8 @@ const checkedArchive = async (bytes: Uint8Array): Promise<BackupArchive | string
 // restoreBackup only accepts an unclaimed, empty target. Events are already
 // signed and validated in the archive; direct storage preserves private data
 // and avoids applying the target's ordinary write policy to old history.
-export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: string): Promise<unknown | string> {
-  const archive = await checkedArchive(bytes);
+export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: string, limits: Readonly<BackupLimits> = DEFAULT_BACKUP_LIMITS): Promise<unknown | string> {
+  const archive = await checkedArchive(bytes, limits);
   if (typeof archive === "string") return archive;
   if (relay.settings.policy.owner !== "" || relay.settings.isLeased() || relay.sql.exec(`SELECT 1 FROM events LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM blobs LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM git_sqlite_meta UNION ALL SELECT 1 FROM git_sqlite_objects UNION ALL SELECT 1 FROM git_sqlite_catalog LIMIT 1`).toArray().length || (relay.slug !== "" && (await relay.media.list({ prefix: `${relay.slug}/`, limit: 1 })).objects.length)) return "restricted: restore requires a fresh, unclaimed relay";
   if (archive.manifest.owner !== caller) return "restricted: target signer is not the backup owner";
@@ -237,16 +244,16 @@ export async function backupDownload(relay: Relay, req: Request, id: string): Pr
   return new Response(obj.body, { headers: { "content-type": "application/json", "content-length": String(obj.size), "cache-control": "private, no-store", "content-disposition": `attachment; filename="${relay.slug}-${id}.json"` } });
 }
 
-async function readCapped(req: Request): Promise<Uint8Array | string> {
+async function readCapped(req: Request, limits: Readonly<BackupLimits> = DEFAULT_BACKUP_LIMITS): Promise<Uint8Array | string> {
   const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > BACKUP_MAX_BYTES) return "restricted: backup exceeds 8 MiB";
+  if (len > limits.maxBytes) return "restricted: backup exceeds configured archive size";
   if (!req.body) return new Uint8Array();
   const reader = req.body.getReader(); const chunks: Uint8Array[] = []; let total = 0;
   for (;;) {
     const part = await reader.read();
     if (part.done) break;
     total += part.value.byteLength;
-    if (total > BACKUP_MAX_BYTES) { await reader.cancel(); return "restricted: backup exceeds 8 MiB"; }
+    if (total > limits.maxBytes) { await reader.cancel(); return "restricted: backup exceeds configured archive size"; }
     chunks.push(part.value);
   }
   const out = new Uint8Array(total); let at = 0;

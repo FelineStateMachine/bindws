@@ -15,6 +15,8 @@
   const hue = (hex) => (parseInt(hex.slice(0, 2), 16) * 360 / 256).toFixed(0) + "deg";
   const av = (hex) => '<i class="av" style="--h:' + hue(hex) + '"></i>';
   const fmtBytes = (n) => n < 1e6 ? (n / 1e3).toFixed(0) + " KB" : n < 1e9 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e9).toFixed(2) + " GB";
+  const MiB = 1024 * 1024, GiB = 1024 * MiB;
+  const units = (n, divisor) => n == null ? "" : (n / divisor).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   const fmtHours = (ms) => ms < 3600e3 ? Math.round(ms / 60e3) + " min" : (ms / 3600e3).toFixed(ms < 36e6 ? 1 : 0) + " h";
   const fuelOver = () => !!fuel && (fuel.eventBytes > fuel.freeEventBytes || fuel.mediaBytes > fuel.freeMediaBytes || fuel.activeMs > fuel.freeActiveMs || fuel.rowsWritten > fuel.freeRowsWritten);
   const fmtTime = (t) => t ? new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "–";
@@ -332,6 +334,13 @@
     fa.writes.value = p.writes; fa.reads.value = p.reads; fa.openKinds.value = (p.openKinds || []).join(", "); fa.guestReplies.checked = !!p.guestReplies;
     $("#wordsform").words.value = (p.blockedWords || []).join("\n"); $("#wordsform").inTags.checked = !!p.blockedWordsInTags; $("#thresholdform").reportThreshold.value = p.reportThreshold || 0; fa.minPow.value = p.minPow; fa.maxFuture.value = p.maxFuture; fa.maxLimit.value = p.maxLimit; fa.maxSubs.value = p.maxSubs; fa.maxMessageKB.value = p.maxMessageKB;
     fa.eventsPerMinute.value = p.eventsPerMinute; fa.reqsPerMinute.value = p.reqsPerMinute; fa.maxBlobMB.value = p.maxBlobMB;
+    const g = p.git || {}, gf = $("#git-capacity");
+    if (gf) {
+      gf.maxRepositories.value = g.maxRepositories || ""; gf.maxRelayGiB.value = units(g.maxRelayBytes, GiB); gf.maxCompressedGiB.value = units(g.maxCompressedBytes, GiB);
+      gf.maxPackMiB.value = units(g.maxPackBytes, MiB); gf.maxObjectMiB.value = units(g.maxObjectBytes, MiB); gf.maxObjects.value = g.maxObjects || "";
+      gf.maxRawGiB.value = units(g.maxRawBytes, GiB); gf.maxTransactionRawMiB.value = units(g.maxTransactionRawBytes, MiB); gf.maxTransactionObjects.value = g.maxTransactionObjects || "";
+      gf.maxMetadataMiB.value = units(g.maxMetadataBytes, MiB); gf.maxRefs.value = g.maxRefs || ""; gf.maxGraphEdges.value = g.maxGraphEdges || ""; gf.maxFetchGiB.value = units(g.maxFetchBytes, GiB);
+    }
     renderFeatures(p.features || {});
     $("#push-policy-form").elements.origins.value = (p.pushCallbacks || []).join("\n");
     $("#push-policy-form").elements.lettered.checked = !!p.letteredNips;
@@ -817,6 +826,17 @@
     if (openKinds.some((k) => !Number.isInteger(k) || k < 0 || k > 65535)) throw new Error("Open kinds must be whole numbers.");
     policy = await rpc("setpolicy", { writes: f.writes.value, reads: f.reads.value, openKinds, guestReplies: f.guestReplies.checked, minPow: +f.minPow.value, maxFuture: +f.maxFuture.value, maxLimit: +f.maxLimit.value, maxSubs: +f.maxSubs.value, maxMessageKB: +f.maxMessageKB.value, eventsPerMinute: +f.eventsPerMinute.value, reqsPerMinute: +f.reqsPerMinute.value, maxBlobMB: +f.maxBlobMB.value });
     toast("Rules saved"); await loadInfo();
+  });
+  $("#git-capacity").onsubmit = guard(async (ev) => {
+    const f = ev.target, bytes = (name, divisor) => Math.round(Number(f[name].value) * divisor);
+    const git = {
+      maxRepositories: Math.floor(Number(f.maxRepositories.value)), maxRelayBytes: bytes("maxRelayGiB", GiB), maxCompressedBytes: bytes("maxCompressedGiB", GiB),
+      maxPackBytes: bytes("maxPackMiB", MiB), maxObjectBytes: bytes("maxObjectMiB", MiB), maxObjects: Math.floor(Number(f.maxObjects.value)), maxRawBytes: bytes("maxRawGiB", GiB),
+      maxTransactionRawBytes: bytes("maxTransactionRawMiB", MiB), maxTransactionObjects: Math.floor(Number(f.maxTransactionObjects.value)), maxMetadataBytes: bytes("maxMetadataMiB", MiB),
+      maxRefs: Math.floor(Number(f.maxRefs.value)), maxGraphEdges: Math.floor(Number(f.maxGraphEdges.value)), maxFetchBytes: bytes("maxFetchGiB", GiB),
+    };
+    policy = await rpc("setpolicy", { git });
+    toast("Git capacity saved"); await loadInfo();
   });
   $("#notify").onsubmit = guard(async (ev) => {
     const f = ev.target;

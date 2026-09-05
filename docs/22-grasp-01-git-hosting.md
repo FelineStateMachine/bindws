@@ -143,21 +143,55 @@ and does not promise lower cost for every repository. SQLite storage is charged
 through the existing events allowance. The Worker depends on the `ntig` package, whose source and package artifact
 are recorded in [Vendored dependencies](../vendor/README.md). Its repository contract validates pack
 structure, deltas, object dependencies, trees and commits before publication.
-The hard limits are:
+The owner can tune the Git capacity in the console's Rules → Git capacity panel,
+or in an exported configuration under `policy.git`. Values are bytes unless
+noted otherwise; omitted fields keep the current values. The editor validates
+against the same maximums used by the runtime. For example, a larger personal
+relay can set a 2 GiB retained Git allowance and 512 repositories:
+
+```json
+{
+  "format": "bind.ws/relay-config/2",
+  "policy": {
+    "git": {
+      "maxRepositories": 512,
+      "maxRelayBytes": 2147483648,
+      "maxCompressedBytes": 1073741824,
+      "maxPackBytes": 99614720,
+      "maxObjectBytes": 67108864,
+      "maxTransactionRawBytes": 67108864
+    }
+  }
+}
+```
+
+The defaults are:
 
 | Scope | Limit | What it controls |
 |---|---:|---|
-| Relay | 16 repositories, 320 MiB Git storage | accepted repositories and retained compressed Git objects plus metadata across the relay |
-| Repository | 4 MiB per pack or object | one upload and one stored object |
-| Repository | 16 MiB raw, 16 MiB compressed and 16 MiB metadata | retained object payloads and their SQL records |
-| Repository | 1,024 refs, 4,096 objects and 65,536 graph edges | ref maps and verified object graphs |
+| Relay | 128 repositories, 2 GiB Git storage | accepted repositories and retained compressed Git objects plus metadata across the relay |
+| Repository | 16 MiB per pack or object | one upload and one stored object |
+| Repository | 4 GiB raw, 1 GiB compressed and 128 MiB metadata | retained object payloads and their SQL records |
+| Repository | 4,096 refs, 100,000 objects and 1,000,000 graph edges | ref maps and verified object graphs |
 | Repository | receipt metadata within the metadata limit | retry records without a separate transaction-count ceiling |
 
+The configurable maximums are 4,096 repositories, 6 GiB relay storage, 95 MiB
+packs, 64 MiB objects, 64 GiB raw data, 6 GiB compressed data and 1 GiB
+metadata per repository. Request limits are separately capped at 64 MiB and
+100,000 objects per transaction, with 6 GiB fetch responses. These ceilings
+protect the Worker and SQLite database; raising a relay's settings does not
+remove storage, CPU, bandwidth or fuel costs. The per-relay physical SQLite
+ceiling and backup/archive limits remain separate operational constraints.
+
 The SQL object store reads and writes chunks, refs and receipts in native SQL
-transactions. Full clone, fetch and push load bounded Git data, while
-selective object reads use the object index. Compaction, orphan collection,
-large-pack streaming and production capacity measurements remain follow-up
-work. Expired unknown
+transactions. Clone and fetch stream selected objects from the index. Pushes remain bounded
+by the per-request pack and decoded-byte budgets; a large initial history may
+need staged pushes. Fetch currently sends complete requested reachable history,
+so incremental fetches may transfer objects the client already has. Compaction, orphan collection and
+production capacity measurements remain follow-up work. Large repositories
+should use ordinary client-side `git clone --mirror` or `git bundle` recovery;
+the portable relay backup is intentionally bounded and may omit Git payloads.
+Expired unknown
 PR refs stay hidden when cleanup cannot commit, while immutable object history
 keeps its bytes until the relay is torn down.
 
@@ -179,9 +213,11 @@ owns the relay. See [HTTP reference](14-http-reference.md) for the method and
 [Costs and margins](15-costs-and-margins.md) for its host costs and limits.
 
 Portable relay backups include compressed Git objects, refs and retry receipts
-within the archive's 8 MiB and 12,000-entry limits. Restore verifies repository
-identity, object hashes, dependency graphs and the receipt chain before writing
-the fresh target. See [Data and names](04-data-and-names.md).
+within the archive's 8 MiB and 12,000-entry limits. The owner can request a
+configuration/events/media backup with Git omitted when repositories are too
+large for this bounded format. Restore verifies repository identity, object
+hashes, dependency graphs and the receipt chain before writing the fresh
+target. See [Data and names](04-data-and-names.md).
 
 ## Proactive synchronization and archive
 
@@ -190,8 +226,9 @@ event synchronization from accepted announcement relay lists. Missing Git data
 is queued from signed state and accepted PR/update clone sources with an hourly
 target subject to queued work, fuel and size limits. At most 16 Git sources are
 considered; each connected round is bounded to 10 seconds. Failures retry after
-five minutes before returning to the hourly schedule. Packs are limited to
-4 MiB, with approximately 4.25 MiB of wire response allowance. Remote
+five minutes before returning to the hourly schedule. Packs use `policy.git.maxPackBytes` (16 MiB by default), with 1 MiB of
+additional wire response allowance. The same configured object and transaction
+bounds apply to remote verification. Remote
 advertisements never authorize refs; signed state and accepted events are
 rechecked under the repository fence. PR objects already uploaded to this
 relay through GRASP-06 are copied locally into the target repository, without

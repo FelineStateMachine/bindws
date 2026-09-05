@@ -21,13 +21,14 @@
     "dev:junk": "node scripts/dev/junk.mjs",
     "dev:shot": "node scripts/dev/shot.mjs",
     "dev:zaptest": "node scripts/dev/zaptest.mjs",
-    "test:network": "node scripts/ops/network.mjs"
+    "test:network": "node scripts/ops/network.mjs",
+    "test:git-capacity": "node scripts/ops/git-capacity.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
     "fflate": "0.8.3",
     "nostr-tools": "^2.25.1",
-    "ntig": "file:vendor/ntig-0.5.0.tgz"
+    "ntig": "file:vendor/ntig-0.6.0.tgz"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

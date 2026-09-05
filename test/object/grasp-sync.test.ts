@@ -159,6 +159,7 @@ describe("GRASP event synchronization", () => {
 
   it("archives unlisted announcements only with 05 enabled and counts them toward the quota", async () => {
     await scope("grasp-sync-archive", async (relay, owner, host) => {
+      relay.settings.update({ git: { ...relay.settings.policy.git, maxRepositories: 16 } });
       const maintainer = generateSecretKey();
       const announcement = (n: number) => ev(owner, KIND_REPO, "", [["d", `archive-${n}`], ["maintainers", pk(maintainer)], ["clone", `https://git.example/archive-${n}.git`], ["relays", SOURCE]]);
       expect(relay.accept(announcement(0), relay.virtualConn(host, pk(owner))).ok).toBe(false);

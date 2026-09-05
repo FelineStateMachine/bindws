@@ -9,6 +9,38 @@ const latch = () => {
 const refused = () => "refused";
 
 describe("Repository admission", () => {
+  it("keeps streamed reads fenced until EOF and restores authority during pulls", async () => {
+    const access = new RepositoryAccess();
+    let pulls = 0;
+    const response = await access.response("git", async () => new Response(new ReadableStream({
+      pull(controller) {
+        expect(access.owned).toBe(true);
+        if (pulls++ === 0) controller.enqueue(new TextEncoder().encode("pack"));
+        else controller.close();
+      },
+    }, { highWaterMark: 0 })), () => new Response("busy", { status: 429 }));
+    expect(access.blocked).toBe(true);
+    expect(access.sync("event", () => "unexpected", refused)).toBe("refused");
+    expect(await response.text()).toBe("pack");
+    expect(access.busy).toBe(false);
+  });
+
+  it("releases streaming authority after client cancellation and stream errors", async () => {
+    const access = new RepositoryAccess();
+    let canceled = false;
+    const response = await access.response("git", async () => new Response(new ReadableStream({
+      cancel() { expect(access.owned).toBe(true); canceled = true; },
+    }, { highWaterMark: 0 })), () => new Response("busy"));
+    await response.body!.cancel();
+    expect(canceled).toBe(true);
+    expect(access.busy).toBe(false);
+    const broken = await access.response("git", async () => new Response(new ReadableStream({
+      pull() { throw new Error("read failure"); },
+    }, { highWaterMark: 0 })), () => new Response("busy"));
+    await expect(broken.text()).rejects.toThrow("read failure");
+    expect(access.busy).toBe(false);
+  });
+
   it("keeps unrelated operations out across awaits and permits owned nested work", async () => {
     const access = new RepositoryAccess();
     const entered = latch();

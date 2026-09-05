@@ -27,7 +27,7 @@ import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 import { gitStorage } from "./git-storage.ts";
-import { createBackup, deleteBackup, listBackups } from "./backups.ts";
+import { createBackup, deleteBackup, listBackups, DEFAULT_BACKUP_LIMITS } from "./backups.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -170,6 +170,7 @@ export const METHODS: Record<string, Method> = {
     run: async ({ relay, s, p, params, reply }) => {
       const patch = params[0] && typeof params[0] === "object" ? (params[0] as Record<string, unknown>) : {};
       const clean = policyPatch(patch, p);
+      if (patch.git !== undefined && !clean.git) return reply({ error: "invalid: Git limits must be positive integers within the supported ranges" }, 400);
       s.update(clean);
       // A read rule that tightened ends the subscriptions it no longer admits.
       relay.enforceReads();
@@ -687,8 +688,9 @@ export const METHODS: Record<string, Method> = {
   backupnow: {
     action: "storage",
     run: async ({ relay, params, reply }) => {
-      const id = typeof params[0] === "string" && params[0] ? params[0] : `backup-${now()}`;
-      const result = await createBackup(relay, id);
+      const options = params[0] && typeof params[0] === "object" ? params[0] as Record<string, unknown> : {};
+      const id = typeof params[0] === "string" && params[0] ? params[0] : typeof options.id === "string" && options.id ? options.id : `backup-${now()}`;
+      const result = await createBackup(relay, id, { ...DEFAULT_BACKUP_LIMITS, includeGit: options.includeGit !== false });
       return typeof result === "string" ? reply({ error: result }, result.startsWith("invalid:") ? 400 : 403) : reply({ result: { ...result.manifest, url: "/backups/" + id } });
     },
   },

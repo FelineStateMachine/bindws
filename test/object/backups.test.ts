@@ -10,6 +10,19 @@ import { ev, nip98, pk, rpc } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 describe("portable backups", () => {
+  it("can omit Git payloads while retaining the legacy bounded archive format", async () => {
+    const owner = generateSecretKey();
+    const result = await runInDurableObject(env.RELAY.getByName("backup-no-git"), async (relay: Relay) => {
+      relay.settings.update({ owner: pk(owner) });
+      const created = await createBackup(relay, "no-git", { maxBytes: BACKUP_MAX_BYTES, maxEntries: 12_000, includeGit: false });
+      if (typeof created === "string") throw new Error(created);
+      const object = await relay.media.get(created.key);
+      return JSON.parse(new TextDecoder().decode(await object!.arrayBuffer()));
+    });
+    expect(result.sqlGit).toBeUndefined();
+    expect(result.manifest.git).toBe(0);
+  });
+
   it("serves owner-only download and keeps signed preview read-only", async () => {
     const source = "backup-http-source.bind.ws";
     const target = "backup-http-target.bind.ws";

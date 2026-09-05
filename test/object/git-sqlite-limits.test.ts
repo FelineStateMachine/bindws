@@ -1,6 +1,7 @@
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { encodePack, type GitObject } from "ntig";
+import { zlibSync } from "fflate";
 import { GitSqliteRepository, GIT_SQLITE_SCHEMA } from "../../src/git-sqlite.ts";
 import type { Relay } from "../../src/relay.ts";
 
@@ -236,6 +237,19 @@ describe("GitSqliteRepository limits and transaction behavior", () => {
     });
   });
 
+  it("keeps retained capacity separate from one-operation decode capacity", async () => {
+    await runInDurableObject(env.RELAY.getByName("git-sqlite-operation-limits"), async (relay: Relay) => {
+      const next = await commitObjects("operation-limits", null);
+      const retained = repo(relay, "operation-limits", { limits: { maxTransactionObjects: 8, maxTransactionRawBytes: 1024 * 1024 } });
+      await retained.commit({ id: "seed", updates: [{ name: "refs/heads/main", old: null, new: next.commit }], pack: next.pack });
+      const bounded = repo(relay, "operation-limits", { limits: { maxTransactionObjects: 2, maxTransactionRawBytes: 1024 * 1024 } });
+      const snapshot = await bounded.load();
+      expect(snapshot.refs["refs/heads/main"]).toBe(next.commit);
+      expect(snapshot.packs).toHaveLength(0);
+      expect(await bounded.getObject(next.commit)).not.toBeNull();
+    });
+  });
+
   it("round trips a near-4 MiB incompressible blob through multiple chunks", async () => {
     await runInDurableObject(env.RELAY.getByName("git-sqlite-large-object"), async (relay: Relay) => {
       const blob = new Uint8Array(4 * 1024 * 1024);
@@ -248,4 +262,28 @@ describe("GitSqliteRepository limits and transaction behavior", () => {
       expect(relay.sql.exec<{ chunks: number }>("SELECT chunks FROM git_sqlite_objects WHERE repository=? AND oid=?", "large", stored!.oid).one().chunks).toBeGreaterThan(1);
     });
   });
+
+  it("round trips a 37 MiB object through indexed chunk reads", async () => {
+    await runInDurableObject(env.RELAY.getByName("git-sqlite-large-indexed-object"), async (relay: Relay) => {
+      const blob = new Uint8Array(37 * 1024 * 1024);
+      const repository = repo(relay, "large-indexed", {
+        limits: {
+          maxPackBytes: 64 * 1024 * 1024,
+          maxObjectBytes: 64 * 1024 * 1024,
+          maxTransactionRawBytes: 64 * 1024 * 1024,
+          maxRawBytes: 64 * 1024 * 1024,
+          maxCompressedBytes: 64 * 1024 * 1024,
+        },
+      });
+      const oid = await objectId("blob", blob);
+      const compressed = zlibSync(blob);
+      const chunkBytes = 512 * 1024;
+      relay.sql.exec("INSERT INTO git_sqlite_objects(repository,oid,type,raw_size,compressed_size,chunks) VALUES(?,?,?,?,?,?)", "large-indexed", oid, "blob", blob.length, compressed.length, Math.ceil(compressed.length / chunkBytes));
+      for (let position = 0, chunk = 0; position < compressed.length; position += chunkBytes, chunk++) relay.sql.exec("INSERT INTO git_sqlite_object_chunks(repository,oid,chunk,data) VALUES(?,?,?,?)", "large-indexed", oid, chunk, compressed.subarray(position, position + chunkBytes).slice().buffer);
+      const stored = await repository.getObject(oid);
+      expect(stored?.data.length).toBe(blob.length);
+      expect(stored?.data[0]).toBe(0);
+      expect(stored?.data[blob.length - 1]).toBe(0);
+    });
+  }, 30_000);
 });

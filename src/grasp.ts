@@ -14,6 +14,7 @@ import { syncGitTick } from "./grasp-git-sync.ts";
 import { graspSyncTick } from "./grasp-sync.ts";
 import { GitSqliteRepository } from "./git-sqlite.ts";
 import { sqliteGitBytes, gitSql } from "./git-catalog.ts";
+import { gitHttpLimits, MAX_GIT_LIMITS } from "./git-limits.ts";
 import { gitObjects } from "./git-objects.ts";
 
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "Content-Type, Authorization, Git-Protocol, X-Git-Request-Id" };
@@ -38,6 +39,10 @@ export async function gitRepository(relay: Relay, repo: RepositoryAnnouncement, 
   let released: Event[] = [];
   const sql = new GitSqliteRepository({
     sql: relay.sql, repository: namespace,
+    limits: relay.settings.policy.git,
+    // Authority wrappers capture external input; sync builds its own packs.
+    // The backend can borrow those immutable buffers for the commit duration.
+    capturePack: false,
     transactionSync: work => relay.storage.transactionSync(work),
     meter: counts => relay.meterPush(counts.rowsRead, counts.rowsWritten),
     quota: () => {
@@ -47,7 +52,7 @@ export async function gitRepository(relay: Relay, repo: RepositoryAnnouncement, 
       if (fuel.outOfFuel) throw new LimitError("Relay storage or fuel limit reached");
       const cap = relay.settings.limitsOf(repo.owner)?.cap ?? 0;
       if (cap && sqliteGitBytes(relay, repo.owner, namespace) + relay.store.authorBytes(repo.owner) > cap) throw new LimitError("Repository owner's storage cap reached");
-      if (sqliteGitBytes(relay) > 320 * 1024 * 1024) throw new LimitError("Relay Git storage quota reached");
+      if (sqliteGitBytes(relay) > relay.settings.policy.git.maxRelayBytes) throw new LimitError("Relay Git storage quota reached");
     },
     onCommit: change => {
       gitSql(relay, "INSERT OR IGNORE INTO git_sqlite_catalog(repository,owner,identifier,alternative) VALUES(?,?,?,?)", namespace, repo.owner, repo.identifier, alternativePRs ? 1 : 0);
@@ -156,8 +161,8 @@ function trackPrRefs(relay: Relay, repo: RepositoryAnnouncement, updates: readon
   if (alternative) {
     const existing = gitSql<{ ref: string }>(relay, "SELECT ref FROM grasp_pr_refs WHERE repo=?", coordinate).toArray();
     const namespaces = gitSql<{ n: number }>(relay, "SELECT count(DISTINCT repo) AS n FROM grasp_pr_refs WHERE repo LIKE 'pr:%'").one().n;
-    if (!existing.length && namespaces >= 16) throw new LimitError("Alternative PR repository quota reached");
-    if (new Set([...existing.map(row => row.ref), ...updates.filter(u => u.new !== null).map(u => u.name)]).size > 1024) throw new LimitError("Alternative PR ref quota reached");
+    if (!existing.length && namespaces >= relay.settings.policy.git.maxRepositories) throw new LimitError("Alternative PR repository quota reached");
+    if (new Set([...existing.map(row => row.ref), ...updates.filter(u => u.new !== null).map(u => u.name)]).size > relay.settings.policy.git.maxRefs) throw new LimitError("Alternative PR ref quota reached");
   }
   for (const update of updates) {
     if (!/^refs\/nostr\/[0-9a-f]{64}$/.test(update.name)) continue;
@@ -209,6 +214,7 @@ export function authorizedRepository(relay: Relay, repo: RepositoryAnnouncement,
     commit: request => wal.commit(request, () => checkAuthority(relay, repo, request.updates)),
   };
   const authorized = createAcceptedStateRepository(checked, {
+    maxRefs: MAX_GIT_LIMITS.maxRefs,
     lookupState: async () => { const state = repositoryState(relay, repo); return state ? { eventId: state.id, refs: state.refs, head: state.head } : null; },
     lookupPrTip: async (id) => prTip(relay, repo, id),
     allowUnknownPrRefs: true,
@@ -240,7 +246,10 @@ export async function grasp(relay: Relay, req: Request, url: URL): Promise<Respo
   const limited = relay.ipLimit(req.headers.get("x-relay-ip") || "unknown", req.method === "POST" ? "events" : "reqs");
   if (limited) return answer(limited, 429);
   if (relay.fuelStatus().outOfFuel) return answer("restricted: relay storage or fuel limit reached", 403);
-  return relay.repositoryAccess.run("git", async () => {
+  const access = relay.repositoryAccess;
+  const run = req.method === "POST" && url.pathname.endsWith("/git-upload-pack")
+    ? access.response.bind(access) : access.run.bind(access);
+  return run("git", async () => {
     try {
       if (parsed.endpoint === "root") {
         if (req.method !== "GET" && req.method !== "HEAD") return answer("invalid: method not allowed", 405);
@@ -252,7 +261,7 @@ export async function grasp(relay: Relay, req: Request, url: URL): Promise<Respo
       }
       const wal = await gitRepository(relay, repo, parsed.alternativePRs);
       const response = await wal.withReadSession(async (scopedWal) => {
-        const handler = createGitHandler(parsed.alternativePRs ? alternativePrRepository(relay, repo, scopedWal, url.host) : authorizedRepository(relay, repo, scopedWal), { prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
+        const handler = createGitHandler(parsed.alternativePRs ? alternativePrRepository(relay, repo, scopedWal, url.host) : authorizedRepository(relay, repo, scopedWal), { ...gitHttpLimits(relay.settings.policy.git), prefix: parsed.prefix, authorizePush: () => true, observe: (event) => relay.meterBytes(event.requestBytes, event.responseBytes) });
         return await handler(req);
       });
       const headers = new Headers(response.headers);

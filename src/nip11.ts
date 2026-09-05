@@ -6,6 +6,7 @@ import type { Relay } from "./relay.ts";
 import { now } from "./event.ts";
 import { SUCCESSION_WARN_DAYS, featureOn, FEATURE_NAMES, type Feature } from "./settings.ts";
 import { SITE_KINDS } from "./sites.ts";
+import { MiB, GiB } from "./git-limits.ts";
 import { KIND_REPO } from "./kinds.ts";
 import { nip11Views } from "./views.ts";
 
@@ -36,6 +37,8 @@ export function supportedNips(relay: Relay): NipIdentifier[] {
 }
 export const SOFTWARE = "https://bind.ws";
 export const VERSION = "0.1.0";
+
+const capacity = (n: number) => n % GiB === 0 ? `${n / GiB} GiB` : n % MiB === 0 ? `${n / MiB} MiB` : `${n} bytes`;
 
 export function nip11(relay: Relay, host: string) {
   const p = relay.settings.policy;
@@ -94,7 +97,9 @@ export function nip11(relay: Relay, host: string) {
       : access[p.writes];
     const guests = p.writes !== "open" && p.openKinds.length ? ` Guest write exceptions apply to kinds ${p.openKinds.join(", ")}.` : "";
     const listing = featureOn(p, "grasp05") ? "Archive preview accepts repository announcements without naming this service in clone and relays." : "Repository announcements name this service in clone and relays.";
-    doc.repo_acceptance_criteria = `${eligibility} ${listing} State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 4 MiB per object, 16 MiB decoded per operation, and 16 MiB compressed objects plus 16 MiB metadata per repository. Git storage shares the relay SQLite allowance.`;
+    const git = p.git;
+    doc.git_limits = { ...git };
+    doc.repo_acceptance_criteria = `${eligibility} ${listing} State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most ${git.maxRepositories} repositories, ${capacity(git.maxPackBytes)} per incoming pack, ${capacity(git.maxObjectBytes)} per new object, and ${capacity(git.maxTransactionRawBytes)} decoded per write operation. Each repository may retain ${git.maxObjects} objects, ${capacity(git.maxRawBytes)} raw content, ${capacity(git.maxCompressedBytes)} compressed objects and ${capacity(git.maxMetadataBytes)} metadata. Total Git storage is limited to ${capacity(git.maxRelayBytes)} and shares the relay SQLite allowance. Limits are owner-configurable; storage and fuel charges still apply.`;
     if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
   }
   if (featureOn(p, "sites")) doc.nsites = {
