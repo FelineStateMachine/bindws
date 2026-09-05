@@ -6,7 +6,7 @@
 // fuel, which is the right signal for work nobody asked a client for.
 import { hasTag, isPrivate, now, type Event } from "./event.ts";
 import type { Filter } from "./filter.ts";
-import { Socket, dial, checkPullURL, runPullRound, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
+import { Socket, dial, checkPullURL, runPullRound, newPullProgress, type PullConnect, type PullSource, type PullFilter, type PullJob, type PullResult } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 import { runMirrorRound } from "./site-mirror.ts";
 import { runImportRound } from "./imports.ts";
@@ -25,6 +25,7 @@ export interface JobResult {
   sent: number;
   refused: number;
   duplicates?: number;
+  sources?: PullSource[];
 }
 
 export interface Job {
@@ -54,6 +55,7 @@ export interface Job {
   size?: number; // import: the object's size in bytes
   carry?: string; // import: the partial last line of the previous round, base64
   last: JobResult | null;
+  pullSources?: PullSource[];
 }
 
 export const MAX_STANDING = 5;
@@ -131,17 +133,32 @@ export async function runRound(relay: Relay, job: Job): Promise<{ more: boolean;
 
 // A pull job syncs its sources one after another; each source is a pull
 // in the sense of pull.ts, with the job's filter.
-async function runPullSourceRound(relay: Relay, job: Job): Promise<{ more: boolean; error: string }> {
+export async function runPullSourceRound(relay: Relay, job: Job, connect?: PullConnect): Promise<{ more: boolean; error: string }> {
   if (job.relayIndex >= job.relays.length) return { more: false, error: "" };
-  const sub: PullJob = { url: job.relays[job.relayIndex], startedAt: job.startedAt, rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0 };
+  const sources = job.pullSources ??= job.relays.map((url) => ({ url, ...newPullProgress(), stored: 0, skipped: 0, blobs: 0 }));
+  const source = sources[job.relayIndex];
+  const sub: PullJob = { url: source.url, startedAt: job.startedAt, rounds: 0, stored: 0, skipped: 0, blobs: 0, failures: 0, progress: source };
   if (job.filter.authors || job.filter.kinds || job.filter.since) sub.filter = job.filter;
-  const r = await runPullRound(relay, sub);
+  const r = await runPullRound(relay, sub, connect);
   job.rounds++;
   job.stored += sub.stored;
   job.skipped += sub.skipped;
   job.blobs += sub.blobs;
-  if (r.error) return r;
-  if (!r.more) job.relayIndex++;
+  source.stored += sub.stored;
+  source.skipped += sub.skipped;
+  source.blobs += sub.blobs;
+  if (r.error) {
+    source.failures++;
+    const refused = /auth-required:|query refused:|files refused:/.test(r.error);
+    if (!refused && source.failures < 3) return r;
+    source.status = refused ? "refused" : "failed";
+    source.error = r.error;
+    job.relayIndex++;
+  } else {
+    source.failures = 0;
+    source.error = "";
+    if (!r.more) job.relayIndex++;
+  }
   return { more: job.relayIndex < job.relays.length, error: "" };
 }
 
@@ -230,11 +247,14 @@ export function startRun(job: Job, t: number) {
   job.sent = 0;
   job.refused = 0;
   job.duplicates = 0;
+  if (job.kind === "pull") job.pullSources = job.relays.map((url) => ({ url, ...newPullProgress(), stored: 0, skipped: 0, blobs: 0 }));
 }
 
 // finishRun closes the current run and schedules the next one.
 export function finishRun(job: Job, error: string, t: number) {
-  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0 };
+  const incomplete = job.pullSources?.filter((s) => ["partial", "refused", "failed"].includes(s.status));
+  if (!error && incomplete?.length) error = `${incomplete.length} import source(s) incomplete; inspect Source results for details.`;
+  job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0, ...(job.pullSources ? { sources: structuredClone(job.pullSources) } : {}) };
   job.running = false;
   job.nextRun = job.every > 0 ? t + job.every * 3600 : 0;
 }

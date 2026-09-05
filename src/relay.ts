@@ -705,6 +705,7 @@ export class Relay extends DurableObject<Env> {
     // A finished run is worth a word to the owner, when they asked for one.
     const finish = (error: string) => {
       finishRun(job, error, now());
+      error = job.last?.error ?? error;
       const where = (job.kind === "push" ? "to " : "from ") + job.relays.join(", ");
       const outcome = error ? `failed after ${job.rounds} rounds: ${error}` : job.kind === "push" ? `finished: ${job.sent} events sent${job.refused ? ", " + job.refused + " refused" : ""}` : `finished: ${job.stored} events${job.blobs ? " and " + job.blobs + " files" : ""}${job.skipped ? ", " + job.skipped + " skipped" : ""}`;
       void notify(this, "jobs", `${job.label} ${where} ${outcome}.`, "jobs on " + this.slug);

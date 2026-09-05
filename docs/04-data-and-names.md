@@ -13,11 +13,13 @@ The Data tab shows bytes by kind, the files people uploaded and a keep-for rule 
 
 ## Jobs
 
-A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why.
+A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why. A pull retries a failing source three times, then continues with the next source. An explicit refusal skips that source immediately.
 
 A job runs once, or every hour, six hours or day. Up to five standing jobs and 20 jobs in all per relay. Your bans and kind rules apply to what arrives. Your write rule does not: you asked for these events.
 
-**Pull** copies what another relay has and yours lacks, by sync (NIP-77). Run it again and only new events come over. Files come along when the other relay is on bind.ws and the pull has no filter. With an interval, a pull is a standing mirror that keeps your name in step with the other relay. The other relay has to let anyone read.
+**Pull** copies what another relay has and yours lacks. It tries sync (NIP-77) first, then ordinary NIP-01 queries if sync is unavailable. Query progress survives between rounds and relay restarts. Run it again and events already stored are deduplicated. Files come along when the other relay is on bind.ws and the pull has no filter. With an interval, a pull is a standing mirror that keeps your name in step with the other relay. The other relay has to let anyone read.
+
+The Jobs table exposes **Source results** with mode, status, counts and any refusal or coverage warning for each relay. A completed NIP-77 sync is marked complete. Query scans are best effort: relays may silently cap or omit history. Full query windows split by time; a full one-second window is explicitly partial because more events may share its timestamp. Imports stop at 2,048 pages per source and 500 events per query. Narrow the author or time filter and run again if a source reaches a limit. Imports never send your signing key or authenticate on your behalf.
 
 **Fetch my history** pulls your own events from every relay in your relay list, if a client has published that list here. Or give it relays to fetch from, separated by commas.
 

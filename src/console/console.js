@@ -593,7 +593,9 @@
     const l = j.last;
     const count = (stored, blobs, sent, refused) => (j.kind === "mirror" ? blobs.toLocaleString() + " files mirrored" : j.kind === "import" ? stored.toLocaleString() + " events" + ((j.last ? j.last.duplicates : j.duplicates) ? ", " + (j.last ? j.last.duplicates : j.duplicates) + " already here" : "") : j.kind === "pull" ? stored.toLocaleString() + " events" + (blobs ? ", " + blobs + " files" : "") : sent.toLocaleString() + " sent" + (refused ? ", " + refused + " refused" : ""));
     const res = j.running ? "running: " + count(j.stored, j.blobs, j.sent, j.refused) + "..." : !l ? "waiting" : l.error ? "failed: " + l.error : count(l.stored, l.blobs, l.sent, l.refused) + (l.skipped ? ", " + l.skipped + " skipped" : "") + ", " + fmtTime(l.finishedAt);
-    return "<tr><td>" + what + "</td><td class=\"mono\">" + j.relays.map(esc).join("<br>") + "</td><td>" + (f.join(", ") || "everything") + "</td><td>" + when + "</td><td>" + esc(res) + "</td><td>" + (j.running ? "" : ib("undo", "Run now", "runjob", j.id)) + ib("x", "Remove", "removejob", j.id) + "</td></tr>";
+    const sources = j.running ? j.pullSources : l?.sources;
+    const details = sources?.length ? '<details><summary>Source results</summary>' + sources.map((s) => '<p><code>' + esc(s.url) + '</code>: ' + esc(s.status) + ', ' + s.stored + ' stored, ' + s.skipped + ' skipped' + (s.error || s.warning ? '<br>' + esc(s.error || s.warning) : '') + '</p>').join('') + '</details>' : '';
+    return "<tr><td>" + what + "</td><td class=\"mono\">" + j.relays.map(esc).join("<br>") + "</td><td>" + (f.join(", ") || "everything") + "</td><td>" + when + "</td><td>" + esc(res) + details + "</td><td>" + (j.running ? "" : ib("undo", "Run now", "runjob", j.id)) + ib("x", "Remove", "removejob", j.id) + "</td></tr>";
   };
   async function pollJobs() {
     clearTimeout(jobsTimer);
