@@ -1,0 +1,39 @@
+// A home on nostr, one name for all of it: notes, articles, bookmarks,
+// static sites, Git repositories and a photo library, each one click away
+// on the Connect fold. Members write, anyone reads, so family or a team
+// can publish here too; sites, files and Git hosting are on because the
+// shortcuts need them, and the photo library is the owner's alone. Search
+// stays on prose and every kind is kept forever.
+{
+  "$schema": "https://bind.ws/relay-config.schema.json",
+  "format": "bind.ws/relay-config/2",
+  "template": {
+    "title": "Home",
+    "about": "Your relay as your home on nostr. Members write, anyone reads; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts."
+  },
+  "policy": {
+    "writes": "allowlist",
+    "reads": "open",
+    "directoryPublic": true,
+    "features": {
+      "files": true,
+      "sites": { "enabled": true, "mirror": true },
+      "grasp": true
+    }
+  },
+  "kinds": {
+    "allow": [],
+    "block": []
+  },
+  "retention": [],
+  "connections": [
+    {"template": "notes", "visibility": "public"},
+    {"template": "blog", "visibility": "public"},
+    {"template": "bookmarks", "visibility": "auth"},
+    {"template": "sites", "visibility": "public"},
+    {"template": "repos", "visibility": "public"},
+    {"template": "photos", "visibility": "owner"},
+    {"template": "find-me", "visibility": "public"},
+    {"template": "group", "visibility": "public"}
+  ]
+}

@@ -21,6 +21,7 @@ copy as the start of your own.
 | [marmot](12-marmot.jsonc) | anyone can publish Marmot KeyPackages and opaque group messages; gift wraps keep their recipient checks. |
 | [grasp](13-grasp.jsonc) | it hosts GRASP Git repositories: admitted members publish repository state and related events, with reads open. |
 | [marmot-members](14-marmot-members.jsonc) | members publish Marmot transport, with authenticated group writes and member limits; encrypted messages stay publicly readable. |
+| [home](15-home.jsonc) | one name is your home on nostr: members write, anyone reads, sites, files and Git on, with notes, blog, bookmarks, sites, repos and a private photo library one click away. |
 
 Each file says more in its comment: what the template does, which Haven relay
 it mirrors, and why its kinds are what they are.
@@ -30,11 +31,14 @@ it mirrors, and why its kinds are what they are.
 A template is a relay configuration (`$schema` names the copy served at
 `https://bind.ws/relay-config.schema.json`, the same file as `../relay-config.schema.json`) with a
 `template` block for the title and the blurb, and the rules sections only:
-policy, kinds and retention. People, bans and addresses are never in a
-template, and a section a template leaves out is left alone when it is
-applied. Default resets the write, read, directory, kind and retention rules;
-it leaves feature settings alone. Applying Default after Quiet keeps the
-features switched off. It is a rules reset, not a full relay reset.
+policy, kinds, retention, and connections, the app shortcuts the Connect
+fold shows, each naming a file in `../connection-templates/` with who may
+see it ([Connection templates](../docs/17-connection-templates.md)). People,
+bans and addresses are never in a template, and a section a template leaves
+out is left alone when it is applied. Default resets the write, read,
+directory, kind and retention rules; it leaves feature settings and the
+shortcuts alone. Applying Default after Quiet keeps the features switched
+off. It is a rules reset, not a full relay reset.
 
 The number in the file name is the order the console shows them in.
 

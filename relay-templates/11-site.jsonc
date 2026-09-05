@@ -23,5 +23,9 @@
     "allow": [],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "sites", "visibility": "public"},
+    {"template": "notes", "visibility": "public"}
+  ]
 }

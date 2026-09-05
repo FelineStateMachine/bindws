@@ -21,5 +21,9 @@
     ],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "files", "visibility": "members"},
+    {"template": "photos", "visibility": "owner"}
+  ]
 }

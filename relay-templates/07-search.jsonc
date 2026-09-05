@@ -28,5 +28,8 @@
     ],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "notes", "visibility": "public"}
+  ]
 }

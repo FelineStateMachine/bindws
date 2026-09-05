@@ -40,7 +40,21 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
           1059
         ]
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "notes",
+          "visibility": "public"
+        },
+        {
+          "template": "find-me",
+          "visibility": "public"
+        },
+        {
+          "template": "blog",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -74,6 +88,16 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         {
           "kind": null,
           "days": 90
+        }
+      ],
+      "connections": [
+        {
+          "template": "find-me",
+          "visibility": "public"
+        },
+        {
+          "template": "notes",
+          "visibility": "public"
         }
       ]
     }
@@ -122,7 +146,13 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "group",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -145,7 +175,17 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "files",
+          "visibility": "members"
+        },
+        {
+          "template": "photos",
+          "visibility": "owner"
+        }
+      ]
     }
   },
   {
@@ -175,7 +215,13 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "notes",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -200,7 +246,17 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "blog",
+          "visibility": "public"
+        },
+        {
+          "template": "notes",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -223,7 +279,13 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "dm",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -256,7 +318,8 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         "allow": [],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": []
     }
   },
   {
@@ -283,7 +346,17 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         "allow": [],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "sites",
+          "visibility": "public"
+        },
+        {
+          "template": "notes",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -312,7 +385,13 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "marmot",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -335,7 +414,17 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         "allow": [],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "repos",
+          "visibility": "public"
+        },
+        {
+          "template": "notes",
+          "visibility": "public"
+        }
+      ]
     }
   },
   {
@@ -364,7 +453,75 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
         ],
         "block": []
       },
-      "retention": []
+      "retention": [],
+      "connections": [
+        {
+          "template": "marmot",
+          "visibility": "members"
+        }
+      ]
+    }
+  },
+  {
+    "name": "home",
+    "document": {
+      "format": "bind.ws/relay-config/2",
+      "template": {
+        "title": "Home",
+        "about": "Your relay as your home on nostr. Members write, anyone reads; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts."
+      },
+      "policy": {
+        "writes": "allowlist",
+        "reads": "open",
+        "directoryPublic": true,
+        "features": {
+          "files": true,
+          "sites": {
+            "enabled": true,
+            "mirror": true
+          },
+          "grasp": true
+        }
+      },
+      "kinds": {
+        "allow": [],
+        "block": []
+      },
+      "retention": [],
+      "connections": [
+        {
+          "template": "notes",
+          "visibility": "public"
+        },
+        {
+          "template": "blog",
+          "visibility": "public"
+        },
+        {
+          "template": "bookmarks",
+          "visibility": "auth"
+        },
+        {
+          "template": "sites",
+          "visibility": "public"
+        },
+        {
+          "template": "repos",
+          "visibility": "public"
+        },
+        {
+          "template": "photos",
+          "visibility": "owner"
+        },
+        {
+          "template": "find-me",
+          "visibility": "public"
+        },
+        {
+          "template": "group",
+          "visibility": "public"
+        }
+      ]
     }
   }
 ];

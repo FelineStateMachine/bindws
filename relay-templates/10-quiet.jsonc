@@ -31,5 +31,6 @@
     "allow": [],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": []
 }
