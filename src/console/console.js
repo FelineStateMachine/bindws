@@ -40,6 +40,22 @@
     bolt: '<svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>',
     copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
     pin: '<svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6zM12 15v5"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>',
+    qr: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 14h3v3M20 14v6h-3M14 20h1"/></svg>',
+    // The connection template icons (connections.ts, ICONS): a template names one.
+    notes: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+    blog: '<svg viewBox="0 0 24 24"><path d="M20 4c-6 0-11 4-13 10l-3 6 6-3c6-2 10-7 10-13z"/><path d="M8 16l6-6"/></svg>',
+    bookmark: '<svg viewBox="0 0 24 24"><path d="M7 3h10v18l-5-4-5 4z"/></svg>',
+    photo: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>',
+    site: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+    git: '<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 4.5-7 4.5H6"/></svg>',
+    chat: '<svg viewBox="0 0 24 24"><path d="M4 5h16v10H10l-4 4v-4H4z"/></svg>',
+    files: '<svg viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></svg>',
+    key: '<svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></svg>',
+    search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>',
+    feed: '<svg viewBox="0 0 24 24"><path d="M4 4a16 16 0 0 1 16 16M4 10a10 10 0 0 1 10 10"/><circle cx="5.5" cy="18.5" r="1.5"/></svg>',
+    app: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg>',
   };
   const ib = (icon, label, act, id, extra) => '<button class="ib' + (extra ? " " + extra : "") + '" title="' + label + '" aria-label="' + label + '" data-act="' + act + '" data-id="' + esc(id) + '">' + IC[icon] + "</button>";
 
@@ -229,7 +245,6 @@
     const clone = "git clone '" + location.origin + "/<npub>/<repo>.git'";
     $("#git-clone").textContent = clone;
     $("#git-copy").dataset.copytext = clone;
-    renderApps();
   }
 
   async function loadFuel() {
@@ -278,7 +293,7 @@
   // ---- console ----
   function showTab(name) {
     if (name === "content" || name === "storage") name = "data";
-    const known = myRole === "moderator" ? ["people", "moderation"] : ["people", "moderation", "rules", "identity", "data", "sync", "views", "health", "owner"];
+    const known = myRole === "moderator" ? ["people", "moderation"] : ["people", "moderation", "rules", "identity", "connect", "data", "sync", "views", "health", "owner"];
     if (!known.includes(name)) name = "people";
     $$(".tabs a").forEach((a) => a.classList.toggle("on", a.dataset.tab === name));
     $$(".panel").forEach((p) => p.classList.toggle("on", p.dataset.panel === name));
@@ -324,6 +339,7 @@
     if (me && owner && !isOwner) { try { [stats, p] = await Promise.all([rpc("stats"), rpc("getpolicy")]); myRole = "moderator"; } catch { myRole = ""; } }
     $("#console").classList.toggle("hidden", !myRole);
     loadMine();
+    loadConnect();
     $("#console").classList.toggle("mod", myRole === "moderator");
     if (!myRole) { policy = null; renderCare(); return; }
     if (isOwner) [stats, p] = await Promise.all([rpc("stats"), rpc("getpolicy")]);
@@ -354,7 +370,7 @@
     const fn = $("#notify"), nt = p.notify || {};
     fn.reports.checked = !!nt.reports; fn.fuel.checked = !!nt.fuel; fn.jobs.checked = !!nt.jobs; fn.succession.checked = !!nt.succession; fn.digest.checked = !!nt.digest;
     showTab(location.hash.slice(1));
-    if (isOwner) { await renderPresets(); renderWire(); renderSuccession(); loadDomains(); }
+    if (isOwner) { await renderPresets(); renderWire(); renderSuccession(); loadDomains(); loadConnectTab(); }
     await Promise.all([loadLists(), loadEvents(true), loadPins(), ...(isOwner ? [loadStorage()] : [])]);
   }
 
@@ -670,12 +686,70 @@
   $("#presets").addEventListener("click", async (ev) => {
     const b = ev.target.closest("button[data-preset]"); if (!b) return;
     const p = (presets || []).find((x) => x.name === b.dataset.preset); if (!p) return;
-    if (!confirm(p.title + ": " + p.about + "\n\nThis replaces the writes and reads rules, the directory setting, the kind rules and the keep-for rules. Limits, identity, people and bans stay.")) return;
+    if (!confirm(p.title + ": " + p.about + "\n\nThis replaces the writes and reads rules, the directory setting, the kind rules and the keep-for rules" + (p.connections ? ", and the Connect fold's shortcuts" : "") + ". Limits, identity, people and bans stay.")) return;
     const source = $("#presetsource").value.trim();
     if (p.source === "required" && !source) { $("#presetnote").textContent = p.title + " needs a source relay to mirror; enter its wss:// URL first."; return; }
     b.disabled = true;
-    try { policy = await rpc("applypreset", p.name, p.source && source ? { source } : undefined); $("#presetnote").textContent = "Now: " + p.about + (policy.job ? " Mirroring " + source + " every " + policy.job.every + " h." : ""); toast(p.title + " applied"); await loadInfo(); await loadAdmin(); }
+    try { policy = await rpc("applypreset", p.name, p.source && source ? { source } : undefined); $("#presetnote").textContent = "Now: " + p.about + (policy.job ? " Mirroring " + source + " every " + policy.job.every + " h." : "") + (p.connections ? " The Connect fold shows " + p.connections.map((c) => c.template).join(", ") + "." : ""); toast(p.title + " applied"); await loadInfo(); await loadAdmin(); }
     catch (e) { toast(e.message); } finally { b.disabled = false; }
+  });
+
+  // ---- connect: the fold's shortcuts, picked from the library ----
+  // The list is edited in place and saved whole, in the order shown; the
+  // relay checks every entry against the library when it takes the list.
+  const VIS = [["public", "anyone"], ["auth", "anyone signed in"], ["members", "members"], ["owner", "only me"]];
+  let connLib = null, conns = null;
+  async function loadConnectTab() {
+    try { [connLib, conns] = await Promise.all([rpc("listconnectiontemplates"), rpc("listconnections")]); } catch (e) { $("#connnote").textContent = e.message; return; }
+    renderConns(); renderConnLib();
+  }
+  const connTemplate = (name) => (connLib || []).find((t) => t.name === name) || { name, title: name, app: "", where: "", icon: "app", inputs: [], available: true, feature: "" };
+  function renderConns() {
+    const rows = conns.map((c, i) => {
+      const t = connTemplate(c.template);
+      const inputs = (t.inputs || []).map((inp) => "<label><span>" + esc(inp.label) + '</span><input class="txt" data-input="' + esc(inp.name) + '" value="' + esc((c.inputs || {})[inp.name] || "") + '" placeholder="' + esc(inp.placeholder || inp.default || "") + '" maxlength="500"></label>').join("");
+      const vis = VIS.map(([v, l]) => '<option value="' + v + '"' + (c.visibility === v ? " selected" : "") + ">" + l + "</option>").join("");
+      return '<div class="conn" data-i="' + i + '"><i class="app-ic">' + (IC[t.icon] || IC.app) + '</i><div class="conn-main"><div class="conn-head"><b>' + esc(t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small>" + (t.available ? "" : '<span class="pill bad">needs ' + esc(t.feature) + ", which is off</span>") + '</div><div class="conn-fields"><label><span>Title</span><input class="txt" data-field="title" value="' + esc(c.title || "") + '" placeholder="' + esc(t.title) + '" maxlength="40"></label><label><span>Who sees it</span><select class="txt" data-field="visibility">' + vis + "</select></label>" + inputs + '</div></div><div class="conn-acts"><button class="ib" data-conn="up" title="Move up" aria-label="Move up">' + IC.up + '</button><button class="ib" data-conn="down" title="Move down" aria-label="Move down">' + IC.down + '</button><button class="ib danger" data-conn="rm" title="Remove" aria-label="Remove">' + IC.x + "</button></div></div>";
+    });
+    $("#conns").innerHTML = rows.length ? rows.join("") : '<p class="empty">No shortcuts. Add some from the library below.</p>';
+  }
+  function renderConnLib() {
+    $("#connlib").innerHTML = connLib.map((t) => '<div class="app"><div class="app-head"><i class="app-ic">' + (IC[t.icon] || IC.app) + "</i><b>" + esc(t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small></div><p>" + esc(t.about) + '</p><div class="app-acts"><button class="btn" data-connadd="' + esc(t.name) + '">Add</button>' + (t.feature ? '<span class="pill' + (t.available ? " on" : " bad") + '">' + esc(t.feature) + (t.available ? " on" : " off") + "</span>" : "") + (t.visibility !== "public" ? '<span class="pill">' + VISIBILITY[t.visibility] + "</span>" : "") + "</div></div>").join("");
+  }
+  // readConns takes the rows as edited back into the list before it is moved or saved.
+  function readConns() {
+    $$("#conns .conn").forEach((row) => {
+      const c = conns[+row.dataset.i]; if (!c) return;
+      const title = row.querySelector('[data-field="title"]').value.trim();
+      if (title) c.title = title; else delete c.title;
+      c.visibility = row.querySelector('[data-field="visibility"]').value;
+      const inputs = {};
+      row.querySelectorAll("[data-input]").forEach((inp) => { if (inp.value.trim()) inputs[inp.dataset.input] = inp.value.trim(); });
+      if (Object.keys(inputs).length) c.inputs = inputs; else delete c.inputs;
+    });
+  }
+  $("#conns").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-conn]"); if (!b) return;
+    readConns();
+    const i = +b.closest(".conn").dataset.i, act = b.dataset.conn;
+    if (act === "rm") conns.splice(i, 1);
+    else { const j = act === "up" ? i - 1 : i + 1; if (j < 0 || j >= conns.length) return; [conns[i], conns[j]] = [conns[j], conns[i]]; }
+    renderConns();
+  });
+  $("#connlib").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-connadd]"); if (!b) return;
+    const t = connTemplate(b.dataset.connadd);
+    readConns();
+    conns.push({ template: t.name, visibility: t.visibility || "public" });
+    renderConns();
+    $("#conns").lastElementChild.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
+  $("#connsave").onclick = guard(async () => {
+    readConns();
+    conns = await rpc("setconnections", conns);
+    $("#connnote").textContent = "";
+    toast(conns.length ? "Saved " + conns.length + (conns.length === 1 ? " shortcut" : " shortcuts") : "Saved: no shortcuts");
+    renderConns(); loadConnect();
   });
 
   // ---- wire me in: this relay in the owner's own lists ----
@@ -1087,49 +1161,48 @@
       const q = $("#naddrqr");
       if (card.naddr) { q.src = "/qr.svg?text=" + encodeURIComponent(card.naddr); q.classList.remove("hidden"); } else q.classList.add("hidden");
     } catch { /* the card is decoration */ }
-    renderApps();
   }
-  // The app rows on the Connect section: one per client people actually use,
-  // with the link that lands on this relay in it. Relay apps take the relay
-  // or the group address; feed apps take the owner's profile with this relay
-  // as the hint, since they have no notion of opening a relay.
-  function renderApps() {
-    const el = $("#apps"); if (!el) return;
+  // The Connect fold's shortcuts: the owner's list from /connect.json,
+  // resolved by the relay for whoever is looking. A signed-in viewer asks
+  // with a NIP-98 signature, so the relay can show what their visibility
+  // admits and fill the links made for them; anyone else sees the public
+  // ones. A shortcut's QR is drawn only when asked for.
+  const VISIBILITY = { public: "", auth: "signed in", members: "members", owner: "only you" };
+  async function signedGet(path) {
+    const url = location.origin + path;
+    const headers = {};
+    if (me && signer.ready()) {
+      try {
+        const ev = await signer.signEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["u", url], ["method", "GET"]] });
+        headers.authorization = "Nostr " + btoa(JSON.stringify(ev));
+      } catch { /* unsigned, then: the public shortcuts */ }
+    }
+    return fetch(url, { headers, cache: "no-store" });
+  }
+  let connectSeq = 0;
+  async function loadConnect() {
+    const seq = ++connectSeq;
+    let data;
+    try { const r = await signedGet("/connect.json"); data = await r.json(); if (data.error) throw new Error(data.error); } catch { data = { connections: [] }; }
+    if (seq !== connectSeq) return; // a later sign-in or sign-out answered first
+    renderConnect(data.connections || []);
+  }
+  function renderConnect(list) {
     const enc = encodeURIComponent;
-    const nprofile = card && card.nprofile ? card.nprofile : "";
-    const naddr = card && card.naddr ? card.naddr : "";
-    const whose = me && owner && me === owner ? "your" : "the owner's";
-    const link = (label, href) => '<a class="btn" href="' + esc(href) + '" target="_blank" rel="noopener">' + label + "</a>";
-    const app = (label, uri) => '<a class="btn" href="' + esc(uri) + '">' + label + "</a>";
-    const copy = (label, text) => '<button class="btn" data-copytext="' + esc(text) + '">' + label + "</button>";
-    const row = (name, where, note, acts) => '<div class="app"><div class="app-head"><b>' + name + "</b><small>" + where + "</small></div><p>" + note + '</p><div class="app-acts">' + acts.filter(Boolean).join("") + "</div></div>";
-    const profileNote = "Opens " + whose + " profile with this relay attached.";
-    const groups = [
-      ["As a place", "These open the relay itself: its feed, its people, its group.", [
-        row("Jumble", "web", "A feed of everything on this relay.", [link("Open", "https://jumble.social/?r=" + enc(wsURL))]),
-        row("Coracle", "web", "The relay's page: its feed and its people.", [link("Open", "https://coracle.social/relays/" + enc(host))]),
-        row("Flotilla", "web, phone", "The relay as a space, with the group as a room.", [link("Open", "https://app.flotilla.social/spaces/" + enc(host)), naddr && app("Open group", "nostr:" + naddr)]),
-        row("0xchat", "phone", "The group, in a chat app.", [naddr && app("Open group", "nostr:" + naddr), naddr && copy("Copy naddr", naddr)]),
-        row("noStrudel", "web", "Relays, add this one, then open its page.", [copy("Copy relay URL", wsURL)]),
-      ]],
-      ["Find me here", "Feed apps have no relay pages. They meet this relay through a profile link that names it, then keep it once it is in the relay settings.", [
-        row("Primal", "web, phone", profileNote, [nprofile && link("Open", "https://primal.net/p/" + nprofile), nprofile && app("Open in app", "nostr:" + nprofile)]),
-        row("YakiHonne", "web, phone", profileNote, [nprofile && link("Open", "https://yakihonne.com/profile/" + nprofile), nprofile && app("Open in app", "nostr:" + nprofile)]),
-        row("Damus", "iPhone", profileNote + " Then Settings, Relays.", [nprofile && app("Open in app", "nostr:" + nprofile), copy("Copy relay URL", wsURL)]),
-        row("Amethyst", "Android", profileNote + " Then Relays in the drawer.", [nprofile && app("Open in app", "nostr:" + nprofile), copy("Copy relay URL", wsURL)]),
-        row("Nostur", "iPhone, Mac", profileNote + " Then Settings, Relays.", [nprofile && app("Open in app", "nostr:" + nprofile), copy("Copy relay URL", wsURL)]),
-      ]],
-    ];
-    if (info?.supported_grasps?.includes("GRASP-01")) groups.push([
-      "Git repositories", "Use this relay with a Git client.", [
-        row("GitWorkshop", "web", "Browse this relay's Git repositories.", [link("Open in app", "https://gitworkshop.dev/relay/" + enc((wsURL.startsWith("ws://") ? "ws:" : "") + host)), copy("Copy relay URL", wsURL)]),
-      ],
-    ]);
-    el.innerHTML = groups.map(([h, note, rows]) => '<div class="appgroup"><h4>' + h + '</h4><p class="note">' + note + '</p><div class="appgrid">' + rows.join("") + "</div></div>").join("");
+    const act = (l) => l.href
+      ? '<a class="btn" href="' + esc(l.href) + '"' + (/^nostr:/i.test(l.href) ? "" : ' target="_blank" rel="noopener"') + ">" + esc(l.label) + "</a>"
+      : '<button class="btn" data-copytext="' + esc(l.copy) + '">' + esc(l.label) + "</button>";
+    const tile = (c, i) => '<div class="app" data-i="' + i + '"><div class="app-head"><i class="app-ic">' + (IC[c.icon] || IC.app) + "</i><b>" + esc(c.title) + "</b><small>" + esc(c.app + (c.where ? ", " + c.where : "")) + "</small>" + (VISIBILITY[c.visibility] ? '<span class="pill">' + VISIBILITY[c.visibility] + "</span>" : "") + "</div><p>" + esc(c.about) + '</p><div class="app-acts">' + c.links.map(act).join("") + (c.qr ? '<button class="btn" data-qr="' + enc(c.qr) + '" title="Show as a QR code for a phone">' + IC.qr + "QR</button>" : "") + "</div>" + (c.needsUser ? '<p class="who-note">Sign in and the links made for you appear.</p>' : "") + '<div class="app-qr hidden"></div></div>';
+    $("#apps").innerHTML = list.map(tile).join("");
     $("#apps-ws").textContent = wsURL;
-    const tile = (label, text) => '<div class="door"><small>' + label + '</small><img src="/qr.svg?text=' + enc(text) + '" alt="QR code: ' + esc(label) + '" width="150" height="150"></div>';
-    $("#phones").innerHTML = [nprofile && tile("Find me here, for a phone", "nostr:" + nprofile), naddr && tile("The group, for a phone", "nostr:" + naddr)].filter(Boolean).join("");
+    $("#apps-note").textContent = list.length ? "" : me && owner && me === owner ? "No shortcuts yet. Pick some on the Connect tab." : "The owner has not picked any app shortcuts yet.";
   }
+  $("#apps").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-qr]"); if (!b) return;
+    const box = b.closest(".app").querySelector(".app-qr");
+    if (!box.firstChild) box.innerHTML = '<img src="/qr.svg?text=' + b.dataset.qr + '" alt="QR code" width="150" height="150">';
+    box.classList.toggle("hidden");
+  });
   // The folds are a group: opening one closes the rest. Browsers with the
   // details name attribute do this themselves; this covers the others.
   $$(".folds details").forEach((d) => d.addEventListener("toggle", () => { if (d.open) $$(".folds details").forEach((o) => { if (o !== d && o.open) o.open = false; }); }));
@@ -1158,7 +1231,6 @@
   else if (me && window.nostr) { try { const pk = await window.nostr.getPublicKey(); if (pk !== me) me = null; } catch { me = null; } }
   else if (me) me = null;
   renderHeader();
-  renderApps();
   await loadAdmin();
   await loadPeople();
 })();

@@ -67,9 +67,9 @@
     </div>
     <div class="block">
       <h3>Open it in an app</h3>
-      <p class="note">Relay apps open this relay as a place. Feed apps do not: they find the owner here through a profile link that carries this relay as the hint, and learn the relay from that. Either way, add <span class="mono" id="apps-ws"></span> under the app's relay settings to post here.</p>
-      <div class="apps" id="apps"></div>
-      <div class="phones" id="phones"></div>
+      <p class="note">Each shortcut hands this relay to an app, with a QR code for a phone. Whichever app, add <span class="mono" id="apps-ws"></span> under its relay settings to post here.</p>
+      <div class="appgrid" id="apps"></div>
+      <p class="note" id="apps-note"></p>
     </div>
     </details>
   </section>
@@ -112,6 +112,7 @@
       <a href="#moderation" data-tab="moderation">Moderation<span class="count" id="tc-reports"></span></a>
       <a href="#rules" data-tab="rules">Rules</a>
       <a href="#identity" data-tab="identity">Identity</a>
+      <a href="#connect" data-tab="connect">Connect</a>
       <a href="#data" data-tab="data">Data</a>
       <a href="#sync" data-tab="sync">Sync</a>
       <a href="#views" data-tab="views">Views</a>
@@ -322,6 +323,23 @@
             <div class="row"><button class="btn" id="copynaddr">Copy naddr</button><button class="btn" id="copyembed">Copy embed</button></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="connect">
+      <h2>Connect</h2>
+      <p class="lead">The shortcuts on the Connect fold: which apps, in what order, and who sees each.</p>
+      <div class="block">
+        <h3>Shortcuts</h3>
+        <p class="note">Top to bottom is the order visitors see. A shortcut whose feature is off waits until it is switched on.</p>
+        <div id="conns" class="conns"></div>
+        <div class="actions"><button type="button" id="connsave" class="btn pri">Save shortcuts</button></div>
+        <p class="note" id="connnote"></p>
+      </div>
+      <div class="block">
+        <h3>Library</h3>
+        <p class="note">One template per app, from the repository's connection-templates folder; the relay URL, the owner's profile and the viewer's own key fill in when the page opens.</p>
+        <div id="connlib" class="appgrid"></div>
       </div>
     </section>
 
