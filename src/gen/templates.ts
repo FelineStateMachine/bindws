@@ -468,7 +468,7 @@ export const TEMPLATES: { name: string; document: unknown }[] = [
       "format": "bind.ws/relay-config/2",
       "template": {
         "title": "Home",
-        "about": "Your relay as your home on nostr. Members write, anyone reads; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts."
+        "about": "Your relay as your home on nostr. Members write, anyone reads; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a photo library shortcut only you see."
       },
       "policy": {
         "writes": "allowlist",
