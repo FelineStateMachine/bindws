@@ -11,6 +11,7 @@ import { type Relay } from "./relay.ts";
 import { KIND_PUSH_REGISTRATION } from "./kinds.ts";
 import { archiveCurrent, isListKind } from "./list-history.ts";
 import { Settings } from "./settings.ts";
+import { exportGitBackup, prepareGitBackup, restoreGitBackup, type GitBackup, type PreparedGit } from "./git-backup.ts";
 
 export const BACKUP_FORMAT = "bind.ws/relay-backup/1";
 // JSON parsing, base64 expansion and integrity copies coexist in the Worker
@@ -29,6 +30,7 @@ export type BackupArchive = {
   events: string[];
   blobs: (Payload & { sha256: string; type: string; uploader: string; uploaded: number })[];
   git: (Payload & { key: string })[];
+  sqlGit?: GitBackup;
   state?: { listHistory: string[]; hidden: string[]; hosted: string[]; pending: { id: string; until: number }[]; prRefs?: { repo: string; ref: string; until: number }[] };
 };
 
@@ -99,21 +101,10 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
     blobs.push({ ...b, data: toB64(data), sha256: b.sha256, size: data.length });
   }
   const git: BackupArchive["git"] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const listed = await relay.media.list({ prefix: `${relay.slug}/git/`, cursor, limit: 1000 });
-    for (const item of listed.objects) {
-      if (git.length + blobs.length >= BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached; no complete archive";
-      if (item.size > 4 * 1024 * 1024) return "restricted: Git object exceeds the backup object limit";
-      if (!reserve(item.size)) return "restricted: backup exceeds its bounded size or object limit";
-      const obj = await relay.media.get(item.key);
-      if (!obj) return `error: Git object ${item.key} disappeared during backup`;
-      const data = new Uint8Array(await obj.arrayBuffer());
-      git.push({ key: item.key.slice(relay.slug.length + 1), sha256: digest(data), size: data.length, data: toB64(data) });
-    }
-    if (!listed.truncated) break;
-    cursor = listed.cursor;
-  }
+  const sqlGit = exportGitBackup(relay, reserve);
+  if (typeof sqlGit === "string") return sqlGit;
+  const verifiedGit = await prepareGitBackup(sqlGit);
+  if (typeof verifiedGit === "string") return verifiedGit;
   const config = exportConfig(relay.settings, relay.slug);
   if (!reserve(enc.encode(JSON.stringify(config)).length)) return "restricted: backup exceeds its bounded size or object limit";
   const state = { listHistory: [] as string[], hidden: [...relay.settings.hiddenEvents], hosted: relay.sql.exec<{ id: string }>(`SELECT id FROM grasp_hosted`).toArray().map((r) => r.id), pending: relay.sql.exec<{ id: string; until: number }>(`SELECT id,until FROM grasp_pending`).toArray(), prRefs: relay.sql.exec<{ repo: string; ref: string; until: number }>(`SELECT repo,ref,until FROM grasp_pr_refs`).toArray() };
@@ -122,7 +113,7 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
     state.listHistory.push(row.raw);
   }
   if (!reserve(enc.encode(JSON.stringify({ ...state, listHistory: [] })).length, state.hidden.length + state.hosted.length + state.pending.length + state.prRefs.length)) return "restricted: backup state exceeds its bounded size";
-  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: git.length, archiveSha256: "" }, config, events, blobs, git, state } as BackupArchive;
+  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: sqlGit.repositories.reduce((count, repo) => count + repo.objects.length, 0), archiveSha256: "" }, config, events, blobs, git, sqlGit, state } as BackupArchive;
   archive.manifest.archiveSha256 = "0".repeat(64);
   for (let i = 0; i < 4; i++) archive.manifest.bytes = bytesOf(archive).length;
   archive.manifest.archiveSha256 = digest(unsignedBytes(archive));
@@ -146,7 +137,8 @@ export async function deleteBackup(relay: Relay, id: string) {
   return true;
 }
 
-const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
+const preparedArchives = new WeakMap<BackupArchive, PreparedGit[]>();
+const checkedArchive = async (bytes: Uint8Array): Promise<BackupArchive | string> => {
   if (bytes.length > BACKUP_MAX_BYTES) return "restricted: backup exceeds 8 MiB";
   let archive: BackupArchive;
   try { archive = JSON.parse(dec.decode(bytes)) as BackupArchive; } catch { return "invalid: backup is not JSON"; }
@@ -158,7 +150,7 @@ const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
     catch { return "invalid: backup contains malformed event JSON"; }
   }
   for (const b of archive.blobs) { let data: Uint8Array; try { data = fromB64(b.data); } catch { return "invalid: malformed blob data"; } if (data.length !== b.size || digest(data) !== b.sha256) return "invalid: blob integrity check failed"; }
-  for (const g of archive.git) { let data: Uint8Array; try { data = fromB64(g.data); } catch { return "invalid: malformed Git data"; } if (data.length !== g.size || digest(data) !== g.sha256 || typeof g.key !== "string" || !g.key.startsWith("git/")) return "invalid: Git integrity check failed"; }
+  if (archive.git.length) return "unsupported: R2 Git archives cannot be restored into SQLite";
   const state = archive.state;
   if (state) {
     if (!Array.isArray(state.listHistory) || !Array.isArray(state.hidden) || !Array.isArray(state.hosted) || !Array.isArray(state.pending)) return "invalid: backup state malformed";
@@ -171,6 +163,10 @@ const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
       catch { return "invalid: backup list history malformed"; }
     }
   }
+  const usedEntries = archive.events.length + archive.blobs.length + (state?.prRefs?.length ?? 0) + (state?.listHistory.length ?? 0) + (state?.hidden.length ?? 0) + (state?.hosted.length ?? 0) + (state?.pending.length ?? 0);
+  const git = await prepareGitBackup(archive.sqlGit, BACKUP_MAX_OBJECTS - usedEntries);
+  if (typeof git === "string") return git;
+  preparedArchives.set(archive, git);
   return archive;
 };
 
@@ -178,9 +174,9 @@ const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
 // signed and validated in the archive; direct storage preserves private data
 // and avoids applying the target's ordinary write policy to old history.
 export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: string): Promise<unknown | string> {
-  const archive = checkedArchive(bytes);
+  const archive = await checkedArchive(bytes);
   if (typeof archive === "string") return archive;
-  if (relay.settings.policy.owner !== "" || relay.settings.isLeased() || relay.sql.exec(`SELECT 1 FROM events LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM blobs LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM grasp_objects LIMIT 1`).toArray().length || (relay.slug !== "" && (await relay.media.list({ prefix: `${relay.slug}/`, limit: 1 })).objects.length)) return "restricted: restore requires a fresh, unclaimed relay";
+  if (relay.settings.policy.owner !== "" || relay.settings.isLeased() || relay.sql.exec(`SELECT 1 FROM events LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM blobs LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM git_sqlite_meta UNION ALL SELECT 1 FROM git_sqlite_objects UNION ALL SELECT 1 FROM git_sqlite_catalog LIMIT 1`).toArray().length || (relay.slug !== "" && (await relay.media.list({ prefix: `${relay.slug}/`, limit: 1 })).objects.length)) return "restricted: restore requires a fresh, unclaimed relay";
   if (archive.manifest.owner !== caller) return "restricted: target signer is not the backup owner";
   const config = archive.config as Record<string, unknown>;
   const parsed = parseConfig(config, relay.settings.policy);
@@ -192,7 +188,6 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
       const key = `${relay.slug}/${b.sha256}`;
       await relay.media.put(key, data, { httpMetadata: { contentType: b.type } }); staged.push(key);
     }
-    for (const g of archive.git) { const key = `${relay.slug}/${g.key}`; await relay.media.put(key, fromB64(g.data)); staged.push(key); }
   } catch (error) {
     await relay.media.delete(staged).catch(() => {});
     return "error: restore storage staging failed";
@@ -216,7 +211,7 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
       for (const row of archive.state?.pending ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_pending(id,until) SELECT id,? FROM events WHERE id=?`, row.until, row.id);
       for (const row of archive.state?.prRefs ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_pr_refs(repo,ref,until) VALUES(?,?,?)`, row.repo, row.ref, row.until);
       for (const b of archive.blobs) relay.sql.exec(`INSERT OR REPLACE INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, b.sha256, b.size, b.type, b.uploader, b.uploaded);
-      for (const g of archive.git) relay.sql.exec(`INSERT OR REPLACE INTO grasp_objects(key,owner,size) VALUES(?,?,?)`, `${relay.slug}/${g.key}`, caller, g.size);
+      restoreGitBackup(relay, preparedArchives.get(archive)!);
     });
   } catch (error) {
     relay.settings = new Settings(relay.sql);
@@ -229,7 +224,7 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
   await relay.publishMembership();
   await relay.publishDiscovery();
   if (relay.sql.exec("SELECT 1 FROM grasp_pending UNION ALL SELECT 1 FROM grasp_pr_refs LIMIT 1").toArray().length || relay.settings.policy.features.grasp02) await relay.ensureAlarm(now() + 1);
-  return { restored: true, owner: caller, sourceRelayIdentity: archive.manifest.relayIdentity, targetRelayIdentity: relay.identity.pubkey, events: archive.events.length, blobs: archive.blobs.length, git: archive.git.length, bytes: bytes.length };
+  return { restored: true, owner: caller, sourceRelayIdentity: archive.manifest.relayIdentity, targetRelayIdentity: relay.identity.pubkey, events: archive.events.length, blobs: archive.blobs.length, git: archive.manifest.git, bytes: bytes.length };
 }
 
 export async function backupDownload(relay: Relay, req: Request, id: string): Promise<Response> {
@@ -270,13 +265,13 @@ export async function restoreBackupRequest(relay: Relay, req: Request): Promise<
   const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, body);
   if (typeof auth === "string") return Response.json({ error: auth }, { status: 401 });
   if (new URL(req.url).pathname === "/backups/preview") {
-    const parsed = checkedArchive(bytes);
+    const parsed = await checkedArchive(bytes);
     if (typeof parsed === "string") return Response.json({ error: parsed }, { status: 400 });
     const cfg = parseConfig(parsed.config, relay.settings.policy);
     if (typeof cfg === "string") return Response.json({ error: cfg }, { status: 400 });
-    if (relay.settings.policy.owner !== "" || relay.settings.isLeased() || relay.sql.exec(`SELECT 1 FROM events LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM blobs LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM grasp_objects LIMIT 1`).toArray().length || (relay.slug !== "" && (await relay.media.list({ prefix: `${relay.slug}/`, limit: 1 })).objects.length)) return Response.json({ error: "restricted: restore requires a fresh, unclaimed relay" }, { status: 403 });
+    if (relay.settings.policy.owner !== "" || relay.settings.isLeased() || relay.sql.exec(`SELECT 1 FROM events LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM blobs LIMIT 1`).toArray().length || relay.sql.exec(`SELECT 1 FROM git_sqlite_meta UNION ALL SELECT 1 FROM git_sqlite_objects UNION ALL SELECT 1 FROM git_sqlite_catalog LIMIT 1`).toArray().length || (relay.slug !== "" && (await relay.media.list({ prefix: `${relay.slug}/`, limit: 1 })).objects.length)) return Response.json({ error: "restricted: restore requires a fresh, unclaimed relay" }, { status: 403 });
     if (parsed.manifest.owner !== auth.pubkey) return Response.json({ error: "restricted: target signer is not the backup owner" }, { status: 403 });
-    return Response.json({ result: { preview: true, source: parsed.manifest, targetIsFresh: true, config: parsed.config, events: parsed.events.length, blobs: parsed.blobs.length, git: parsed.git.length, bytes: bytes.length } });
+    return Response.json({ result: { preview: true, source: parsed.manifest, targetIsFresh: true, config: parsed.config, events: parsed.events.length, blobs: parsed.blobs.length, git: parsed.manifest.git, bytes: bytes.length } });
   }
   const result = await restoreBackup(relay, bytes, auth.pubkey);
   return typeof result === "string" ? Response.json({ error: result }, { status: result.startsWith("invalid:") ? 400 : 403 }) : Response.json({ result });

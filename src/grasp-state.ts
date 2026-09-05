@@ -1,5 +1,5 @@
-// GRASP's accepted Nostr authority and purgatory. Git refs remain in ntig;
-// these tables record only visibility, cleanup deadlines and billed objects.
+// GRASP's accepted Nostr authority and purgatory. Git objects and refs live
+// in the SQLite backend; these tables record visibility and cleanup deadlines.
 import { now, tag, tagValues, type Event } from "./event.ts";
 import { KIND_REPO, KIND_REPO_STATE, KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";
 import { featureOn } from "./settings.ts";
@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS grasp_pending (id TEXT PRIMARY KEY REFERENCES events(
 CREATE TRIGGER IF NOT EXISTS grasp_removed AFTER DELETE ON events BEGIN DELETE FROM grasp_pending WHERE id=old.id; DELETE FROM grasp_hosted WHERE id=old.id; END;
 CREATE TABLE IF NOT EXISTS grasp_tick (id INTEGER PRIMARY KEY CHECK(id=1), coordinate TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS grasp_pr_refs (repo TEXT NOT NULL, ref TEXT NOT NULL, until INTEGER NOT NULL, PRIMARY KEY(repo,ref));
-CREATE TABLE IF NOT EXISTS grasp_objects (key TEXT PRIMARY KEY, owner TEXT NOT NULL, size INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS grasp_git_sync (id TEXT PRIMARY KEY, due INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS grasp_event_sync (id TEXT PRIMARY KEY, source TEXT NOT NULL, scope TEXT NOT NULL, windows TEXT NOT NULL, live_since INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS grasp_event_sync_due ON grasp_event_sync(due,id);
@@ -110,7 +109,6 @@ export function holdGrasp(relay: Relay, e: Event, host: string): boolean {
   return true;
 }
 export const graspVisible = (relay: Relay, id: string) => relay.sql.exec(`SELECT 1 FROM grasp_pending WHERE id=?`, id).toArray().length === 0;
-export const graspBytes = (relay: Relay) => relay.sql.exec<{ n: number }>(`SELECT coalesce(sum(size),0) AS n FROM grasp_objects`).one().n;
 
 // requiredObjects returns the tips an event needs before it leaves purgatory.
 export function requiredObjects(relay: Relay, e: Event): string[] | null {

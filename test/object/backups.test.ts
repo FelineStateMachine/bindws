@@ -78,7 +78,7 @@ describe("portable backups", () => {
     expect(response.status).toBe(413);
   });
 
-  it("round trips configuration, events, a media blob and a Git object, with preview and exclusions", async () => {
+  it("round trips configuration, events and a media blob, with preview and exclusions", async () => {
     const source = "backup-source.bind.ws";
     const owner = generateSecretKey(), writer = generateSecretKey();
     await rpc(source, owner, "claim");
@@ -96,7 +96,6 @@ describe("portable backups", () => {
       relay.sql.exec(`INSERT INTO grasp_pr_refs(repo,ref,until) VALUES(?,?,?)`, `pr:${pk(writer)}:repo`, `refs/nostr/${"a".repeat(64)}`, 9999999999);
       relay.sql.exec(`INSERT INTO grasp_pr_refs(repo,ref,until) VALUES(?,?,?)`, `pr:${pk(writer)}:repo`, `refs/nostr/${"b".repeat(64)}`, 0);
       await storeBlob(relay, new TextEncoder().encode("site bytes"), "text/plain", pk(writer), 10);
-      await relay.media.put("backup-source/git/test-object", new TextEncoder().encode("git bytes"));
       await relay.store.save(ev(owner, 30390, '{"callback":"https://secret.invalid"}'), 10);
       const result = await createBackup(relay, "roundtrip");
       expect(typeof result).not.toBe("string");
@@ -114,7 +113,7 @@ describe("portable backups", () => {
       return result as { blobs: number; git: number };
     });
     expect(preview.blobs).toBe(1);
-    expect(preview.git).toBe(1);
+    expect(preview.git).toBe(0);
     await runInDurableObject(env.RELAY.getByName("backup-target"), async (relay: Relay) => {
       expect(relay.settings.policy.name).toBe("Recovered");
       expect(relay.sql.exec(`SELECT repo,ref,until FROM grasp_pr_refs ORDER BY ref`).toArray()).toEqual([{ repo: `pr:${pk(writer)}:repo`, ref: `refs/nostr/${"a".repeat(64)}`, until: 9999999999 }, { repo: `pr:${pk(writer)}:repo`, ref: `refs/nostr/${"b".repeat(64)}`, until: 0 }]);
@@ -122,7 +121,6 @@ describe("portable backups", () => {
       expect(relay.settings.hiddenEvents.size).toBe(1);
       expect(relay.sql.exec(`SELECT count(*) n FROM grasp_pending`).one().n).toBe(1);
       expect((await relay.media.get("backup-target/" + ""))).toBeNull();
-      expect((await relay.media.get("backup-target/" + "git/test-object"))?.size).toBe(9);
     });
   });
 
