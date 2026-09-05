@@ -47,7 +47,7 @@ wss://<name>.bind.ws
 
 That is all. The relay speaks the standard protocol, so Damus, Amethyst, noStrudel, Coracle and the rest need no special setup. Your notes, reactions and profile land on your relay the moment you publish.
 
-The relay's page has a shortcut for each app: open the **Connect** fold, under **Open it in an app**. Relay apps such as Jumble, Coracle and Flotilla open the relay as a place, and 0xchat opens its group. Feed apps such as Primal, Damus, Amethyst, Nostur and YakiHonne have no relay pages, so their button opens the owner's profile with this relay attached as the hint; add the relay in the app's settings from there. Two QR codes carry the same links to a phone.
+The relay's page has shortcuts too: open the **Connect** fold. Each is a tile the owner chose: an app, what it does with this relay, and buttons that open it or copy the link, with a QR button that puts the handoff link on a phone. Relay apps such as Jumble and Flotilla open the relay as a place. Feed apps such as Primal have no relay pages, so **Find me here** opens the owner's profile with this relay attached as the hint; add the relay in the app's settings from there. A visitor sees the public shortcuts; sign in to see the rest the owner shares with you, with the links that need your own key filled in. As the owner, you pick the shortcuts on the Connect tab ([Relay configuration](01-relay-configuration.md#connect)).
 
 ## Your relay lists
 

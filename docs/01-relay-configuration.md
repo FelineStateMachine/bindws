@@ -5,7 +5,7 @@ audience: user
 
 # Relay configuration
 
-Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the owner tabs: People, Moderation, Rules, Identity, Data, Sync, Views, Health and Owner.
+Your relay's page at `https://<name>.bind.ws/` is the console. Sign in with your extension to see the ten owner tabs: People, Moderation, Rules, Identity, Connect, Data, Sync, Views, Health and Owner.
 
 Everything on these tabs is also available to scripts as signed JSON-RPC calls (NIP-86). The page is a client of that same API.
 
@@ -73,11 +73,13 @@ Three features add bounded services beside the relay feed. **Sites** is on by de
 
 ### Presets
 
-Above the rules form, one button per preset applies a template from the repository's `relay-templates/` folder: writes, reads, the directory, the features, the kind rules and the keep-for rules together. Limits, identity, people and bans stay. **Default** restores open writes and reads, a public directory, every kind and indefinite retention. It leaves feature settings alone, so applying it after **Quiet** keeps the features switched off. **Outbox** is only you writing, anyone reading, private kinds refused. **Inbox** takes notes, replies, reactions, comments, reports and zaps from anyone and keeps them 90 days. **Private** is only you writing and only members reading, every kind, forever. **Chat** is the members-only group: private messages, chat and threads, directory hidden. Your own profile and lists always land, whatever the kind rules say. Names are cheap, so one name per role is the way to run all four.
+Above the rules form, one button per preset applies a template from the repository's `relay-templates/` folder: writes, reads, the directory, the features, the kind rules and the keep-for rules together. Limits, identity, people and bans stay. **Default** restores open writes and reads, a public directory, every kind and indefinite retention. It leaves feature settings alone, so applying it after **Quiet** keeps the features switched off. A preset with shortcuts sets the Connect fold's shortcuts too (Connect, below); **Default** leaves them, as it leaves the features. **Outbox** is only you writing, anyone reading, private kinds refused. **Inbox** takes notes, replies, reactions, comments, reports and zaps from anyone and keeps them 90 days. **Private** is only you writing and only members reading, every kind, forever. **Chat** is the members-only group: private messages, chat and threads, directory hidden. Your own profile and lists always land, whatever the kind rules say. Names are cheap, so one name per role is the way to run all four.
 
 Four more presets make single-purpose names: **Media** (members upload files; the only events accepted are profiles and Blossom server lists), **Search replica** (a read-only copy of another relay's searchable kinds, refreshed every six hours), **Articles** (long-form and profiles only, mirrored daily from a source if one is given) and **DM inbox** (anyone drops gift wraps, only members read). The replica presets take a source relay URL in the field next to the buttons; applying a preset again replaces the standing pull rather than adding one, and applying a preset with no source removes it. The pull appears in the Jobs table on the Data tab.
 
 **Quiet** is a small private relay with every feature that costs or announces switched off: members write and read, and nothing else is on until you switch it on.
+
+**Home** is one name as your home on nostr: members write, anyone reads, sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts on the Connect fold.
 
 ## Identity
 
@@ -92,6 +94,17 @@ The relay also publishes a discovery record for relay directories (NIP-66, kind 
 ### Your relay lists
 
 One row per list that names relays: relay list, DM inbox, search relays and Blossom servers. **Check** finds your newest copy, **Add this relay** publishes a merged list with this relay first and **Remove this relay** publishes it without. See [Getting started](00-getting-started.md#tell-your-clients).
+
+## Connect
+
+The app shortcuts on your relay's page. Anyone who opens the **Connect** fold there sees each shortcut as a tile: an icon, a title, the app and where it runs, one sentence, buttons that open the app or copy a link (Open, Open in app, Copy ...), and a QR button that shows the handoff link as a QR code for a phone. A visitor sees the public ones; someone who signs in sees the rest you let them see, with the links that need their own key filled in.
+
+- **Shortcuts** is your list, in the order the fold shows it: one row per shortcut with a title of your own, who sees it (anyone, anyone signed in, members, only you), the template's inputs, move up and down, and remove. **Save** writes the whole list. Until you save one, the fold shows notes, find me here and the group; a saved empty list shows nothing.
+- **Library** is one card per template with **Add**. A template that needs a feature you switched off says so, and its shortcut stays off the fold until the feature is on.
+
+![The Connect tab: the shortcuts as rows, then the library](img/connect-tab.png)
+
+The shortcuts travel with the exported configuration as its `connections` section, and a preset may set them (Presets, above). The templates are files in the repository's `connection-templates/` folder, and its README is the catalog; [Connection templates](17-connection-templates.md) says how one is written and how to add one.
 
 ## Data
 
