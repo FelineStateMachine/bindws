@@ -7,7 +7,7 @@ audience: developer
 
 A connection template is one app shortcut for a relay's Connect fold: which app opens, what it does with this relay, and the links that hand a viewer over to it. The links are written once, with placeholders, and the relay fills them in for whoever is looking, so one good template works on any relay and every client sees the same handoff. The library is `connection-templates/`, one file per shortcut, folded into `src/gen/connections.ts`; `src/connections.ts` parses, resolves and serves it. The owner picks from the library on the console's Connect tab: which shortcuts show, in what order, and who sees each. A relay template in `relay-templates/` can name shortcuts too, so one preset sets the rules and the handoffs that go with them.
 
-The catalog, one row per template on when to choose it, is the folder's README, [Connection templates](../connection-templates/README.md). The seed library is `notes` (the relay as a feed in Jumble), `find-me` (the owner's profile with this relay attached, in Primal or the viewer's own app through a `nostr:` link), `group` (the relay's group in Flotilla), `blog` (the owner's articles in YakiHonne), `repos` (GitWorkshop, needs GRASP, with one input, the repository name, for a clone command that names the viewer), `sites` (needs sites: the owner's root site and the viewer's own at `https://<npub>.<domain>`, and an nsyte publish command), `bookmarks` (Listr, for signed-in viewers), `photos` (bouquet, the owner's alone by default, needs files), `files` (bouquet, members, needs files), `dm` (the owner in 0xchat), `marmot` (White Noise, needs Marmot) and `relay-page` (Coracle).
+The catalog, one row per template on when to choose it, is the folder's README, [Connection templates](../connection-templates/README.md). The seed library is `notes` (the relay as a feed in Jumble), `find-me` (the owner's profile with this relay attached, in Primal or the viewer's own app through a `nostr:` link), `group` (the relay's group in Flotilla), `blog` (the owner's articles in YakiHonne), `repos` (GitWorkshop, needs GRASP, with one input, the repository name, for a clone command that names the viewer), `sites` (needs sites: the owner's root site and the viewer's own at `https://<npub>.<domain>`, and an nsyte publish command), `bookmarks` (Listr, for signed-in viewers), `photos` (bouquet, a shortcut the owner alone sees by default, needs files; the files themselves follow the relay's read rule), `files` (bouquet, members, needs files), `dm` (the owner in 0xchat), `marmot` (White Noise, needs Marmot) and `relay-page` (Coracle).
 
 ## The file
 
@@ -25,7 +25,7 @@ A template is a JSON document, comments and trailing commas allowed, whose `$sch
 | `visibility` | no | `public`, `auth`, `members` or `owner`: who sees the shortcut when the owner adds it without saying; `public` when left out |
 | `links` | yes | 1 to 6, each a `label` (up to 40 characters) with either an `href` to open (`https://` or `nostr:`) or a `copy` text for the clipboard, up to 2,000 characters |
 | `qr` | no | what the QR code carries, up to 2,000 characters; when left out, the first link's `href`, or the first link's `copy` text when no link has one |
-| `inputs` | no | up to 4, each a `name` (a lowercase letter, then up to 23 lowercase letters, digits, dashes or underscores), a `label` (up to 60 characters), an optional `placeholder` (200) and an optional `default` (500); the owner fills them when adding the shortcut and a link names one as `{input:name}` |
+| `inputs` | no | up to 4, each a `name` (a lowercase letter, then up to 23 lowercase letters, digits, dashes or underscores), a `label` (up to 60 characters), an optional `placeholder` (200), an optional `default` (500) and an optional `pattern` (a regular expression, up to 200 characters, that the owner's value must match); the owner fills them when adding the shortcut and a link names one as `{input:name}`. A value that lands in a URL path or a shell command names a pattern, so what the owner types cannot change the link or the command around it: `repos` keeps its repository name to letters, digits, dot, dash and underscore |
 
 The group template, as it is in the repository:
 
@@ -78,7 +78,7 @@ A link that names a `{user:*}` value is left out for a visitor, and the shortcut
 | `members` | members and the owner |
 | `owner` | the owner |
 
-Visibility is judged from the key the asker proved with a NIP-98 signature (`visibleTo` in `src/connections.ts`). A template sets the visibility a shortcut starts with; the owner changes it per shortcut.
+Visibility is judged from the key the asker proved with a NIP-98 signature (`visibleTo` in `src/connections.ts`). A template sets the visibility a shortcut starts with; the owner changes it per shortcut. It hides the shortcut and nothing else: who may read the events and files a shortcut leads to is the relay's read rule, so an owner-only photo library on a relay anyone reads is a shortcut only the owner sees to files anyone may fetch.
 
 ## The owner's list
 
@@ -132,9 +132,9 @@ Until the owner saves a list, the relay shows the defaults (`DEFAULT_CONNECTIONS
 }
 ```
 
-The Connect fold on the relay's page is a client of this door. It shows the shortcuts as tiles: the icon, the title, the app and where it runs, the sentence, one button per link (Open, Open in app, Copy ...), and a QR button that reveals a QR code of the handoff link for a phone. A visitor sees the public shortcuts; signing in reveals the rest the viewer may see and fills the links that need the viewer's own key.
+The Connect fold on the relay's page is a client of this door. The relay URL with its copy button comes first, then the shortcuts as tiles: the icon, the title, the app and where it runs, the sentence, the first `href` as the one Open button, the first `copy` text as a compact copy button beside it, a QR button that reveals a QR code of the handoff link for a phone, and the remaining links behind a More disclosure. So a template's first link is the one that leads, and its first copy text is the one command or address the app takes; the fold has one relay URL copy control of its own, which is why no template carries one. The Blossom, names and bridge doors and the Git clone example are folded under Connection details beneath the tiles. A visitor sees the public shortcuts; signing in reveals the rest the viewer may see and fills the links that need the viewer's own key.
 
-The owner's console has a Connect tab, between Identity and Data. **Shortcuts** is the current list as rows: a title override, a visibility selector, the template's inputs, move up and down, remove, and Save, which sends the whole list. **Library** is one card per template with Add; a template whose feature is off says so.
+The owner's console has a Connect tab, between Identity and Data. **Shortcuts** is the current list as compact rows: the icon and title, the app, a visibility selector, and Edit, move up, move down and remove; Edit opens one row's title override and inputs below it, and Save sits at the top of the list, lit while something is unsaved, and sends the whole list. **Library** is one card per template with Add; a template whose feature is off says so.
 
 The fold as the owner sees it on a relay with the `home` preset applied, at a desktop width and at a phone width:
 
@@ -150,13 +150,13 @@ Three NIP-86 methods in `METHODS` (`src/manage.ts`), called like every other ([S
 |---|---|---|
 | `listconnectiontemplates` | read | the library, each template with its fields and `available`: whether the feature it needs is on, `true` when it needs none |
 | `listconnections` | read | the owner's list as saved, or the defaults |
-| `setconnections list` | rules, the owner's | replaces the whole list in the order given and answers it; 400 with the reason when an entry names no template, a visibility that is not one of the four, an input the template lacks, or the list runs past 24. The console builds the list from the library, so a bad entry is a mistake to report, not to drop |
+| `setconnections list` | rules, the owner's | replaces the whole list in the order given and answers it; 400 with the reason when an entry names no template, a visibility that is not one of the four, an input the template lacks or one that does not match its pattern, or the list runs past 24. The console builds the list from the library, so a bad entry is a mistake to report, not to drop |
 
 `listpresets` entries carry `connections` when the template has them, so the console can say what a preset sets.
 
 ## The configuration document
 
-`connections` is a section like `kinds` and `retention` ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)): `exportconfig` includes it, `importconfig` applies it, and a document that leaves it out leaves the shortcuts alone. `parseConfig` drops an entry no relay would take, one warning each: `connections[2]: no connection template named blog`, `connections[0].inputs.repo: notes has no such input`, `connections[24]: at most 24 connections`. `npm run relay check` prints the section as `connections: notes, photos (owner)`.
+`connections` is a section like `kinds` and `retention` ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)): `exportconfig` includes it, `importconfig` applies it, and a document that leaves it out leaves the shortcuts alone. `parseConfig` drops an entry no relay would take, one warning each: `connections[2]: no connection template named blog`, `connections[0].inputs.repo: notes has no such input`, `connections[1].inputs.repo: must match ^[A-Za-z0-9][A-Za-z0-9._\-]{0,63}$`, `connections[24]: at most 24 connections`. `npm run relay check` prints the section as `connections: notes, photos (owner)`.
 
 A dry run summarizes the section in one line. A shortcut is the whole of its entry, so the same template with another visibility or input is one removed and one added: `connections: +repos, -sites (members)`. A list with the same entries in another order says `connections: reordered`.
 
@@ -178,7 +178,7 @@ A relay template in `relay-templates/` may carry a `connections` section in the 
 | site | sites, notes |
 | marmot, marmot-members | marmot |
 | grasp | repos, notes |
-| home | notes, blog, bookmarks, sites, repos, a private photo library, find-me and group |
+| home | notes, blog, bookmarks, sites, repos, photos (the owner alone sees the shortcut), find-me and group |
 
 `home` (`15-home.jsonc`) is the one-name relay: members write, anyone reads, sites, files and Git on, with a shortcut for each.
 

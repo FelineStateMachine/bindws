@@ -73,7 +73,7 @@ Names are cheap, so a relay does not have to do everything. On the Rules tab, **
 | marmot | anyone | anyone | KeyPackages, encrypted group envelopes, private welcomes and relay lists; Marmot enabled |
 | grasp | members publish events | anyone | every kind, forever; GRASP Git hosting enabled |
 | marmot-members | members; group writes authenticate | anyone | KeyPackages, encrypted group envelopes, private welcomes and relay lists; Marmot enabled |
-| home | members | anyone | every kind, forever; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts on the Connect fold |
+| home | members | anyone | every kind, forever; sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a photo library shortcut only the owner sees on the Connect fold |
 
 Each preset is a file in the repository's `relay-templates/` folder: a relay configuration with the rules sections only, which is also what a file of your own looks like ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)). A preset that names features sets them too. A preset may also carry the Connect fold's shortcuts ([Relay configuration](01-relay-configuration.md#connect)): one that does sets them, and one that does not leaves them alone.
 

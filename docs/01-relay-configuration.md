@@ -79,7 +79,7 @@ Four more presets make single-purpose names: **Media** (members upload files; th
 
 **Quiet** is a small private relay with every feature that costs or announces switched off: members write and read, and nothing else is on until you switch it on.
 
-**Home** is one name as your home on nostr: members write, anyone reads, sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a private photo library as shortcuts on the Connect fold.
+**Home** is one name as your home on nostr: members write, anyone reads, sites, files and Git hosting on, with notes, blog, bookmarks, sites, repos and a photo library shortcut only you see on the Connect fold. Only the shortcut is yours alone: anyone reads a Home relay, files included, and the members read rule is what closes the store.
 
 ## Identity
 
@@ -97,9 +97,9 @@ One row per list that names relays: relay list, DM inbox, search relays and Blos
 
 ## Connect
 
-The app shortcuts on your relay's page. Anyone who opens the **Connect** fold there sees each shortcut as a tile: an icon, a title, the app and where it runs, one sentence, buttons that open the app or copy a link (Open, Open in app, Copy ...), and a QR button that shows the handoff link as a QR code for a phone. A visitor sees the public ones; someone who signs in sees the rest you let them see, with the links that need their own key filled in.
+The app shortcuts on your relay's page. Anyone who opens the **Connect** fold there sees the relay URL with its copy button, then each shortcut as a tile: an icon, a title, the app and where it runs, one sentence, an **Open** button, a copy button when the app takes a command or an address, a QR button that shows the handoff link as a QR code for a phone, and **More** for the app's other links. The Blossom, names and bridge addresses and the Git clone example sit under **Connection details** below the tiles. A visitor sees the public shortcuts; someone who signs in sees the rest you let them see, with the links that need their own key filled in.
 
-- **Shortcuts** is your list, in the order the fold shows it: one row per shortcut with a title of your own, who sees it (anyone, anyone signed in, members, only you), the template's inputs, move up and down, and remove. **Save** writes the whole list. Until you save one, the fold shows notes, find me here and the group; a saved empty list shows nothing.
+- **Shortcuts** is your list, in the order the fold shows it: one row per shortcut with who sees it (anyone, anyone signed in, members, only you), **Edit** for a title of your own and the template's inputs, move up and down, and remove. **Save**, at the top of the list, lights up while there is something to save and writes the whole list. Who sees it hides the shortcut and nothing else: the read rule still says who may read what the shortcut leads to. Until you save a list, the fold shows notes, find me here and the group; a saved empty list shows nothing.
 - **Library** is one card per template with **Add**. A template that needs a feature you switched off says so, and its shortcut stays off the fold until the feature is on.
 
 ![The Connect tab: the shortcuts as rows, then the library](img/connect-tab.png)
