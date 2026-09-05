@@ -46,7 +46,7 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 
 **For scripts and agents**
 
-- [Scripts and agents](docs/13-scripts-and-agents.md): a relay end to end with a key and curl, every management method including Git storage inventory, and the relay as a configuration file.
+- [Scripts and agents](docs/13-scripts-and-agents.md): a relay end to end with a key and curl, every management method including Git storage inventory, the relay as a configuration file, and a finite production network exercise.
 - [HTTP reference](docs/14-http-reference.md): every path, method, auth and answer.
 
 **For developers**

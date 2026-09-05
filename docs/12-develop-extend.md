@@ -74,7 +74,7 @@ scripts/
            build-templates.mjs                fold relay-templates/ into src/gen/templates.ts
   check/   check-console.mjs check-celld.mjs check-config.mjs   run by npm run typecheck; check-config also checks any file
   dev/     dev-signer.mjs seed.mjs stage.mjs junk.mjs shot.mjs zaptest.mjs   npm run dev:signer, dev:seed, dev:stage, dev:junk, dev:shot, dev:zaptest
-  ops/     margin.mjs relay.mjs               npm run margin; npm run relay check|plan|push|pull
+  ops/     margin.mjs network.mjs relay.mjs    npm run margin; npm run test:network; npm run relay check|plan|push|pull
 
 Every script has an npm name (package.json), and the docs use those names: a tutorial never says node and a path.
 wrangler.jsonc        the Worker on Cloudflare
@@ -87,6 +87,7 @@ wrangler.celld.jsonc  the same Worker on celld (docs/16)
 npm test                  # unit and Durable Object tests
 npm run typecheck
 npm run test:conformance  # against RELAY_URL, default ws://127.0.0.1:7447
+npm run test:network -- plan  # print the finite production topology; run and cleanup are manual
 ```
 
 The conformance suite needs a claimed relay. Against a dev server:
@@ -96,6 +97,13 @@ CLAIM=1 RELAY_URL=ws://dev.localhost:8787 npm run test:conformance
 ```
 
 CI runs typecheck and the object tests on every push; the conformance suite against the Worker on `celld dev` is a separate workflow run on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)). Work lands through pull requests in small commits that each typecheck on their own; the branch checks and review carry the change to `main`.
+
+The production network exercise in [Scripts and agents](13-scripts-and-agents.md)
+is an operator-run check of relay relationships. It creates five small,
+run-owned relays, uses finite one-shot jobs, samples only public events from
+the two named external relays and tears down its own relays. It is not a
+scheduled test, load test or capacity benchmark. Its private manifest supports
+manual cleanup after an interrupted run.
 
 ## Add a management method
 

@@ -18,6 +18,66 @@ A relay for a script, an agent or a service, from nothing to handover, without a
 
 The cheap way to learn a community is its views: `GET /view/profiles` is every member's name and picture in one signed record, `GET /view/relays` is where those members also publish, and `GET /view/zaps` says what the place values. Each is one request and no websocket; the relay's information document lists which views it keeps.
 
+## Exercise a relay network in production
+
+`npm run test:network` runs a finite, manually invoked production exercise. It
+creates five small relays, gives run-owned identities, records the topology,
+exercises the relationships, extracts a report and deletes the relays it
+created. It has no timer, workflow or standing job outside the run.
+
+The topology is deliberately small and represents different data-flow shapes:
+
+| Role | Relationship | Activity and size assumption |
+|---|---|---|
+| `peer-a`, `peer-b` | equal peers, each pulls from the other | short bursts, idle catch-up and repeat sync; both are small |
+| `satellite` | pulls selected public profiles from `relay.damus.io` and `nos.lol` | a small node samples two much larger external sources |
+| `personal` | exchanges selected notes with the peers, sends public tasks to `hub` and pulls results back | low-volume personal activity |
+| `hub` | receives tasks and publishes results for `personal`; pulls selected profile context from `satellite` | a small agent-facing relay |
+
+The task and result path is a public relay workflow. It does not represent
+confidential agent computation. The encrypted kind-4 fixture stays on the
+personal relay, and the exercise checks that it is not copied to the hub.
+External sampling is read-only and bounded to three sampled profile authors per source and one retained kind-0
+profile per author. Each sync job has a 120-second wait budget; the run has a
+20-minute scenario budget, with cleanup allowed to finish afterward. A public
+source can be empty, unavailable or rate limited, so its result is reported as
+observed or inconclusive rather than treated as a capacity claim. The two
+external relays are treated as larger than this network; their size is not
+measured.
+
+Start with an offline plan, then run the exercise. The default output directory
+is private state under the user's local application data directory. A supplied
+directory must be new and is created with mode `700`.
+
+```
+npm run test:network -- plan
+npm run test:network -- run [new-output-directory] [domain]
+npm run test:network -- cleanup <output-directory>
+```
+
+The run writes a private `manifest.json` and `report.json` in that directory;
+the manifest contains the run keys and is mode `600`, so it must not be
+committed or shared. The manifest is written before the first claim and after
+each state change. The `finally` cleanup extracts final `stats` and storage
+inventory, then verifies each relay's owner before calling `deleterelay`. If a
+process loses a claim reply or stops before cleanup, run `cleanup` against the
+same directory after checking that the manifest is the intended run. Cleanup
+only follows the generated names and matching owners, and reports any relay it
+could not delete. Baseline fuel snapshots follow provisioning; final snapshots precede deletion.
+Their deltas cover the exercise and observation calls, excluding provisioning
+and teardown. The full final counters also contain provisioning usage. These
+are tenant meters, not a provider invoice. The report includes signed synthetic
+fixtures, job results, per-source coverage and operation-lock retry counts.
+A members-only source refuses an unauthenticated pull; membership alone does
+not supply a job with credentials.
+
+The checks cover bidirectional peer convergence, deduplication, idle catch-up,
+filtered task and result flow, private-event isolation, unauthorized writes and
+management, a refused members-only pull, and separation from external profile
+traffic. One-shot server jobs are removed after each check. The exercise is a
+bounded correctness and relationship test, not a load test or evidence of
+large-relay capacity.
+
 ## Signing a request (NIP-98)
 
 Every management call and every door that needs a key takes an `Authorization: Nostr <base64 event>` header. The event is:
