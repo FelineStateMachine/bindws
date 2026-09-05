@@ -697,60 +697,80 @@
   // ---- connect: the fold's shortcuts, picked from the library ----
   // The list is edited in place and saved whole, in the order shown; the
   // relay checks every entry against the library when it takes the list.
+  // One row at a time opens for its title and inputs, and Save stays at the
+  // top, lit while something is unsaved.
   const VIS = [["public", "anyone"], ["auth", "anyone signed in"], ["members", "members"], ["owner", "only me"]];
-  let connLib = null, conns = null;
+  let connLib = null, conns = null, connEditing = -1, connDirty = false;
   async function loadConnectTab() {
     try { [connLib, conns] = await Promise.all([rpc("listconnectiontemplates"), rpc("listconnections")]); } catch (e) { $("#connnote").textContent = e.message; return; }
+    connEditing = -1; setConnDirty(false);
     renderConns(); renderConnLib();
   }
+  function setConnDirty(v) { connDirty = v; $("#connsave").disabled = !v; $("#connnote").textContent = v ? "Unsaved changes" : ""; }
   const connTemplate = (name) => (connLib || []).find((t) => t.name === name) || { name, title: name, app: "", where: "", icon: "app", inputs: [], available: true, feature: "" };
   function renderConns() {
     const rows = conns.map((c, i) => {
-      const t = connTemplate(c.template);
-      const inputs = (t.inputs || []).map((inp) => "<label><span>" + esc(inp.label) + '</span><input class="txt" data-input="' + esc(inp.name) + '" value="' + esc((c.inputs || {})[inp.name] || "") + '" placeholder="' + esc(inp.placeholder || inp.default || "") + '" maxlength="500"></label>').join("");
+      const t = connTemplate(c.template), editing = i === connEditing;
       const vis = VIS.map(([v, l]) => '<option value="' + v + '"' + (c.visibility === v ? " selected" : "") + ">" + l + "</option>").join("");
-      return '<div class="conn" data-i="' + i + '"><i class="app-ic">' + (IC[t.icon] || IC.app) + '</i><div class="conn-main"><div class="conn-head"><b>' + esc(t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small>" + (t.available ? "" : '<span class="pill bad">needs ' + esc(t.feature) + ", which is off</span>") + '</div><div class="conn-fields"><label><span>Title</span><input class="txt" data-field="title" value="' + esc(c.title || "") + '" placeholder="' + esc(t.title) + '" maxlength="40"></label><label><span>Who sees it</span><select class="txt" data-field="visibility">' + vis + "</select></label>" + inputs + '</div></div><div class="conn-acts"><button class="ib" data-conn="up" title="Move up" aria-label="Move up">' + IC.up + '</button><button class="ib" data-conn="down" title="Move down" aria-label="Move down">' + IC.down + '</button><button class="ib danger" data-conn="rm" title="Remove" aria-label="Remove">' + IC.x + "</button></div></div>";
+      const inputs = (t.inputs || []).map((inp) => "<label><span>" + esc(inp.label) + '</span><input class="txt" data-input="' + esc(inp.name) + '" value="' + esc((c.inputs || {})[inp.name] || "") + '" placeholder="' + esc(inp.placeholder || inp.default || "") + '"' + (inp.pattern ? ' pattern="' + esc(inp.pattern) + '"' : "") + ' maxlength="500"></label>').join("");
+      const edit = editing ? '<div class="conn-edit"><label><span>Title</span><input class="txt" data-field="title" value="' + esc(c.title || "") + '" placeholder="' + esc(t.title) + '" maxlength="40"></label>' + inputs + "</div>" : "";
+      return '<div class="conn' + (editing ? " editing" : "") + '" data-i="' + i + '"><i class="app-ic">' + (IC[t.icon] || IC.app) + '</i><div class="conn-main"><b>' + esc(c.title || t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small>" + (t.available ? "" : '<span class="pill bad">needs ' + esc(t.feature) + ", off</span>") + '</div><select class="txt conn-vis" data-field="visibility" title="Who sees it">' + vis + '</select><div class="conn-acts"><button class="ib" data-conn="edit" title="' + (editing ? "Done" : "Edit title and inputs") + '" aria-label="Edit">' + IC.pen + '</button><button class="ib" data-conn="up" title="Move up" aria-label="Move up">' + IC.up + '</button><button class="ib" data-conn="down" title="Move down" aria-label="Move down">' + IC.down + '</button><button class="ib danger" data-conn="rm" title="Remove" aria-label="Remove">' + IC.x + "</button></div>" + edit + "</div>";
     });
     $("#conns").innerHTML = rows.length ? rows.join("") : '<p class="empty">No shortcuts. Add some from the library below.</p>';
   }
   function renderConnLib() {
-    $("#connlib").innerHTML = connLib.map((t) => '<div class="app"><div class="app-head"><i class="app-ic">' + (IC[t.icon] || IC.app) + "</i><b>" + esc(t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small></div><p>" + esc(t.about) + '</p><div class="app-acts"><button class="btn" data-connadd="' + esc(t.name) + '">Add</button>' + (t.feature ? '<span class="pill' + (t.available ? " on" : " bad") + '">' + esc(t.feature) + (t.available ? " on" : " off") + "</span>" : "") + (t.visibility !== "public" ? '<span class="pill">' + VISIBILITY[t.visibility] + "</span>" : "") + "</div></div>").join("");
+    $("#connlib").innerHTML = connLib.map((t) => '<div class="app"><div class="app-head"><i class="app-ic">' + (IC[t.icon] || IC.app) + "</i><b>" + esc(t.title) + "</b><small>" + esc(t.app + (t.where ? ", " + t.where : "")) + "</small>" + (t.visibility !== "public" ? '<span class="pill">' + VISIBILITY[t.visibility] + "</span>" : "") + "</div><p>" + esc(t.about) + '</p><div class="app-acts"><button class="btn pri" data-connadd="' + esc(t.name) + '">Add</button>' + (t.feature ? '<span class="pill' + (t.available ? " on" : " bad") + '">' + esc(t.feature) + (t.available ? " on" : " off") + "</span>" : "") + "</div></div>").join("");
   }
-  // readConns takes the rows as edited back into the list before it is moved or saved.
+  // readConns takes the rows as edited back into the list before it is redrawn or saved.
   function readConns() {
     $$("#conns .conn").forEach((row) => {
       const c = conns[+row.dataset.i]; if (!c) return;
-      const title = row.querySelector('[data-field="title"]').value.trim();
-      if (title) c.title = title; else delete c.title;
       c.visibility = row.querySelector('[data-field="visibility"]').value;
+      const title = row.querySelector('[data-field="title"]');
+      if (!title) return;
+      if (title.value.trim()) c.title = title.value.trim(); else delete c.title;
       const inputs = {};
       row.querySelectorAll("[data-input]").forEach((inp) => { if (inp.value.trim()) inputs[inp.dataset.input] = inp.value.trim(); });
       if (Object.keys(inputs).length) c.inputs = inputs; else delete c.inputs;
     });
   }
+  $("#conns").addEventListener("input", () => setConnDirty(true));
   $("#conns").addEventListener("click", (ev) => {
     const b = ev.target.closest("button[data-conn]"); if (!b) return;
     readConns();
     const i = +b.closest(".conn").dataset.i, act = b.dataset.conn;
-    if (act === "rm") conns.splice(i, 1);
-    else { const j = act === "up" ? i - 1 : i + 1; if (j < 0 || j >= conns.length) return; [conns[i], conns[j]] = [conns[j], conns[i]]; }
+    if (act === "edit") connEditing = connEditing === i ? -1 : i;
+    else if (act === "rm") { conns.splice(i, 1); connEditing = -1; setConnDirty(true); }
+    else {
+      const j = act === "up" ? i - 1 : i + 1; if (j < 0 || j >= conns.length) return;
+      [conns[i], conns[j]] = [conns[j], conns[i]];
+      if (connEditing === i) connEditing = j; else if (connEditing === j) connEditing = i;
+      setConnDirty(true);
+    }
     renderConns();
+    if (act === "edit" && connEditing === i) { const f = $("#conns .conn.editing input"); if (f) f.focus(); }
   });
   $("#connlib").addEventListener("click", (ev) => {
     const b = ev.target.closest("button[data-connadd]"); if (!b) return;
     const t = connTemplate(b.dataset.connadd);
     readConns();
     conns.push({ template: t.name, visibility: t.visibility || "public" });
+    connEditing = t.inputs && t.inputs.length ? conns.length - 1 : connEditing;
+    setConnDirty(true);
     renderConns();
     $("#conns").lastElementChild.scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
-  $("#connsave").onclick = guard(async () => {
-    readConns();
-    conns = await rpc("setconnections", conns);
-    $("#connnote").textContent = "";
-    toast(conns.length ? "Saved " + conns.length + (conns.length === 1 ? " shortcut" : " shortcuts") : "Saved: no shortcuts");
-    renderConns(); loadConnect();
-  });
+  // Not through guard: the button's disabled state is the dirty flag's, so
+  // guard's re-enable after the call would light it up again.
+  $("#connsave").onclick = async () => {
+    const b = $("#connsave"); b.disabled = true;
+    try {
+      readConns();
+      conns = await rpc("setconnections", conns);
+      toast(conns.length ? "Saved " + conns.length + (conns.length === 1 ? " shortcut" : " shortcuts") : "Saved: no shortcuts");
+      setConnDirty(false); renderConns(); loadConnect();
+    } catch (e) { toast(e.message); b.disabled = false; }
+  };
 
   // ---- wire me in: this relay in the owner's own lists ----
   // The lists are replaceable, so a fresh list with only this relay would
@@ -1189,12 +1209,17 @@
   }
   function renderConnect(list) {
     const enc = encodeURIComponent;
-    const act = (l) => l.href
-      ? '<a class="btn" href="' + esc(l.href) + '"' + (/^nostr:/i.test(l.href) ? "" : ' target="_blank" rel="noopener"') + ">" + esc(l.label) + "</a>"
-      : '<button class="btn" data-copytext="' + esc(l.copy) + '">' + esc(l.label) + "</button>";
-    const tile = (c, i) => '<div class="app" data-i="' + i + '"><div class="app-head"><i class="app-ic">' + (IC[c.icon] || IC.app) + "</i><b>" + esc(c.title) + "</b><small>" + esc(c.app + (c.where ? ", " + c.where : "")) + "</small>" + (VISIBILITY[c.visibility] ? '<span class="pill">' + VISIBILITY[c.visibility] + "</span>" : "") + "</div><p>" + esc(c.about) + '</p><div class="app-acts">' + c.links.map(act).join("") + (c.qr ? '<button class="btn" data-qr="' + enc(c.qr) + '" title="Show as a QR code for a phone">' + IC.qr + "QR</button>" : "") + "</div>" + (c.needsUser ? '<p class="who-note">Sign in and the links made for you appear.</p>' : "") + '<div class="app-qr hidden"></div></div>';
+    const open = (l, pri) => '<a class="btn' + (pri ? " pri" : "") + '" href="' + esc(l.href) + '"' + (/^nostr:/i.test(l.href) ? "" : ' target="_blank" rel="noopener"') + ">" + esc(l.label) + "</a>";
+    const copy = (l) => '<button class="btn" data-copytext="' + esc(l.copy) + '">' + IC.copy + esc(l.label) + "</button>";
+    // One Open leads; the first copy text rides beside it; every other link waits behind More.
+    const tile = (c) => {
+      const hrefs = c.links.filter((l) => l.href), copies = c.links.filter((l) => l.copy);
+      const acts = hrefs.length ? [open(hrefs[0], true), copies.length ? copy(copies[0]) : ""] : [copies.length ? copy(copies[0]) : ""];
+      const rest = [...hrefs.slice(1).map((l) => open(l, false)), ...copies.slice(1).map(copy)];
+      if (c.qr) acts.push('<button class="ib" data-qr="' + enc(c.qr) + '" title="QR code for a phone" aria-label="QR code for a phone">' + IC.qr + "</button>");
+      return '<div class="app"><div class="app-head"><i class="app-ic">' + (IC[c.icon] || IC.app) + "</i><b>" + esc(c.title) + "</b><small>" + esc(c.app + (c.where ? ", " + c.where : "")) + "</small>" + (VISIBILITY[c.visibility] ? '<span class="pill">' + VISIBILITY[c.visibility] + "</span>" : "") + "</div><p>" + esc(c.about) + '</p><div class="app-acts">' + acts.join("") + "</div>" + (rest.length ? '<details class="more"><summary>More</summary><div class="app-more">' + rest.join("") + "</div></details>" : "") + (c.needsUser ? '<p class="who-note">Sign in and the links made for you appear.</p>' : "") + '<div class="app-qr hidden"></div></div>';
+    };
     $("#apps").innerHTML = list.map(tile).join("");
-    $("#apps-ws").textContent = wsURL;
     $("#apps-note").textContent = list.length ? "" : me && owner && me === owner ? "No shortcuts yet. Pick some on the Connect tab." : "The owner has not picked any app shortcuts yet.";
   }
   $("#apps").addEventListener("click", (ev) => {
