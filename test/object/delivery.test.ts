@@ -3,7 +3,7 @@ import { deliveryTick, queueDelivery } from "../../src/delivery.ts";
 import type { Relay } from "../../src/relay.ts";
 import { describe, expect, it } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
-import { ev, pk, rpc, alarm } from "../helpers/relay.ts";
+import { ev, pk, rpc, alarm, sleep } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 describe("NIP-65 automatic delivery", () => {
@@ -39,7 +39,12 @@ describe("NIP-65 automatic delivery", () => {
     expect((await sourceSocket.ok(list)).ok).toBe(true);
     const note = ev(owner, 1, "routed");
     expect((await sourceSocket.ok(note)).ok).toBe(true);
-    await alarm("auto-source");
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await alarm("auto-source");
+      const status = await runInDurableObject(env.RELAY.getByName("auto-source"), (relay: Relay) => relay.sql.exec<{ status: string }>(`SELECT status FROM delivery_queue WHERE event_id=?`, note.id).toArray()[0]?.status ?? "");
+      if (status !== "pending") break;
+      await sleep(25);
+    }
     expect((await targetSocket.req({ ids: [note.id] })).map((e) => e.id)).toEqual([note.id]);
     const status = await rpc(source, owner, "deliverystatus");
     expect(status.result).toEqual(expect.arrayContaining([expect.objectContaining({ event_id: note.id, target: "wss://" + target, status: "accepted" })]));
