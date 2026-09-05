@@ -127,8 +127,10 @@ authorization pure, while the Git door owns Smart HTTP and the object-store
 seam. The accepted kind 30618 state is the complete ref map the door may
 serve. Keep the Git path separate from relay and NIP-5A routing, and record
 any new GRASP capability in the information document and the numbered draft
-specification. GRASP-02, GRASP-03, GRASP-05, GRASP-06 and GRASP-08 need their
-own design and must not be implied by a GRASP-01 change.
+specification. GRASP-02, GRASP-03, GRASP-05 and GRASP-06 are independently
+gated extensions with dependency checks. GRASP-02/03/05 are bounded previews
+and are not advertised until interoperability and conformance review; GRASP-08
+remains outside this implementation.
 
 ## The signer bundle
 

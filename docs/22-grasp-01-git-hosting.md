@@ -13,18 +13,21 @@ The Nostr relay remains the source of authorization and discussion events.
 This document tracks the GRASP-01 specification at [commit
 f35b4f9a4ed2f0aaaf46926e4b1733c79e21b377](https://github.com/DanConwayDev/grasp/tree/f35b4f9a4ed2f0aaaf46926e4b1733c79e21b377),
 checked on 2026-09-04. The implementation is bounded to the core service. It
-does not claim GRASP-02 proactive sync,
-GRASP-03 discussion sync, GRASP-05 archive, GRASP-06 alternative PR hosting or
-GRASP-08 private repositories.
+The later extensions are independently opt-in: `grasp02`, `grasp03`,
+`grasp05` and `grasp06`. GRASP-02 and GRASP-06 require `grasp`; GRASP-03 and
+GRASP-05 require GRASP-02. These switches default off, so enabling `grasp`
+alone preserves GRASP-01 behavior. This document describes the host
+implementation and does not claim an upstream audit or complete conformance.
 
 ## Turn it on
 
 The `grasp` feature is off unless the owner enables it. The **Git repositories** preset
-turns on open reads and the GRASP Git door. The repository still applies its
+turns on open reads and the GRASP Git door. The later flags are separately
+opt-in and the dependency rules above apply. The repository still applies its
 ordinary fuel, storage and event rules, and the information document lists
-the exact acceptance criteria. The relay advertises `GRASP-01` in
-`supported_grasps` only while the feature is on and reads are open, because
-GRASP-01's Git service is public.
+the exact acceptance criteria. The relay advertises `GRASP-01` and, when
+validated and enabled, `GRASP-06` in `supported_grasps`. GRASP-02/03/05 remain
+bounded opt-in previews pending interoperability and conformance review.
 
 The [relay templates](../relay-templates/README.md) include a GRASP template
 for a relay whose public purpose is hosting NIP-34 repositories. A template
@@ -53,8 +56,9 @@ private repository hosting is GRASP-08 and remains outside this feature.
 The accepted announcement's address is
 `30617:<owner-pubkey>:<identifier>`. NIP-34 issues, patches, pull requests and
 updates that refer to an accepted address can be stored by the normal relay
-rules. An event that has no accepted repository relationship remains subject
-to the ordinary policy.
+rules. GRASP-06 pull requests may arrive before the announcement: they must
+still name a syntactically valid repository coordinate and remain in purgatory
+until their matching Git data arrives.
 
 ## Publish a state
 
@@ -78,6 +82,17 @@ checks out the prior branch. The repository moves to the new HEAD when the
 new tip's objects arrive.
 
 ## Pull requests and purgatory
+
+The alternative PR endpoint is `/prs/<signer-npub>/<percent-encoded-identifier>.git`.
+It is a public, empty repository namespace with at most 16 hosted namespaces
+and 1,024 refs per namespace. Only `refs/nostr/<event-id>` refs are accepted;
+ordinary branches, tags and client deletions are refused. A pre-announcement
+PR must carry the exact signer PR clone URL and a valid repository coordinate
+with the same identifier. The signed PR or update and its `c` tip authorize the
+ref. Unknown events may upload first, but remain hidden until the event is
+accepted; their deadline is fixed at 20 minutes. Expiry removes refs, while
+immutable WAL packs and orphaned objects remain retained and charged because
+the service has no garbage collector.
 
 Promotion checks for relevant pending events before loading Git packs. An
 empty queue or another repository's pending work does not trigger that read.
@@ -175,13 +190,53 @@ event writes and configuration changes receive a retry response while a scan
 owns the relay. See [HTTP reference](14-http-reference.md) for the method and
 [Costs and margins](15-costs-and-margins.md) for its host costs and limits.
 
+## Proactive synchronization and archive
+
+With `grasp02`, the relay performs repository-scoped historic and bounded live
+event synchronization from accepted announcement relay lists. Missing Git data
+is queued from signed state and accepted PR/update clone sources with an hourly
+target subject to queued work, fuel and size limits. At most 16 Git sources are
+considered; each connected round is bounded to 10 seconds. Failures retry after
+five minutes before returning to the hourly schedule. Packs are limited to
+4 MiB, with approximately 4.25 MiB of wire response allowance. Remote
+advertisements never authorize refs; signed state and accepted events are
+rechecked under the repository fence. PR objects already uploaded to this
+relay through GRASP-06 are copied locally into the target repository, without
+a self-fetch. Multiple clone URLs in a single tag are considered.
+
+History uses durable cursors with inclusive timestamp overlap and a 256-event
+page cap. A source page cap is surfaced as partial history rather than silently
+reported complete. Up to 512 durable sync jobs and 128 history windows are
+retained. Restarts resume unfinished history before following the bounded 1.5
+second live tail.
+
+With `grasp03`, accepted issue, patch and PR threads are expanded through the
+authors' kind 10002 write relays. Replies may use `#e` or `#E` and do not need
+a new repository coordinate; the accepted parent thread remains the scope
+boundary. Only write relays from kind 10002 outbox lists are used. Metadata
+refresh is limited to kinds 0, 10002 and 10317, with the same bounded source
+and job limits.
+
+With `grasp05`, the relay may admit announcements that omit its own clone and
+relay URLs. Archive admission still consumes the normal repository quota and
+storage accounting, and depends on GRASP-02. Immutable packs remain retained
+and charged; expiry does not provide garbage collection.
+
+The owner can inspect synchronization through `storagestats`. Its
+`graspSync` result records whether synchronization is enabled, whether source
+or scope caps made the result partial, event and Git job counts, durable error
+counts, unfinished history windows, and the earliest due Unix timestamp (or
+`null`). Error details remain in durable SQL rows. Backups preserve optional
+`state.prRefs` rows, including `until: 0` tombstones for accepted or deleted
+events; backups made before this field was added remain readable.
+
 ## Information document and limits
 
 When GRASP is on and reads are open, NIP-11 includes:
 
 | Field | Meaning |
 |---|---|
-| `supported_grasps` | `GRASP-01` for this service |
+| `supported_grasps` | Lists only locally validated and enabled profiles; dependencies still apply. |
 | `repo_acceptance_criteria` | who may announce repositories under the current write and kind rules, guest exceptions, required relay listing and storage limits |
 | `curation` | omitted unless the owner applies curation beyond generic spam, bans or fuel rules |
 
@@ -193,8 +248,7 @@ events still follow their own rules. A blocked announcement kind preserves
 the owner's existing kind-rule exemption. Changing a rule changes the
 description without granting any new permission.
 
-NIP-11 does not list GRASP-02, GRASP-03, GRASP-05, GRASP-06 or GRASP-08. A
-relay's regular read rule still governs the Nostr side, and turning GRASP off
+NIP-11 never claims GRASP-08. A relay's regular read rule still governs the Nostr side, and turning GRASP off
 removes its Git door and advertisement without changing the NIP-5A site
 origins.
 
@@ -213,12 +267,12 @@ assume that a rejected receive-pack changed refs.
 
 ## What this does not promise
 
-GRASP-01 does not synchronize repositories between relays, fetch Git data
-hourly, host private repositories, accept PRs for an unannounced repository,
-or preserve an archive after ordinary retention. Those behaviors belong to
-the later GRASP specifications and need separate storage and policy work.
-The repository's Git object store is an implementation detail; clients rely on
-the NIP-34 events and the GRASP HTTP contract, not on a particular backend.
+The preview extensions do not promise complete history, uninterrupted live
+connections, unconditional hourly Git work, private repositories, or an
+upstream conformance result. Work is bounded by queued jobs, fuel, source,
+window, byte and storage limits. The repository's Git object store is an
+implementation detail; clients rely on the NIP-34 events and GRASP HTTP
+contract, not on a particular backend.
 
 See [Your relay on the web](05-your-relay-on-the-web.md) for the user-facing
 site and domain doors, [Architecture](10-architecture.md) for the Worker and

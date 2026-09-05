@@ -84,7 +84,12 @@ npm run deploy
 
 NIP-01, 05, 09, 11, 13, 17, 29, 40, 42, 43, 45, 46 transport, 50, 56, 57, 59, 62, 66, 67, 70, 77, 86, 94, 96, 98, Marmot transport and Blossom BUD-01, 02, 04, 06, 08, 09. A relay's information document lists what its owner left on.
 
-NIP-5A site discovery uses the `nsites` field. GRASP advertises `supported_grasps: ["GRASP-01"]` only while enabled with open reads. Later GRASP specifications and server-side MLS group management are outside this implementation.
+NIP-5A site discovery uses the `nsites` field. GRASP advertises only locally
+validated, enabled profiles. GRASP-01 and validated GRASP-06 are currently
+advertised; GRASP-02/03/05 are bounded opt-in previews pending interoperability
+and conformance review. `grasp02` and `grasp06` require `grasp`, while
+`grasp03` and `grasp05` require `grasp02`. Private repositories and any
+profile without its dependencies remain outside the advertised capabilities.
 
 ## License
 

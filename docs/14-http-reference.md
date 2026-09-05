@@ -39,8 +39,10 @@ management stay open.
 
 A door that belongs to a feature the owner switched off (Relay configuration, Rules) answers 404: names, files (Blossom and NIP-96), pages and the feed. `supported_nips` drops the numbers of features that are off.
 
-When GRASP-01 is on and reads are open, NIP-11 also has
-`supported_grasps: ["GRASP-01"]`, a `repo_acceptance_criteria` string and, only
+When GRASP is on and reads are open, NIP-11 also has a `supported_grasps` list
+containing `GRASP-01` and validated `GRASP-06` when enabled. GRASP-02/03/05
+remain bounded previews pending interoperability and conformance review. The
+document also has a `repo_acceptance_criteria` string and, only
 for policy beyond ordinary spam controls, `curation`. See [GRASP-01 Git
 hosting](22-grasp-01-git-hosting.md) for the acceptance and Git protocol rules.
 
@@ -118,6 +120,12 @@ cooldown; a Durable Object restart or eviction resets that cooldown.
 | Method | Parameters | Auth | Answers | Status |
 |---|---|---|---|---|
 | `gitstorage` | repository owner hex pubkey, identifier | NIP-98, owner with the storage action | bounded physical and live inventory, reservations and limits | 200; 400 invalid parameters; 403 inactive, fuel or role; 404 feature or repository unavailable; 413 inventory limit; 429 cooldown or another repository operation; 503 storage unavailable |
+
+The owner-only `storagestats` method also includes `result.graspSync` when
+GRASP synchronization is configured. It reports `enabled`, `partial`, event
+counts (`jobs`, `failed`, `history`, `due`) and Git counts (`jobs`, `failed`,
+`due`). `due` is the earliest Unix timestamp or `null`; `failed` counts rows
+with durable error details, and `history` counts unfinished history windows.
 
 ## Custom domains
 
