@@ -517,6 +517,13 @@
       return '<tr class="' + (k.kind === null ? "any" : "") + '" data-kind="' + key + '"><td>' + pill + '</td><td class="r mono">' + (k.n === undefined ? "" : k.n.toLocaleString()) + '</td><td class="r mono">' + (k.bytes === undefined ? "" : fmtBytes(k.bytes)) + '</td><td class="dim">' + (k.oldest ? esc(fmtDay(k.oldest)) : "") + "</td>" + cells + "</tr>";
     };
     $("#kinds tbody").innerHTML = [...st.kinds, { kind: null, days: any ? any.days : 0 }].map(row).join("");
+    loadListHistory().catch(() => {});
+  }
+
+  async function loadListHistory() {
+    const rows = await rpc("listlisthistory");
+    const labels = { 3: "follows", 10002: "relay list", 10003: "bookmarks", 30003: "bookmark list" };
+    $("#listhistory tbody").innerHTML = rows.length ? rows.map((r) => '<tr><td>' + esc(labels[r.kind] || ("kind " + r.kind) + (r.d ? " / " + r.d : "")) + '</td><td class="dim">' + esc(fmtTime(r.created_at)) + '</td><td class="dim">' + esc(fmtTime(r.saved_at)) + '</td><td class="r">' + ib("undo", "Restore this version", "restorelist", r.event_id) + '</td></tr>').join("") : '<tr><td colspan="4" class="muted">no older list versions yet</td></tr>';
   }
 
   let searchQuery = "";
@@ -964,6 +971,18 @@
     if (act === "deleteblob" && !confirm("Delete this file for good?")) return;
     if (act === "deletedump" && !confirm("Delete this dump?")) return;
     if (act === "downloaddump") { b.disabled = true; try { await downloadDump(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "restorelist") {
+      if (!signer.ready()) { toast(NO_SIGNER); return; }
+      if (!confirm("Restore this list version? It will be signed and published as the newest version.")) return;
+      try {
+        const draft = await rpc("restorelist", id);
+        const signed = await signer.signEvent(draft);
+        const result = await bridge("/events", signed);
+        if (!result.accepted) throw new Error(result.message || "The relay refused the restored list.");
+        toast("List restored"); await loadListHistory(); await loadStorage();
+      } catch (e) { toast(e.message); } finally { b.disabled = false; }
+      return;
+    }
     if ((act === "removemember" || act === "banpubkey") && (window.__members || []).some((m) => m.invited_by === id) && confirm("Also remove everyone this member invited, and everyone they invited in turn?")) {
       b.disabled = true;
       try { const r = await rpc("removesubtree", id); if (act === "banpubkey") await rpc("banpubkey", id, "", erase); toast("Removed " + r.removed.length); await refresh(); } catch (e) { toast(e.message); } finally { b.disabled = false; }

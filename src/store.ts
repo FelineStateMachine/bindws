@@ -7,6 +7,7 @@ import { ftsQuery, searchTerms, type Filter } from "./filter.ts";
 import { SITE_SCHEMA, SITE_KINDS } from "./sites.ts";
 import { HLL } from "./hll.ts";
 import { hexToBytes, type SyncItem } from "./negentropy.ts";
+import { archiveCurrent, clearForDelete, clearList, LIST_HISTORY_SCHEMA } from "./list-history.ts";
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
@@ -86,6 +87,7 @@ export class Store {
 
   init() {
     this.sql.exec(SCHEMA);
+    this.sql.exec(LIST_HISTORY_SCHEMA);
     this.sql.exec(SITE_SCHEMA);
     this.sql.exec(GRASP_SCHEMA);
   }
@@ -136,11 +138,15 @@ export class Store {
     if (isReplaceable(e.kind)) {
       if (has(`SELECT 1 FROM events WHERE pubkey=? AND kind=? AND (created_at>? OR (created_at=? AND id<?)) LIMIT 1`, e.pubkey, e.kind, e.created_at, e.created_at, e.id))
         return ERR_REPLACED;
+      const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=?`, e.pubkey, e.kind).toArray()[0];
+      if (current) archiveCurrent(this.sql, JSON.parse(current.raw) as Event, now);
       this.x(`DELETE FROM events WHERE pubkey=? AND kind=?`, e.pubkey, e.kind);
     } else if (isAddressable(e.kind)) {
       d = tag(e, "d");
       if (has(`SELECT 1 FROM events WHERE pubkey=? AND kind=? AND d=? AND (created_at>? OR (created_at=? AND id<?)) LIMIT 1`, e.pubkey, e.kind, d, e.created_at, e.created_at, e.id))
         return ERR_REPLACED;
+      const current = this.x<{ raw: string }>(`SELECT raw FROM events WHERE pubkey=? AND kind=? AND d=?`, e.pubkey, e.kind, d).toArray()[0];
+      if (current) archiveCurrent(this.sql, JSON.parse(current.raw) as Event, now);
       this.x(`DELETE FROM events WHERE pubkey=? AND kind=? AND d=?`, e.pubkey, e.kind, d);
     } else if (e.kind === 5) {
       for (const t of e.tags) {
@@ -150,10 +156,12 @@ export class Store {
             `DELETE FROM events WHERE id=? AND (pubkey=? OR (kind=1059 AND EXISTS (SELECT 1 FROM tags WHERE tags.event_id=events.id AND name='p' AND value=?)))`,
             t[1], e.pubkey, e.pubkey,
           );
+          clearForDelete(this.sql, e.pubkey, t[1]);
         } else if (t[0] === "a") {
           const parts = t[1].split(":");
           if (parts.length === 3 && parts[1] === e.pubkey) {
             this.x(`DELETE FROM events WHERE kind=? AND pubkey=? AND d=? AND created_at<=?`, parseInt(parts[0], 10) || 0, e.pubkey, parts[2], e.created_at);
+            clearList(this.sql, e.pubkey, parseInt(parts[0], 10) || 0, parts[2], e.created_at);
           }
         }
       }
@@ -178,6 +186,7 @@ export class Store {
     this.x(`INSERT INTO vanished(pubkey,until) VALUES(?,?) ON CONFLICT(pubkey) DO UPDATE SET until=max(until,excluded.until)`, pubkey, until);
     this.x(`DELETE FROM events WHERE pubkey=? AND created_at<=?`, pubkey, until);
     this.x(`DELETE FROM events WHERE kind=1059 AND id IN (SELECT event_id FROM tags WHERE name='p' AND value=?)`, pubkey);
+    this.x(`DELETE FROM list_history WHERE owner=?`, pubkey);
   }
 
   // sweepExpired deletes NIP-40 expired rows and returns the next expiry, or 0.
@@ -364,6 +373,7 @@ export class Store {
       this.x(`DELETE FROM events WHERE pubkey=?`, pubkey);
       this.bytesByAuthor.delete(pubkey);
     }
+    this.x(`DELETE FROM list_history WHERE owner=?`, pubkey);
     return n;
   }
 
@@ -376,6 +386,7 @@ export class Store {
       this.x(`DELETE FROM events WHERE pubkey=? AND created_at<? AND kind NOT IN (SELECT value FROM json_each(?))`, pubkey, before, list);
       this.bytesByAuthor.delete(pubkey);
     }
+    this.x(`DELETE FROM list_history WHERE owner=? AND created_at<?`, pubkey, before);
     return n;
   }
 
