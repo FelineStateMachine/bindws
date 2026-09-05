@@ -523,7 +523,7 @@
   async function loadListHistory() {
     const rows = await rpc("listlisthistory");
     const labels = { 3: "follows", 10002: "relay list", 10003: "bookmarks", 30003: "bookmark list" };
-    $("#listhistory tbody").innerHTML = rows.length ? rows.map((r) => '<tr><td>' + esc(labels[r.kind] || ("kind " + r.kind) + (r.d ? " / " + r.d : "")) + '</td><td class="dim">' + esc(fmtTime(r.created_at)) + '</td><td class="dim">' + esc(fmtTime(r.saved_at)) + '</td><td class="r">' + ib("undo", "Restore this version", "restorelist", r.event_id) + '</td></tr>').join("") : '<tr><td colspan="4" class="muted">no older list versions yet</td></tr>';
+    $("#listhistory tbody").innerHTML = rows.length ? rows.map((r) => '<tr><td>' + esc((labels[r.kind] || ("kind " + r.kind)) + (r.d ? " / " + r.d : "")) + '</td><td class="dim">' + esc(fmtTime(r.created_at)) + '</td><td class="dim">' + esc(fmtTime(r.saved_at)) + '</td><td class="r">' + ib("undo", "Restore this version", "restorelist", r.event_id) + '</td></tr>').join("") : '<tr><td colspan="4" class="muted">no older list versions yet</td></tr>';
   }
 
   let searchQuery = "";

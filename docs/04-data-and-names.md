@@ -11,6 +11,12 @@ What your relay holds, how it moves and how a name can do one job.
 
 The Data tab shows bytes by kind, the files people uploaded and a keep-for rule per kind. Kinds the relay depends on, such as profiles, contact lists, relay lists, zap receipts and the roster, are never expired or purged. The controls are in [Relay configuration](01-relay-configuration.md#data).
 
+## Recover a list
+
+The Data tab keeps older versions of your follows, relay lists and bookmarks (kinds 3, 10002, 10003 and 30003). Versions stay private to the publishing key and stay outside event queries, search and ordinary dumps. History starts when a newer version replaces a stored list.
+
+Choose **Restore** to preview added and removed tags and whether the content changed. Your extension or remote signer signs the old contents with a newer timestamp, then the console publishes it through the normal event door. The relay never receives your private key. History keeps at most twelve versions per list, 96 per publishing key and 4,096 per relay. Author deletions and vanish remove matching saved history.
+
 ## Jobs
 
 A job is work the relay does on its own, one small round at a time, so it keeps going while the relay sleeps between rounds. The **Jobs** table on the Sync tab lists each job with its relays, filter, schedule and last result, with run-now and remove. A job that fails three rounds in a row stops and says why. A pull retries a failing source three times, then continues with the next source. An explicit refusal skips that source immediately.
