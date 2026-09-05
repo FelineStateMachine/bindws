@@ -235,20 +235,20 @@
         <p class="note">GRASP Git has its own retained-storage and request limits. Storage and compute still use the relay’s normal fuel and billing. Git transfer limits are independent from event and file limits.</p>
         <div class="limits">
           <label><span>Repositories <small>maximum on this relay</small></span><input class="txt num" type="number" name="maxRepositories" min="1" max="4096" required></label>
-          <label><span>Relay Git storage <small>GiB, including metadata</small></span><input class="txt num" type="number" name="maxRelayGiB" min="0.000001" max="6" step="0.001" required></label>
-          <label><span>Compressed repository data <small>GiB, per repository</small></span><input class="txt num" type="number" name="maxCompressedGiB" min="0.000001" max="6" step="0.001" required></label>
-          <label><span>Pack size <small>MiB</small></span><input class="txt num" type="number" name="maxPackMiB" min="0.000001" max="95" step="0.001" required></label>
-          <label><span>Object size <small>MiB</small></span><input class="txt num" type="number" name="maxObjectMiB" min="0.000001" max="64" step="0.001" required></label>
+          <label><span>Relay Git storage <small>GiB, including metadata</small></span><input class="txt num" type="number" name="maxRelayGiB" min="0.001" max="6" step="0.001" required></label>
+          <label><span>Compressed repository data <small>GiB, per repository</small></span><input class="txt num" type="number" name="maxCompressedGiB" min="0.001" max="6" step="0.001" required></label>
+          <label><span>Pack size <small>MiB</small></span><input class="txt num" type="number" name="maxPackMiB" min="0.001" max="95" step="0.001" required></label>
+          <label><span>Object size <small>MiB</small></span><input class="txt num" type="number" name="maxObjectMiB" min="0.001" max="64" step="0.001" required></label>
         </div>
         <details class="advanced"><summary>Advanced Git admission and fetch limits</summary><div class="limits">
           <label><span>Objects <small>per repository</small></span><input class="txt num" type="number" name="maxObjects" min="1" max="500000" required></label>
-          <label><span>Raw bytes <small>per repository, GiB</small></span><input class="txt num" type="number" name="maxRawGiB" min="0.000001" max="64" step="0.001" required></label>
-          <label><span>Transaction bytes <small>MiB</small></span><input class="txt num" type="number" name="maxTransactionRawMiB" min="0.000001" max="64" step="0.001" required></label>
+          <label><span>Raw bytes <small>per repository, GiB</small></span><input class="txt num" type="number" name="maxRawGiB" min="0.001" max="64" step="0.001" required></label>
+          <label><span>Transaction bytes <small>MiB</small></span><input class="txt num" type="number" name="maxTransactionRawMiB" min="0.001" max="64" step="0.001" required></label>
           <label><span>Transaction objects</span><input class="txt num" type="number" name="maxTransactionObjects" min="1" max="100000" required></label>
-          <label><span>Metadata <small>MiB per repository</small></span><input class="txt num" type="number" name="maxMetadataMiB" min="0.000001" max="1024" step="0.001" required></label>
+          <label><span>Metadata <small>MiB per repository</small></span><input class="txt num" type="number" name="maxMetadataMiB" min="0.001" max="1024" step="0.001" required></label>
           <label><span>Refs <small>per repository</small></span><input class="txt num" type="number" name="maxRefs" min="1" max="16384" required></label>
           <label><span>Graph edges <small>per repository</small></span><input class="txt num" type="number" name="maxGraphEdges" min="1" max="4000000" required></label>
-          <label><span>Fetch response <small>GiB</small></span><input class="txt num" type="number" name="maxFetchGiB" min="0.000001" max="6" step="0.001" required></label>
+          <label><span>Fetch response <small>GiB</small></span><input class="txt num" type="number" name="maxFetchGiB" min="0.001" max="6" step="0.001" required></label>
         </div></details>
         <div class="actions"><button class="btn pri">Save Git capacity</button></div>
       </form>
