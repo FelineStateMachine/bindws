@@ -11,6 +11,7 @@ import type { Relay } from "./relay.ts";
 import { CODE_RE, inviteCreator, listClaims, listInvites, memberInviteGate, mintInvite, revokeInvite } from "./invites.ts";
 import { descriptor, type Blob } from "./blossom.ts";
 import { badBlockedWord, blockedWords, policyPatch, type Policy, type Settings } from "./settings.ts";
+import { deliveryStatus } from "./delivery.ts";
 import { applyConfig, exportConfig, parseConfig, planConfig } from "./config.ts";
 import { isReplaceable, isProtected, validIP } from "./settings.ts";
 import { checkPullURL } from "./pull.ts";
@@ -631,6 +632,7 @@ export const METHODS: Record<string, Method> = {
   },
   pullstatus: { action: "jobs", reads: true, run: async ({ relay, reply }) => reply({ result: await relay.pullStatus() }) },
   listjobs: { action: "jobs", reads: true, run: async ({ relay, reply }) => reply({ result: await relay.jobs() }) },
+  deliverystatus: { action: "jobs", reads: true, run: ({ relay, reply }) => reply({ result: deliveryStatus(relay) }) },
   addjob: {
     action: "jobs",
     run: async ({ relay, params, reply }) => {

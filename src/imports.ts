@@ -137,7 +137,7 @@ function take(relay: Relay, line: string, job: Job, t: number) {
   const r = relay.accept(e, null);
   if (r.stored) {
     job.stored++;
-    relay.broadcast(e);
+    relay.broadcast(e, false);
   } else if (r.msg === ERR_DUPLICATE) job.duplicates = (job.duplicates ?? 0) + 1;
   else job.skipped++;
   void t;

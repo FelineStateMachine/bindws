@@ -335,6 +335,8 @@
     renderFeatures(p.features || {});
     $("#push-policy-form").elements.origins.value = (p.pushCallbacks || []).join("\n");
     $("#push-policy-form").elements.lettered.checked = !!p.letteredNips;
+    $("#push-policy-form").elements.delivery.checked = !!p.delivery?.enabled;
+    $("#push-policy-form").elements.deliveryMax.value = p.delivery?.maxTargets || 8;
     fi.name.value = p.name; fi.contact.value = p.contact; fi.description.value = p.description; fi.icon.value = p.icon;
     const fj = $("#joinform"); fj.joinTerms.value = p.joinTerms; fj.directoryPublic.checked = !!p.directoryPublic;
     loadCard();
@@ -437,10 +439,10 @@
     ev.preventDefault();
     const form = ev.target;
     const origins = form.elements.origins.value.split(/\s+/).filter(Boolean);
-    const updated = await rpc("setpolicy", { pushCallbacks: origins, letteredNips: form.elements.lettered.checked });
+    const updated = await rpc("setpolicy", { pushCallbacks: origins, letteredNips: form.elements.lettered.checked, delivery: { enabled: form.elements.delivery.checked, maxTargets: Math.max(1, Math.min(16, Math.floor(+form.elements.deliveryMax.value || 8))) } });
     if (JSON.stringify(updated.pushCallbacks) !== JSON.stringify([...new Set(origins.map((s) => s.replace(/\/$/, "")))])) throw new Error("Use up to sixteen exact HTTPS origins, with no path or credentials.");
     policy = updated;
-    toast("Saved callback policy"); await loadInfo();
+    toast("Saved delivery policy"); await loadInfo();
   }));
 
   async function loadViews() {

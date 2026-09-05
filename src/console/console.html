@@ -235,7 +235,9 @@
         <form id="push-policy-form" class="limits">
           <label><span>Push callback origins <small>One HTTPS origin per line, also approved by your host operator. Relay push costs fuel.</small></span><textarea class="txt" name="origins" rows="3" placeholder="https://push.example.com"></textarea></label>
           <label><span>Lettered NIP advertisements <small>Some older clients reject mixed NIP identifiers. Relay push requires them.</small></span><input type="checkbox" name="lettered"></label>
-          <div class="actions"><button class="btn">Save callback policy</button></div>
+          <label><span>Automatic NIP-65 delivery <small>Send your public events to your write relays and tagged people's read relays. Each event is bounded to a few targets.</small></span><input type="checkbox" name="delivery"></label>
+          <label><span>Maximum delivery targets <small>Per event</small></span><input class="txt num" type="number" name="deliveryMax" min="1" max="16" value="8" style="width:5rem"></label>
+          <div class="actions"><button class="btn">Save delivery policy</button></div>
         </form>
       </div>
       <div class="block">

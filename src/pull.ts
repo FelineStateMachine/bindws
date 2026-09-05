@@ -294,7 +294,7 @@ function matchesPull(e: Event, f?: PullFilter): boolean {
 function storePulled(relay: Relay, e: Event, job: PullJob) {
   if (!relay.settings.kindAllowed(e.kind)) { job.skipped++; markRejected(job); return; }
   const r = relay.accept(e, null);
-  if (r.stored) { job.stored++; relay.broadcast(e); }
+  if (r.stored) { job.stored++; relay.broadcast(e, false); }
   else if (r.msg !== ERR_DUPLICATE) { job.skipped++; markRejected(job); }
 }
 

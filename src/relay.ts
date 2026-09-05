@@ -3,6 +3,7 @@
 // relay.go; policy is per relay and owner-managed (see manage.ts).
 import { callbackOrigins } from "./push-policy.ts";
 import { pushTick, queuePush, nextPush, PUSH_SCHEMA } from "./push.ts";
+import { DELIVERY_SCHEMA, deliveryTick, queueDelivery } from "./delivery.ts";
 import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
 import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
 import { queueMirrors } from "./site-mirror.ts";
@@ -156,6 +157,7 @@ export class Relay extends DurableObject<Env> {
       this.store.init();
       this.settings.load();
       this.sql.exec(PUSH_SCHEMA);
+      this.sql.exec(DELIVERY_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
       this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
@@ -498,6 +500,7 @@ export class Relay extends DurableObject<Env> {
     this.store.init();
     this.settings.load();
     this.sql.exec(PUSH_SCHEMA);
+    this.sql.exec(DELIVERY_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
@@ -1120,6 +1123,7 @@ export class Relay extends DurableObject<Env> {
 
   async alarm() {
     await pushTick(this);
+    const deliveryAt = await deliveryTick(this);
     return this.repositoryAccess.run("alarm", async () => {
       this.touch();
       const t = now();
@@ -1186,6 +1190,7 @@ export class Relay extends DurableObject<Env> {
       if (graspAt && graspAt < at) at = graspAt;
       const pushAt = nextPush(this);
       if (pushAt) at = Math.min(at, Math.max(pushAt, now() + 1));
+      if (deliveryAt) at = Math.min(at, Math.max(deliveryAt, now() + 1));
       await this.ctx.storage.setAlarm(at * 1000 + 500);
     }, async () => { await this.ctx.storage.setAlarm(Date.now() + 1000); });
   }
@@ -1227,8 +1232,9 @@ export class Relay extends DurableObject<Env> {
     return [...(f.authors ?? []), ...(f.tags.p ?? [])].some((k) => parties.includes(k));
   }
 
-  broadcast(e: Event) {
+  broadcast(e: Event, route = true) {
     if (!graspVisible(this, e.id)) return;
+    if (route && queueDelivery(this, e)) this.ctx.waitUntil(this.ensureAlarm(now() + 1));
     if (queuePush(this, e)) this.ctx.waitUntil(this.ensureAlarm(now() + 1));
     const raw = canonical(e);
     for (const ws of this.ctx.getWebSockets()) {
