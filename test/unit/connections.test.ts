@@ -72,7 +72,7 @@ describe("parseConnectionTemplate", () => {
     expect(t.feature).toBe("grasp");
     expect(t.visibility).toBe("auth");
     expect(t.qr).toBe("nostr:{owner:nprofile}");
-    expect(t.inputs).toEqual([{ name: "repo", label: "Repository", placeholder: "name", default: "notes" }]);
+    expect(t.inputs).toEqual([{ name: "repo", label: "Repository", placeholder: "name", default: "notes", pattern: "" }]);
     expect(t.links).toEqual([{ label: "Clone", copy: "{relay:web}/{user:npub}/{input:repo}.git" }]);
   });
 
@@ -104,6 +104,14 @@ describe("parseConnectionTemplate", () => {
     expect(parseConnectionTemplate("x", { ...good, links: [{ label: "Neither" }] })).toBe("link Neither needs an href or a copy text, not both");
     expect(parseConnectionTemplate("x", { ...good, links: [{ href: "https://a.example/" }] })).toBe("a link needs a label");
     expect(parseConnectionTemplate("x", { ...good, links: [] })).toMatch(/^links must be a list of 1 to/);
+  });
+
+  it("takes an input's pattern and refuses one that does not compile", () => {
+    const t = parseConnectionTemplate("x", { ...good, inputs: [{ name: "repo", label: "Repository", pattern: "^[a-z0-9-]{1,64}$" }], links: [{ label: "Clone", copy: "git clone '{relay:web}/{input:repo}.git'" }] });
+    expect(typeof t).toBe("object");
+    if (typeof t === "string") return;
+    expect(t.inputs[0].pattern).toBe("^[a-z0-9-]{1,64}$");
+    expect(parseConnectionTemplate("x", { ...good, inputs: [{ name: "repo", label: "Repository", pattern: "([" }] })).toBe("input repo has a pattern that does not compile");
   });
 
   it("refuses an unknown icon, feature or visibility and a badly named input", () => {
@@ -149,6 +157,19 @@ describe("parseConnections", () => {
     expect(r.list[1].inputs).toBeUndefined();
     expect(r.list[2].inputs).toBeUndefined();
     expect(r.warnings).toEqual([`connections[2].inputs.${name}: must be a string`]);
+  });
+
+  const patterned = CONNECTION_TEMPLATES.find((t) => t.inputs.some((i) => i.pattern));
+  it.skipIf(!patterned)("keeps an input to its pattern, so a value cannot carry a quote or a slash into a command or a path", () => {
+    const t = patterned!;
+    const i = t.inputs.find((x) => x.pattern)!;
+    const r = parseConnections([{ template: t.name, inputs: { [i.name]: "kid's-project" } }, { template: t.name, inputs: { [i.name]: "a/b" } }, { template: t.name, inputs: { [i.name]: "my-project" } }]);
+    expect(typeof r).toBe("object");
+    if (typeof r === "string") return;
+    expect(r.list[0].inputs).toBeUndefined();
+    expect(r.list[1].inputs).toBeUndefined();
+    expect(r.list[2].inputs).toEqual({ [i.name]: "my-project" });
+    expect(r.warnings).toEqual([`connections[0].inputs.${i.name}: must match ${i.pattern}`, `connections[1].inputs.${i.name}: must match ${i.pattern}`]);
   });
 
   it("caps the list at 24 with a warning naming the first entry past it", () => {

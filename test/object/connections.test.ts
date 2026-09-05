@@ -100,7 +100,8 @@ describe("connections", () => {
     expect(texts.some((x: string) => x.includes(card.naddr))).toBe(true);
     expect(texts.some((x: string) => x.includes(card.nprofile))).toBe(true);
     expect(texts.some((x: string) => x.includes(encodeURIComponent("wss://" + host)))).toBe(true);
-    expect(texts.some((x: string) => x.includes("wss://" + host))).toBe(true);
+    // The fold has one relay URL copy control of its own, so no template carries the plain URL as a copy text.
+    expect(r.connections.flatMap((c: any) => c.links.filter((l: any) => l.copy).map((l: any) => l.copy))).not.toContain("wss://" + host);
     for (const x of texts) expect(x).not.toMatch(/[{}]/);
     expect(r.connections.find((c: any) => c.template === "find-me").qr).toBe("nostr:" + card.nprofile);
     expect(r.connections.find((c: any) => c.template === "group").qr).toBe("nostr:" + card.naddr);
@@ -124,20 +125,24 @@ describe("connections", () => {
     expect(elsewhere.status).toBe(401);
   });
 
-  it("leaves out the owner's links on a relay nobody owns yet, without asking anyone to sign in", async () => {
+  it("leaves out the owner's links on a relay nobody owns yet, and a shortcut with nothing else, without asking anyone to sign in", async () => {
     const host = "connect-nobody.bind.ws";
     const r = await connect(host);
     expect(r.status).toBe(200);
     expect(r.viewer).toBeNull();
+    // Every link of find-me names the owner, so the whole shortcut waits for one.
     const t = template("find-me");
-    const ownerLinks = t.links.filter((l) => text(l).includes("{owner:"));
-    expect(ownerLinks.length).toBeGreaterThan(0);
-    const c = r.connections.find((x: any) => x.template === "find-me");
-    expect(c).toBeDefined();
-    expect(c.needsUser).toBe(false);
-    expect(c.links.map((l: any) => l.label)).toEqual(t.links.filter((l) => !text(l).includes("{owner:")).map((l) => l.label));
-    if (t.qr.includes("{owner:")) expect(c.qr).toBe("");
-    for (const x of r.connections) for (const l of x.links) expect(text(l)).not.toMatch(/[{}]/);
+    expect(t.links.every((l) => text(l).includes("{owner:"))).toBe(true);
+    expect(r.connections.find((x: any) => x.template === "find-me")).toBeUndefined();
+    // Notes names only the relay, so it shows whole; the group shows what does not need an identity.
+    const notes = r.connections.find((x: any) => x.template === "notes");
+    expect(notes).toBeDefined();
+    expect(notes.needsUser).toBe(false);
+    expect(notes.links.map((l: any) => l.label)).toEqual(template("notes").links.map((l) => l.label));
+    for (const x of r.connections) {
+      expect(x.needsUser).toBe(false);
+      for (const l of x.links) expect(text(l)).not.toMatch(/[{}]/);
+    }
   });
 
   it("shows each shortcut to whom its visibility admits, with the owner's title and about in place of the template's", async () => {
@@ -203,6 +208,9 @@ describe("connections", () => {
     r = await rpc(host, owner, "setconnections", [{ template: "notes", inputs: { repo: "x" } }]);
     expect(r.status).toBe(400);
     expect(r.error).toBe("invalid: connections[0].inputs.repo: notes has no such input");
+    r = await rpc(host, owner, "setconnections", [{ template: "repos", inputs: { repo: "kid's-project" } }]);
+    expect(r.status).toBe(400);
+    expect(r.error).toMatch(/^invalid: connections\[0\]\.inputs\.repo: must match /);
     r = await rpc(host, owner, "setconnections", { template: "notes" });
     expect(r.status).toBe(400);
     expect(r.error).toBe("invalid: connections must be a list");
