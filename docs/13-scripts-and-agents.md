@@ -144,6 +144,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 - `gitstorage owner identifier`: an owner-only inventory of one accepted GRASP repository. The result compares bounded physical R2 listing with live Git dependencies and reports physical, live, unreferenced and unknown objects by class, SQL reservations and the byte difference. It never deletes data.
 - `deleteblob sha256`.
 - `listdumps`, `dumpnow`, `deletedump name`.
+- `backupnow [id]`, `listbackups`, `deletebackup id`: portable archives; owner NIP-98 downloads use `/backups/id`. POST the exact archive with a payload-bound NIP-98 signature to `/backups/preview`, then separately sign `/backups/restore` on a fresh target. Both require the archived owner key. Archives are capped at 8 MiB and 12,000 entries.
 - `listlisthistory`: private older list versions belonging to the authenticated owner, moderator or member.
 - `restorelist eventId`: an unsigned `draft` and `diff` (added tags, removed tags, content changed) for one saved version belonging to that signer. Sign the draft in the client and publish it normally.
 

@@ -3,6 +3,7 @@
 // relay.go; policy is per relay and owner-managed (see manage.ts).
 import { callbackOrigins } from "./push-policy.ts";
 import { pushTick, queuePush, nextPush, PUSH_SCHEMA } from "./push.ts";
+import { BACKUP_SCHEMA, backupBytes } from "./backups.ts";
 import { DELIVERY_SCHEMA, deliveryTick, queueDelivery } from "./delivery.ts";
 import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
 import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
@@ -158,7 +159,8 @@ export class Relay extends DurableObject<Env> {
       this.settings.load();
       this.sql.exec(PUSH_SCHEMA);
       this.sql.exec(DELIVERY_SCHEMA);
-    this.store.hidden = this.settings.hiddenEvents;
+      this.sql.exec(BACKUP_SCHEMA);
+      this.store.hidden = this.settings.hiddenEvents;
       this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
       this.slug = (await ctx.storage.get<string>("slug")) ?? "";
@@ -501,6 +503,7 @@ export class Relay extends DurableObject<Env> {
     this.settings.load();
     this.sql.exec(PUSH_SCHEMA);
     this.sql.exec(DELIVERY_SCHEMA);
+    this.sql.exec(BACKUP_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
@@ -768,7 +771,7 @@ export class Relay extends DurableObject<Env> {
 
   // Files and dumps both live in R2 and both cost media storage.
   mediaBytes(): number {
-    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this);
+    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this) + backupBytes(this);
   }
 
   fuelStatus() {

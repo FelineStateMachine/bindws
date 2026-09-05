@@ -45,6 +45,14 @@ The reverse of a dump. Under **Import a file** on the Data tab, pick a JSONL of 
 
 Under **Dumps**, choose daily or weekly and how many to keep, seven by default. The relay writes every event as one JSONL file and keeps the newest few. **Dump now** writes one on the spot. Each file lists its event count and size, with download and delete. Downloading takes your signature; the files are never a public link.
 
+## Portable backups
+
+On the Data tab, **Create and download** makes a private archive with configuration, signed events, saved list history, hidden and pending state, site/media blobs and Git objects. Existing archives can be downloaded or deleted. Each binary object and the archive have SHA-256 integrity checks; event signatures are checked on restore. Stored archives count toward fuel.
+
+Open a fresh, unclaimed relay and choose the archive in **Restore a backup**. Sign with the original owner's key, preview its source identity, counts and configuration, then restore. The target must be empty and unleased. Restore stages files before applying the database in one transaction. The source identity is recorded; the target gets a new relay key. Signed site and Git references still name their original URLs, so publish updated service references from your client after moving.
+
+This portable format is for small relays: at most 8 MiB per archive and 12,000 entries, including state records. Memory budgeting can refuse an archive below the wire limit. Larger relays need the separate event dump, configuration export, Blossom download and Git clone paths. Credentials, fuel credits, custom domains, leases, succession, callback registrations, existing dumps/backups and transient jobs are excluded. Configure those again on the target. Owner archives contain private relay data; keep the downloaded file private.
+
 ## Presets and one name per job
 
 Names are cheap, so a relay does not have to do everything. On the Rules tab, **Presets** sets writes, reads, the directory, the kind rules and the keep-for rules in one click. Limits, identity, people and bans stay. Your own profile and lists always land, whatever the kind rules say.
@@ -89,7 +97,7 @@ Your data is yours. A relay that speaks sync can pull the events your read rule 
 nak sync -a <your-pubkey> wss://<name>.bind.ws wss://<other-relay>
 ```
 
-Or download a dump.
+Or download a dump or a portable backup.
 
 Event sync and JSONL dumps do not contain site files or Git packs. An unfiltered
 bind.ws pull can copy Blossom files, but it does not copy GRASP repositories.

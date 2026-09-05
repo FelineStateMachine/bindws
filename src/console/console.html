@@ -17,6 +17,15 @@
     <h2>Nobody owns this relay yet.</h2>
     <p class="lead">Claim it and it's yours: you decide who can post, who can read, and what stays. One signature with a nostr browser extension; no account, no email, no card.</p>
     <div class="row"><button id="claim" class="btn pri">Claim this relay</button><button class="btn remote" data-note="claimnote">Use a remote signer</button><span class="note" id="claimnote"></span></div>
+    <div class="block">
+      <h3>Restore a backup</h3>
+      <p class="note">Choose a private bind.ws archive to inspect it before restoring. Preview does not claim this relay. Restore accepts only an empty relay and the archive owner's signature.</p>
+      <div class="form">
+        <label class="wide"><span>Archive <small>up to 8 MB</small></span><input class="txt" type="file" id="backupfile" accept="application/json"></label>
+      </div>
+      <div class="actions"><button type="button" id="backupremote" class="btn">Use a remote signer</button><button type="button" id="backuppreview" class="btn">Preview restore</button><button type="button" id="backuprestore" class="btn pri" disabled>Restore</button></div>
+      <div id="backup-preview" class="note"></div>
+    </div>
   </section>
 
   <section id="leased" class="hidden">
@@ -324,15 +333,16 @@
         <ul id="dumps" class="plain"></ul>
       </div>
       <div class="block">
+        <h3>Backups <span class="count" id="backups-count"></span></h3>
+        <p class="note">Portable copies include configuration, events, site files and Git objects. They are private and bounded at 8 MB.</p>
+        <div class="form"><label><span>Archive name</span><input class="txt mono" id="backupid" placeholder="backup" value="backup"></label></div>
+        <div class="actions"><button type="button" id="backupnow" class="btn">Create and download</button></div>
+        <ul id="backups" class="plain"></ul>
+      </div>
+      <div class="block">
         <h3>Import a file</h3>
         <p class="note">A JSONL of events, one per line, such as a dump or a strfry export, or a JSON array. Up to 64 MB. Signatures are checked; bans and kind rules apply; the write rule does not. Progress shows under Jobs.</p>
         <form id="importform" class="addrow"><input class="txt" type="file" name="file" accept=".jsonl,.json,.ndjson,application/json" required><button class="btn">Import</button></form>
-      </div>
-      <div class="block">
-        <h3>Backup and restore</h3>
-        <p class="note">A private archive includes configuration, events, site files and Git objects. It excludes keys, fuel, jobs and push registrations. Archives are limited to 8 MB and restore only works on a fresh relay.</p>
-        <div class="addrow"><input class="txt mono" id="backupid" placeholder="backup name" value="backup"><button type="button" id="backupnow" class="btn">Create and download</button><input class="txt" type="file" id="backupfile" accept="application/json"><button type="button" id="backuppreview" class="btn">Preview restore</button><button type="button" id="backuprestore" class="btn">Restore</button></div>
-        <ul id="backups" class="plain"></ul>
       </div>
     </section>
 

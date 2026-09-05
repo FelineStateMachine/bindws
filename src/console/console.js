@@ -473,6 +473,11 @@
     $("#dumps-count").textContent = list.length || "";
     $("#dumps").innerHTML = list.length ? list.map((d) => '<li><i class="ev">jsonl</i><span><b class="mono">' + esc(d.name) + '</b> <span class="dim">' + d.events.toLocaleString() + " events, " + fmtBytes(d.bytes) + "</span></span><span>" + ib("copy", "Download", "downloaddump", d.name) + ib("trash", "Delete", "deletedump", d.name, "danger") + "</span></li>").join("") : '<li class="empty">no dumps yet</li>';
   }
+  async function loadBackups() {
+    const list = await rpc("listbackups");
+    $("#backups-count").textContent = list.length || "";
+    $("#backups").innerHTML = list.length ? list.map((b) => '<li><i class="ev">backup</i><span><b class="mono">' + esc(b.id) + '</b> <span class="dim">' + fmtBytes(b.bytes) + '</span></span><span>' + ib("copy", "Download", "downloadbackup", b.id) + ib("trash", "Delete", "deletebackup", b.id, "danger") + '</span></li>').join("") : '<li class="empty">no backups yet</li>';
+  }
   // A dump is fetched with a signed request and handed to the browser as a file.
   async function downloadDump(name) {
     if (!signer.ready()) throw new Error(NO_SIGNER);
@@ -482,6 +487,11 @@
     if (!resp.ok) throw new Error((await resp.json()).error || "download failed");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + name; a.click(); URL.revokeObjectURL(a.href);
+  }
+  async function downloadBackup(id) {
+    const resp = await backupRequest("/backups/" + encodeURIComponent(id), "GET");
+    if (!resp.ok) throw new Error("backup download failed");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + id + ".json"; a.click(); URL.revokeObjectURL(a.href);
   }
   // A plain member's own invites, when the owner lets members invite.
   async function loadMine() {
@@ -498,6 +508,7 @@
     pollJobs();
     loadViews();
     loadDumps().catch(() => {});
+    loadBackups().catch(() => {});
     const st = storage;
     const top = st.kinds.slice(0, 4), rest = st.kinds.slice(4).reduce((a, k) => a + k.bytes, 0);
     const parts = [...top.map((k, i) => [k.kind + " " + kindName(k.kind), "k" + (i + 1), k.bytes]), ...(rest ? [["other", "k5", rest]] : [])];
@@ -612,7 +623,7 @@
     let jobs;
     try { jobs = await rpc("listjobs"); } catch { return; }
     $("#jobs tbody").innerHTML = jobs.length ? jobs.map(fmtJob).join("") : '<tr><td colspan="6" class="muted">no jobs yet</td></tr>';
-    if (isOwner) {
+    if (myRole === "owner") {
       try {
         const deliveries = await rpc("deliverystatus");
         $("#deliveries tbody").innerHTML = deliveries.length ? deliveries.map((d) => '<tr><td class="mono" title="' + esc(d.event_id) + '">' + esc(d.event_id.slice(0, 12)) + '</td><td class="mono">' + esc(d.target) + '</td><td>' + esc(d.status) + '</td><td>' + d.attempts + '</td><td>' + esc(d.error || "") + '</td></tr>').join("") : '<tr><td colspan="5" class="muted">no automatic deliveries yet</td></tr>';
@@ -881,9 +892,12 @@
     return fetch(path, { method, headers: { authorization: "Nostr " + btoa(JSON.stringify(token)), ...(body ? { "content-type": "application/json" } : {}) }, body });
   }
   $("#backupnow").onclick = guard(async () => { const id = $("#backupid").value.trim() || "backup"; const r = await rpc("backupnow", id); const resp = await backupRequest("/backups/" + id, "GET"); if (!resp.ok) throw new Error("backup download failed"); const a = document.createElement("a"); a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + id + ".json"; a.click(); URL.revokeObjectURL(a.href); toast("Backup downloaded"); await loadStorage(); void r; });
-  async function selectedBackup() { const f = $("#backupfile").files[0]; if (!f) throw new Error("Choose a backup archive first."); if (f.size > 8 * 1024 * 1024) throw new Error("Backups are limited to 8 MB."); return f.text(); }
-  $("#backuppreview").onclick = guard(async () => { const body = await selectedBackup(); const r = await (await backupRequest("/backups/preview", "POST", body)).json(); if (r.error) throw new Error(r.error); alert(JSON.stringify(r.result, null, 2)); });
-  $("#backuprestore").onclick = guard(async () => { const body = await selectedBackup(); if (!confirm("Restore this archive onto this fresh relay? This cannot be undone.")) return; const r = await (await backupRequest("/backups/restore", "POST", body)).json(); if (r.error) throw new Error(r.error); toast("Backup restored"); await loadInfo(); await loadAdmin(); });
+  async function selectedBackup() { const f = $("#backupfile").files[0]; if (!f) throw new Error("Choose a backup archive first."); if (f.size > 8 * 1024 * 1024) throw new Error("Backups are limited to 8 MB."); return { file: f, body: await f.text() }; }
+  let backupPreview = null;
+  $("#backupfile").onchange = () => { backupPreview = null; $("#backup-preview").textContent = ""; $("#backuprestore").disabled = true; };
+  $("#backupremote").onclick = () => showRemote(null);
+  $("#backuppreview").onclick = guard(async () => { const selected = await selectedBackup(); const r = await (await backupRequest("/backups/preview", "POST", selected.body)).json(); if (r.error) throw new Error(r.error); backupPreview = { file: selected.file, body: selected.body }; $("#backuprestore").disabled = false; const s = r.result.source; $("#backup-preview").innerHTML = '<p><b>Ready to restore.</b> ' + esc(String(r.result.events)) + ' events, ' + esc(String(r.result.blobs)) + ' files, ' + esc(String(r.result.git)) + ' Git objects, ' + esc(fmtBytes(r.result.bytes)) + '.</p><p>Source relay identity: <code>' + esc(s.relayIdentity || "unknown") + '</code></p><pre>' + esc(JSON.stringify(r.result.config, null, 2)) + '</pre>'; });
+  $("#backuprestore").onclick = guard(async () => { const selected = await selectedBackup(); if (!backupPreview || backupPreview.file !== selected.file || backupPreview.body !== selected.body) throw new Error("Preview this exact archive before restoring."); if (!confirm("Restore this archive onto this fresh relay? This cannot be undone.")) return; const r = await (await backupRequest("/backups/restore", "POST", selected.body)).json(); if (r.error) throw new Error(r.error); me = await signer.getPublicKey(); localStorage.setItem("me", me); toast("Backup restored"); await loadInfo(); await loadFuel(); await loadAdmin(); await loadPeople(); });
   $("#treeform").onsubmit = guard(async (ev) => {
     const f = ev.target;
     policy = await rpc("setpolicy", { memberInvites: { depth: Math.max(0, Math.floor(+f.depth.value || 0)), quota: Math.max(0, Math.floor(+f.quota.value || 0)) } });
@@ -990,6 +1004,9 @@
     if (act === "deleteblob" && !confirm("Delete this file for good?")) return;
     if (act === "deletedump" && !confirm("Delete this dump?")) return;
     if (act === "downloaddump") { b.disabled = true; try { await downloadDump(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "deletebackup" && !confirm("Delete this backup?")) return;
+    if (act === "downloadbackup") { b.disabled = true; try { await downloadBackup(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
+    if (act === "deletebackup") { b.disabled = true; try { await rpc("deletebackup", id); toast("Backup deleted"); await loadBackups(); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
     if (act === "restorelist") {
       if (!signer.ready()) { toast(NO_SIGNER); return; }
       try {

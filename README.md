@@ -41,7 +41,7 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 - [Relay configuration](docs/01-relay-configuration.md): the console, tab by tab.
 - [Understanding fuel](docs/02-understanding-fuel.md): what is measured, what is free, what a zap buys.
 - [People and groups](docs/03-people-and-groups.md): members, invites, moderators, groups, handing over.
-- [Data and names](docs/04-data-and-names.md): jobs, dumps, presets, forks, leaving.
+- [Data and names](docs/04-data-and-names.md): list recovery, delivery, imports, backups, presets and forks.
 - [Your relay on the web](docs/05-your-relay-on-the-web.md): pages, static sites, Git hosting, feed, card, custom domains and media.
 
 **For scripts and agents**
@@ -65,7 +65,6 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 - [NIP-86 membership claims](docs/24-nip86-claims.md): create, list and revoke invitation codes through the standard management methods.
 - [NIP-9a relay push](docs/25-nip-9a-relay-push.md): opt-in callback delivery, privacy, bounds and operator setup.
 - [NIP-11 identifier compatibility](docs/26-nip11-compatibility.md): lettered capabilities and concrete client parser behavior.
-- [Backups and fresh-relay restore](docs/27-backups.md): portable, integrity-checked recovery for relay state, files and Git.
 
 ### Protocol guides
 

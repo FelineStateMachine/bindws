@@ -6,16 +6,19 @@ import { applyConfig, exportConfig, parseConfig } from "./config.ts";
 import { bytesToHex } from "./negentropy.ts";
 import { verifyNIP98 } from "./auth.ts";
 import { can } from "./roles.ts";
-import { now, validate, type Event } from "./event.ts";
+import { expiration, now, validate, type Event } from "./event.ts";
 import { type Relay } from "./relay.ts";
-import { KIND_REPO, KIND_PUSH_REGISTRATION } from "./kinds.ts";
-import { parseRepositoryAnnouncement } from "./grasp-policy.ts";
+import { KIND_PUSH_REGISTRATION } from "./kinds.ts";
+import { archiveCurrent, isListKind } from "./list-history.ts";
+import { Settings } from "./settings.ts";
 
 export const BACKUP_FORMAT = "bind.ws/relay-backup/1";
 // JSON parsing, base64 expansion and integrity copies coexist in the Worker
 // heap, so the portable form stays well below the platform heap ceiling.
 export const BACKUP_MAX_BYTES = 8 * 1024 * 1024;
 export const BACKUP_MAX_OBJECTS = 12_000;
+export const BACKUP_SCHEMA = `CREATE TABLE IF NOT EXISTS backups (id TEXT PRIMARY KEY, bytes INTEGER NOT NULL);`;
+export const backupBytes = (relay: Relay): number => relay.sql.exec<{ n: number }>(`SELECT coalesce(sum(bytes),0) n FROM backups`).one().n;
 export const BACKUP_ID_RE = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 
 type Payload = { sha256: string; size: number; data: string };
@@ -26,6 +29,7 @@ export type BackupArchive = {
   events: string[];
   blobs: (Payload & { sha256: string; type: string; uploader: string; uploaded: number })[];
   git: (Payload & { key: string })[];
+  state?: { listHistory: string[]; hidden: string[]; hosted: string[]; pending: { id: string; until: number }[] };
 };
 
 const enc = new TextEncoder();
@@ -71,7 +75,7 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
   };
   let seq = 0;
   for (;;) {
-    const page = relay.store.dumpPage(seq, 50);
+    const page = relay.store.dumpPage(seq, 1);
     if (!page.length) break;
     for (const x of page) {
       try {
@@ -83,11 +87,12 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
     seq = page[page.length - 1].seq;
   }
   const blobs: BackupArchive["blobs"] = [];
-  const blobRows = relay.sql.exec<{ sha256: string; size: number; type: string; uploader: string; uploaded: number }>(`SELECT * FROM blobs ORDER BY uploaded`).toArray();
+  const blobRows = relay.sql.exec<{ sha256: string; size: number; type: string; uploader: string; uploaded: number }>(`SELECT * FROM blobs ORDER BY uploaded LIMIT 12001`).toArray();
   for (const b of blobRows) {
     if (!reserve(b.size)) return "restricted: backup exceeds its bounded size or object limit";
     const obj = await relay.media.get(`${relay.slug}/${b.sha256}`);
     if (!obj) return `error: blob ${b.sha256} disappeared during backup`;
+    if (obj.size !== b.size) return "error: blob size changed during backup";
     const data = new Uint8Array(await obj.arrayBuffer());
     if (data.length !== b.size) return `error: blob ${b.sha256} changed during backup`;
     if (data.length !== b.size || digest(data) !== b.sha256) return `error: blob ${b.sha256} failed integrity check`;
@@ -111,12 +116,19 @@ export async function createBackup(relay: Relay, id: string): Promise<{ manifest
   }
   const config = exportConfig(relay.settings, relay.slug);
   if (!reserve(enc.encode(JSON.stringify(config)).length)) return "restricted: backup exceeds its bounded size or object limit";
-  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: git.length, archiveSha256: "" }, config, events, blobs, git } as BackupArchive;
-  const bytes = bytesOf(archive);
-  archive.manifest.bytes = bytes.length;
+  const state = { listHistory: [] as string[], hidden: [...relay.settings.hiddenEvents], hosted: relay.sql.exec<{ id: string }>(`SELECT id FROM grasp_hosted`).toArray().map((r) => r.id), pending: relay.sql.exec<{ id: string; until: number }>(`SELECT id,until FROM grasp_pending`).toArray() };
+  for (const row of relay.sql.exec<{ raw: string }>(`SELECT raw FROM list_history WHERE expires=0 OR expires>? ORDER BY saved_at`, now())) {
+    if (!reserve(enc.encode(row.raw).length)) return "restricted: backup history exceeds its bounded size";
+    state.listHistory.push(row.raw);
+  }
+  if (!reserve(enc.encode(JSON.stringify({ ...state, listHistory: [] })).length, state.hidden.length + state.hosted.length + state.pending.length)) return "restricted: backup state exceeds its bounded size";
+  const archive = { format: BACKUP_FORMAT, manifest: { id, slug: relay.slug, owner, relayIdentity: relay.identity.pubkey, createdAt: now(), bytes: 0, events: events.length, blobs: blobs.length, git: git.length, archiveSha256: "" }, config, events, blobs, git, state } as BackupArchive;
+  archive.manifest.archiveSha256 = "0".repeat(64);
+  for (let i = 0; i < 4; i++) archive.manifest.bytes = bytesOf(archive).length;
   archive.manifest.archiveSha256 = digest(unsignedBytes(archive));
   const finalBytes = bytesOf(archive);
   if (finalBytes.length > BACKUP_MAX_BYTES) return "restricted: backup exceeds 8 MiB; use smaller retention or separate Git repositories";
+  relay.sql.exec(`INSERT OR REPLACE INTO backups(id,bytes) VALUES(?,?)`, id, finalBytes.length);
   await relay.media.put(archiveKey(relay, id), finalBytes, { httpMetadata: { contentType: "application/json" } });
   relay.meterBytes(0, finalBytes.length);
   return { manifest: archive.manifest, key: archiveKey(relay, id) };
@@ -130,6 +142,7 @@ export async function listBackups(relay: Relay) {
 export async function deleteBackup(relay: Relay, id: string) {
   if (!BACKUP_ID_RE.test(id)) return false;
   await relay.media.delete(archiveKey(relay, id));
+  relay.sql.exec(`DELETE FROM backups WHERE id=?`, id);
   return true;
 }
 
@@ -141,11 +154,22 @@ const checkedArchive = (bytes: Uint8Array): BackupArchive | string => {
   if (archive.manifest.archiveSha256 !== digest(unsignedBytes(archive))) return "invalid: backup integrity check failed";
   if (archive.events.length + archive.blobs.length + archive.git.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
   for (const raw of archive.events) {
-    try { if (typeof raw !== "string" || validate(JSON.parse(raw) as Event)) return "invalid: backup contains an invalid event"; }
+    try { if (typeof raw !== "string" || (validate(JSON.parse(raw) as Event) || JSON.parse(raw).kind === KIND_PUSH_REGISTRATION)) return "invalid: backup contains an invalid event"; }
     catch { return "invalid: backup contains malformed event JSON"; }
   }
   for (const b of archive.blobs) { let data: Uint8Array; try { data = fromB64(b.data); } catch { return "invalid: malformed blob data"; } if (data.length !== b.size || digest(data) !== b.sha256) return "invalid: blob integrity check failed"; }
-  for (const g of archive.git) { let data: Uint8Array; try { data = fromB64(g.data); } catch { return "invalid: malformed Git data"; } if (data.length !== g.size || digest(data) !== g.sha256 || !g.key.startsWith("git/")) return "invalid: Git integrity check failed"; }
+  for (const g of archive.git) { let data: Uint8Array; try { data = fromB64(g.data); } catch { return "invalid: malformed Git data"; } if (data.length !== g.size || digest(data) !== g.sha256 || typeof g.key !== "string" || !g.key.startsWith("git/")) return "invalid: Git integrity check failed"; }
+  const state = archive.state;
+  if (state) {
+    if (!Array.isArray(state.listHistory) || !Array.isArray(state.hidden) || !Array.isArray(state.hosted) || !Array.isArray(state.pending)) return "invalid: backup state malformed";
+    if (archive.events.length + archive.blobs.length + archive.git.length + state.listHistory.length + state.hidden.length + state.hosted.length + state.pending.length > BACKUP_MAX_OBJECTS) return "restricted: backup object limit reached";
+    const hex = (v: unknown) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+    if (state.hidden.some((v) => !hex(v)) || state.hosted.some((v) => !hex(v)) || state.pending.some((v) => !v || !hex(v.id) || !Number.isSafeInteger(v.until))) return "invalid: backup state malformed";
+    for (const raw of state.listHistory) {
+      try { const event = JSON.parse(raw); if (typeof raw !== "string" || validate(event) || !isListKind(event.kind)) return "invalid: backup list history malformed"; }
+      catch { return "invalid: backup list history malformed"; }
+    }
+  }
   return archive;
 };
 
@@ -180,12 +204,22 @@ export async function restoreBackup(relay: Relay, bytes: Uint8Array, caller: str
         const e = JSON.parse(raw) as Event;
         const error = relay.store.save(e, now());
         if (error && !error.startsWith("duplicate:")) throw new Error(`error: event restore stopped: ${error}`);
-        if (e.kind === KIND_REPO && parseRepositoryAnnouncement(e).value) relay.sql.exec(`INSERT OR IGNORE INTO grasp_hosted(id) VALUES(?)`, e.id);
+
       }
+      for (const raw of archive.state?.listHistory ?? []) {
+        const event = JSON.parse(raw) as Event;
+        if (!expiration(event) || expiration(event) > now()) archiveCurrent((q, ...args) => relay.sql.exec(q, ...args as SqlStorageValue[]), event, now());
+      }
+      for (const id of archive.state?.hidden ?? []) relay.settings.setEvent(id, "hide");
+      for (const id of archive.state?.hosted ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_hosted(id) SELECT id FROM events WHERE id=?`, id);
+      for (const row of archive.state?.pending ?? []) relay.sql.exec(`INSERT OR IGNORE INTO grasp_pending(id,until) SELECT id,? FROM events WHERE id=?`, row.until, row.id);
       for (const b of archive.blobs) relay.sql.exec(`INSERT OR REPLACE INTO blobs(sha256,size,type,uploader,uploaded) VALUES(?,?,?,?,?)`, b.sha256, b.size, b.type, b.uploader, b.uploaded);
       for (const g of archive.git) relay.sql.exec(`INSERT OR REPLACE INTO grasp_objects(key,owner,size) VALUES(?,?,?)`, `${relay.slug}/${g.key}`, caller, g.size);
     });
   } catch (error) {
+    relay.settings = new Settings(relay.sql);
+    relay.settings.load();
+    relay.store.hidden = relay.settings.hiddenEvents;
     await relay.media.delete(staged).catch(() => {});
     return error instanceof Error && error.message.startsWith("error:") ? error.message : "error: restore transaction failed";
   }
@@ -223,14 +257,17 @@ async function readCapped(req: Request): Promise<Uint8Array | string> {
 }
 
 export async function restoreBackupRequest(relay: Relay, req: Request): Promise<Response> {
+  const preauth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, "");
+  if (typeof preauth === "string") return Response.json({ error: preauth }, { status: 401 });
+  if (relay.settings.policy.owner !== "" || relay.settings.isLeased()) return Response.json({ error: "restricted: restore requires a fresh, unclaimed relay" }, { status: 403 });
   const input = await readCapped(req);
   if (typeof input === "string") return Response.json({ error: input }, { status: 413 });
   const bytes = input;
   const body = new TextDecoder().decode(bytes);
   const auth = verifyNIP98(req.headers.get("authorization") ?? "", req.url, req.method, body);
   if (typeof auth === "string") return Response.json({ error: auth }, { status: 401 });
-  const parsed = checkedArchive(bytes);
   if (new URL(req.url).pathname === "/backups/preview") {
+    const parsed = checkedArchive(bytes);
     if (typeof parsed === "string") return Response.json({ error: parsed }, { status: 400 });
     const cfg = parseConfig(parsed.config, relay.settings.policy);
     if (typeof cfg === "string") return Response.json({ error: cfg }, { status: 400 });

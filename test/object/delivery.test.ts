@@ -1,9 +1,32 @@
+import { env, runInDurableObject } from "cloudflare:test";
+import { deliveryTick, queueDelivery } from "../../src/delivery.ts";
+import type { Relay } from "../../src/relay.ts";
 import { describe, expect, it } from "vitest";
 import { generateSecretKey } from "nostr-tools/pure";
 import { ev, pk, rpc, alarm } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 describe("NIP-65 automatic delivery", () => {
+  it("retries a refused target to its finite limit and stops on private relay policy", async () => {
+    const owner = generateSecretKey(), targetOwner = generateSecretKey();
+    const source = "retry-source.bind.ws", target = "retry-target.bind.ws";
+    await rpc(source, owner, "claim"); await rpc(target, targetOwner, "claim");
+    await rpc(target, targetOwner, "setpolicy", { writes: "owner" });
+    await rpc(source, owner, "setpolicy", { delivery: { enabled: true, maxTargets: 1 } });
+    await runInDurableObject(env.RELAY.getByName("retry-source"), async (relay: Relay) => {
+      relay.store.save(ev(owner, 10002, "", [["r", "wss://" + target]]), 1);
+      const note = ev(owner, 1, "retry me"); relay.store.save(note, 1);
+      expect(queueDelivery(relay, note)).toBe(true);
+      for (let i = 0; i < 4; i++) {
+        relay.sql.exec(`UPDATE delivery_queue SET due=0`);
+        await deliveryTick(relay);
+      }
+      expect(relay.sql.exec(`SELECT status,attempts FROM delivery_queue WHERE event_id=?`, note.id).one()).toMatchObject({ status: "rejected", attempts: 4 });
+      relay.settings.update({ reads: "members" });
+      expect(queueDelivery(relay, ev(owner, 1, "private relay note"))).toBe(false);
+    });
+  });
+
   it("routes public events to the author's write relay and exposes target status", async () => {
     const owner = generateSecretKey();
     const source = "auto-source.bind.ws", target = "auto-target.bind.ws";

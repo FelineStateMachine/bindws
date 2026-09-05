@@ -187,6 +187,7 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
   // the legacy cursor. This is the compatibility bridge for old jobs.
   for (const url of job.relays) if (job.targetCursors[url] === undefined) job.targetCursors[url] = legacyCursor;
   for (const url of job.relays) {
+    if ((job.targetAttempts[url] ?? 0) >= 3) continue;
     const cursor = job.targetCursors[url] ?? 0;
     const rows = relay.store.after(cursor, f, PUSH_BATCH, now());
     if (rows.length === 0) { job.targetStatus[url] = { status: "accepted", error: "", at: now() }; continue; }
@@ -198,15 +199,17 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
       events.push(e);
     }
     try {
+      const refusedBefore = job.refused;
       await pushTo(relay, url, events, job);
       reached++;
       job.targetCursors[url] = rows[rows.length - 1].seq;
-      job.targetStatus[url] = { status: "accepted", error: "", at: now() };
+      job.targetStatus[url] = { status: job.refused > refusedBefore ? "rejected" : "accepted", error: job.refused > refusedBefore ? "Some events were explicitly refused." : "", at: now() };
+      job.targetAttempts[url] = 0;
       job.cursor = Math.max(job.cursor, rows[rows.length - 1].seq);
     } catch (err) {
       failed = url + ": " + (err instanceof Error ? err.message : String(err));
       job.targetAttempts[url] = (job.targetAttempts[url] ?? 0) + 1;
-      job.targetStatus[url] = { status: "pending", error: failed, at: now() };
+      job.targetStatus[url] = { status: job.targetAttempts[url] >= 3 ? "rejected" : "pending", error: failed, at: now() };
       more = true;
     }
   }
@@ -225,7 +228,7 @@ async function pushTo(relay: Relay, url: string, events: Event[], job: Job): Pro
       for (const e of batch) sock.send("EVENT", e);
       const deadline = Date.now() + PUSH_TIMEOUT_MS;
       while (pending.size && Date.now() < deadline) {
-        const m = await sock.recv();
+        const m = await sock.recv(deadline - Date.now());
         if (m[0] !== "OK" || typeof m[1] !== "string" || !pending.has(m[1])) continue;
         pending.delete(m[1]);
         const msg = String(m[3] ?? "");
@@ -262,11 +265,13 @@ export function startRun(job: Job, t: number) {
   job.sent = 0;
   job.refused = 0;
   job.duplicates = 0;
+  if (job.kind === "push") job.targetAttempts = {};
   if (job.kind === "pull") job.pullSources = job.relays.map((url) => ({ url, ...newPullProgress(), stored: 0, skipped: 0, blobs: 0 }));
 }
 
 // finishRun closes the current run and schedules the next one.
 export function finishRun(job: Job, error: string, t: number) {
+  if (!error && job.kind === "push" && Object.values(job.targetStatus ?? {}).some((s) => s.status === "rejected")) error = "Some delivery targets refused events or exhausted retries; inspect target results.";
   const incomplete = job.pullSources?.filter((s) => ["partial", "refused", "failed"].includes(s.status));
   if (!error && incomplete?.length) error = `${incomplete.length} import source(s) incomplete; inspect Source results for details.`;
   job.last = { finishedAt: t, error, rounds: job.rounds, stored: job.stored, skipped: job.skipped, blobs: job.blobs, sent: job.sent, refused: job.refused, duplicates: job.duplicates ?? 0, ...(job.pullSources ? { sources: structuredClone(job.pullSources) } : {}) };
