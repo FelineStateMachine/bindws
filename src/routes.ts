@@ -15,6 +15,7 @@ import { isWebAddressRequest, webAddress } from "./nipad.ts";
 import { verifyNIP98, whoAsks } from "./auth.ts";
 import { checkInvite, claimInviteRequest, invitePage, termsPage } from "./invites.ts";
 import { dumpDownload } from "./dumps.ts";
+import { backupDownload, restoreBackupRequest } from "./backups.ts";
 import { serveView } from "./views.ts";
 import { importUpload } from "./imports.ts";
 import { blossom, isBlobPath } from "./blossom.ts";
@@ -102,6 +103,8 @@ export const ROUTES: Route[] = [
   { when: post(is("/api/invites/claim")), gated: true, answer: claimInviteRequest },
   // Dumps, views, imports (dumps.ts, views.ts, imports.ts).
   { when: get(under("/dumps/")), answer: dumpDownload },
+  { when: get(under("/backups/")), answer: (relay, req, url) => backupDownload(relay, req, url.pathname.slice("/backups/".length)) },
+  { when: (url, req) => req.method === "POST" && (url.pathname === "/backups/restore" || url.pathname === "/backups/preview"), answer: restoreBackupRequest },
   { when: get(under("/view/")), answer: (relay, req) => serveView(relay, req, verifyNIP98) },
   { when: (url, req) => req.method === "PUT" && url.pathname === "/import", answer: importUpload },
   // Files: Blossom on its paths (blossom.ts), NIP-96 on its own (nip96.ts).

@@ -874,6 +874,16 @@
     ev.target.reset(); toast("Importing " + fmtBytes(r.bytes)); await pollJobs();
   });
   $("#dumpnow").onclick = guard(async () => { const d = await rpc("dumpnow"); toast("Dumped " + d.events.toLocaleString() + " events"); await loadStorage(); });
+  async function backupRequest(path, method, body) {
+    if (!signer.ready()) throw new Error(NO_SIGNER);
+    const hash = await sha256hex(body || "");
+    const token = await signer.signEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), content: "", tags: [["u", location.origin + path], ["method", method], ["payload", hash]] });
+    return fetch(path, { method, headers: { authorization: "Nostr " + btoa(JSON.stringify(token)), ...(body ? { "content-type": "application/json" } : {}) }, body });
+  }
+  $("#backupnow").onclick = guard(async () => { const id = $("#backupid").value.trim() || "backup"; const r = await rpc("backupnow", id); const resp = await backupRequest("/backups/" + id, "GET"); if (!resp.ok) throw new Error("backup download failed"); const a = document.createElement("a"); a.href = URL.createObjectURL(await resp.blob()); a.download = host.split(".")[0] + "-" + id + ".json"; a.click(); URL.revokeObjectURL(a.href); toast("Backup downloaded"); await loadStorage(); void r; });
+  async function selectedBackup() { const f = $("#backupfile").files[0]; if (!f) throw new Error("Choose a backup archive first."); if (f.size > 8 * 1024 * 1024) throw new Error("Backups are limited to 8 MB."); return f.text(); }
+  $("#backuppreview").onclick = guard(async () => { const body = await selectedBackup(); const r = await (await backupRequest("/backups/preview", "POST", body)).json(); if (r.error) throw new Error(r.error); alert(JSON.stringify(r.result, null, 2)); });
+  $("#backuprestore").onclick = guard(async () => { const body = await selectedBackup(); if (!confirm("Restore this archive onto this fresh relay? This cannot be undone.")) return; const r = await (await backupRequest("/backups/restore", "POST", body)).json(); if (r.error) throw new Error(r.error); toast("Backup restored"); await loadInfo(); await loadAdmin(); });
   $("#treeform").onsubmit = guard(async (ev) => {
     const f = ev.target;
     policy = await rpc("setpolicy", { memberInvites: { depth: Math.max(0, Math.floor(+f.depth.value || 0)), quota: Math.max(0, Math.floor(+f.quota.value || 0)) } });

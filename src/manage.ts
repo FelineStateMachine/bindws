@@ -27,6 +27,7 @@ import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 import { gitStorage } from "./git-storage.ts";
+import { createBackup, deleteBackup, listBackups } from "./backups.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -680,6 +681,16 @@ export const METHODS: Record<string, Method> = {
     },
   },
   dumpnow: { action: "storage", run: async ({ relay, t, reply }) => reply({ result: await writeDump(relay, t) }) },
+  backupnow: {
+    action: "storage",
+    run: async ({ relay, params, reply }) => {
+      const id = typeof params[0] === "string" && params[0] ? params[0] : `backup-${now()}`;
+      const result = await createBackup(relay, id);
+      return typeof result === "string" ? reply({ error: result }, result.startsWith("invalid:") ? 400 : 403) : reply({ result: { ...result.manifest, url: "/backups/" + id } });
+    },
+  },
+  listbackups: { action: "storage", reads: true, run: async ({ relay, reply }) => reply({ result: await listBackups(relay) }) },
+  deletebackup: { action: "storage", run: async ({ relay, str, reply }) => reply({ result: await deleteBackup(relay, str(0)) }) },
   setsuccession: {
     action: "transfer",
     run: async ({ relay, s, params, str, num, hex64, reply }) => {

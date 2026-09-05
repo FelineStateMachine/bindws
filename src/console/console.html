@@ -328,6 +328,12 @@
         <p class="note">A JSONL of events, one per line, such as a dump or a strfry export, or a JSON array. Up to 64 MB. Signatures are checked; bans and kind rules apply; the write rule does not. Progress shows under Jobs.</p>
         <form id="importform" class="addrow"><input class="txt" type="file" name="file" accept=".jsonl,.json,.ndjson,application/json" required><button class="btn">Import</button></form>
       </div>
+      <div class="block">
+        <h3>Backup and restore</h3>
+        <p class="note">A private archive includes configuration, events, site files and Git objects. It excludes keys, fuel, jobs and push registrations. Archives are limited to 8 MB and restore only works on a fresh relay.</p>
+        <div class="addrow"><input class="txt mono" id="backupid" placeholder="backup name" value="backup"><button type="button" id="backupnow" class="btn">Create and download</button><input class="txt" type="file" id="backupfile" accept="application/json"><button type="button" id="backuppreview" class="btn">Preview restore</button><button type="button" id="backuprestore" class="btn">Restore</button></div>
+        <ul id="backups" class="plain"></ul>
+      </div>
     </section>
 
     <section class="panel" data-panel="sync">
