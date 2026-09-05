@@ -20,7 +20,8 @@
     "dev:stage": "node scripts/dev/stage.mjs",
     "dev:junk": "node scripts/dev/junk.mjs",
     "dev:shot": "node scripts/dev/shot.mjs",
-    "dev:zaptest": "node scripts/dev/zaptest.mjs"
+    "dev:zaptest": "node scripts/dev/zaptest.mjs",
+    "test:network": "node scripts/ops/network.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
