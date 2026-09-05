@@ -48,6 +48,7 @@ export interface Job {
   // readers and is the greatest cursor reached by any target.
   targetCursors?: Record<string, number>;
   targetStatus?: Record<string, { status: "pending" | "accepted" | "rejected"; error: string; at: number }>;
+  targetAttempts?: Record<string, number>;
   stored: number;
   skipped: number;
   blobs: number;
@@ -108,7 +109,7 @@ export function checkJob(raw: unknown, relay: Relay): JobSpec | string {
   const every = r.every === undefined ? 0 : Number(r.every);
   if (!(EVERY as readonly number[]).includes(every)) return "invalid: every must be 0, 1, 6 or 24 hours";
   if (kind === "push" && relay.settings.policy.reads === "members" && filter.kinds?.some(isPrivate)) return "restricted: a members-only relay does not rebroadcast private kinds";
-  return { kind, label, relays, filter, every, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, targetCursors: {}, targetStatus: {}, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null };
+  return { kind, label, relays, filter, every, running: false, startedAt: 0, rounds: 0, failures: 0, relayIndex: 0, cursor: 0, targetCursors: {}, targetStatus: {}, targetAttempts: {}, stored: 0, skipped: 0, blobs: 0, sent: 0, refused: 0, last: null };
 }
 
 // relaysFromList reads the owner's kind 10002 stored on this relay and
@@ -178,6 +179,7 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
   if (job.filter.since) f.since = job.filter.since;
   job.targetCursors ??= {};
   job.targetStatus ??= {};
+  job.targetAttempts ??= {};
   const membersOnly = relay.settings.policy.reads === "members";
   let more = false, failed = "", reached = 0;
   const legacyCursor = job.cursor;
@@ -203,6 +205,7 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
       job.cursor = Math.max(job.cursor, rows[rows.length - 1].seq);
     } catch (err) {
       failed = url + ": " + (err instanceof Error ? err.message : String(err));
+      job.targetAttempts[url] = (job.targetAttempts[url] ?? 0) + 1;
       job.targetStatus[url] = { status: "pending", error: failed, at: now() };
       more = true;
     }

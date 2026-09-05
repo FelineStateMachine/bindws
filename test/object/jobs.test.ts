@@ -125,6 +125,23 @@ describe("rebroadcast", () => {
   });
 });
 
+describe("rebroadcast cursor safety", () => {
+  it("does not advance a target past an unprocessed refusal tail", async () => {
+    const owner = generateSecretKey();
+    const src = "cursor-tail.bind.ws", target = "cursor-tail-target.bind.ws";
+    const events = Array.from({ length: 6 }, (_, i) => ev(owner, 7, "tail-" + i));
+    await relay(src, owner, events);
+    const targetOwner = generateSecretKey();
+    await relay(target, targetOwner);
+    await rpc(target, targetOwner, "setpolicy", { writes: "owner" });
+    const started = await rpc(src, owner, "addjob", { kind: "push", relays: ["wss://" + target], filter: { kinds: [7] } });
+    const jobs = await drive(src, owner);
+    const job = jobs.find((j) => j.id === started.result.id)!;
+    expect(job.targetCursors?.["wss://" + target]).toBe(0);
+    expect((await (await WS.connect(target)).req({ kinds: [7] })).length).toBe(0);
+  });
+});
+
 describe("standing jobs", () => {
   it("runs a recurring pull on its interval, caps standing jobs, and can be removed", async () => {
     const owner = generateSecretKey();
