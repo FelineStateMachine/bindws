@@ -12,16 +12,40 @@ main { max-width: 64rem; }
 .care .g.off i::after { content: ""; position: absolute; width: 3px; height: 40px; background: var(--ink); transform: rotate(45deg); border-radius: 2px; box-shadow: 0 0 0 2px var(--paper); }
 .care .g small { font: 500 10px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); text-align: center; }
 #unclaimed { background: var(--butter); }
-.doors { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; } @media (max-width: 52rem) { .doors { grid-template-columns: 1fr 1fr; } } @media (max-width: 30rem) { .doors { grid-template-columns: 1fr; } }
+.doors { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; } @media (max-width: 52rem) { .doors { grid-template-columns: 1fr 1fr; } } @media (max-width: 30rem) { .doors { grid-template-columns: 1fr; } }
 .door { display: grid; grid-template-rows: auto 1fr; align-content: start; gap: .35rem; padding: .8rem .9rem; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); box-shadow: 3px 3px 0 var(--ink); min-width: 0; }
-.apps { display: grid; gap: 1.4rem; margin-top: 1rem; } .appgroup h4 { margin: 0 0 .2rem; font-size: 1rem; } .appgroup > .note { margin-top: 0; }
-.appgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; } @media (max-width: 52rem) { .appgrid { grid-template-columns: 1fr 1fr; } } @media (max-width: 30rem) { .appgrid { grid-template-columns: 1fr; } }
+.appgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; } @media (max-width: 40rem) { .appgrid { grid-template-columns: 1fr; } }
 .app { display: grid; align-content: start; gap: .4rem; padding: .8rem .9rem; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); box-shadow: 3px 3px 0 var(--ink); min-width: 0; }
 .app-head { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; } .app-head b { font-size: 15px; } .app-head small { color: var(--ink-3); } .app p { margin: 0; font-size: 13px; color: var(--ink-2); }
-.app-acts { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .2rem; } .app-acts .btn { padding: .3rem .7rem; font-size: 13px; }
-.phones { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, max-content)); gap: .8rem; margin-top: 1rem; } .phones img { display: block; width: 150px; height: 150px; } .phones .door { justify-items: start; }
+.app-acts { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .2rem; } .app-acts .btn { padding: .3rem .7rem; font-size: 13px; } .app-acts .btn svg { margin-right: .3rem; }
+#apps { margin-top: .8rem; } #apps-note:empty { display: none; }
+.door.relay { margin-bottom: .8rem; } .door.relay .v { font-size: 14px; }
+.app-ic { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 2px solid var(--ink); border-radius: 9px; background: var(--sun); box-shadow: 2px 2px 0 var(--ink); flex: 0 0 auto; user-select: none; -webkit-user-select: none; }
+.app-ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.app-head { align-items: center; } .app-head .pill { margin-left: auto; font-size: 11px; }
+.app-qr { margin-top: .4rem; } .app-qr img { display: block; width: 150px; height: 150px; border: 2px solid var(--ink); border-radius: 10px; background: #fff; }
+.app .who-note { margin: 0; font-size: 12px; color: var(--ink-3); }
+/* The rest of a shortcut's links, behind a disclosure so one Open leads. */
+details.more summary { cursor: pointer; list-style: none; font: 600 12px var(--sans); color: var(--ink-2); } details.more summary::-webkit-details-marker { display: none; }
+details.more summary::before { content: "+ "; font-family: var(--mono); } details.more[open] summary::before { content: "- "; }
+.app-more { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; } .app-more .btn { padding: .3rem .7rem; font-size: 13px; }
+/* The doors, the bridge and the Git example, folded under the apps. */
+details.sub { margin-top: 1.4rem; border-top: 2px dashed var(--line); padding-top: 1rem; } details.sub > summary { cursor: pointer; list-style: none; font: 600 14px var(--sans); }
+details.sub > summary::-webkit-details-marker { display: none; } details.sub > summary::before { content: "+ "; font-family: var(--mono); } details.sub[open] > summary::before { content: "- "; }
+details.sub > .doors { margin-top: .8rem; }
+/* The owner's list: one row per shortcut, the fields of the one being edited below it. */
+.conn-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: .8rem; padding: .4rem 0; background: var(--paper); } .conn-bar h3 { margin: 0; flex: 1; } .conn-bar .note:empty { display: none; }
+.conns { display: grid; gap: .5rem; }
+.conn { display: grid; grid-template-columns: auto 1fr auto auto; gap: .6rem; align-items: center; padding: .5rem .7rem; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); box-shadow: 3px 3px 0 var(--ink); }
+.conn-main { min-width: 0; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; } .conn-main b { font-size: 14px; } .conn-main small { color: var(--ink-3); } .conn-main .pill { font-size: 11px; }
+.conn-vis { width: auto; font-size: 13px; padding: .25rem 1.8rem .25rem .5rem; }
+.conn-acts { display: flex; gap: .3rem; } .conn-acts .ib { width: 30px; height: 30px; box-shadow: 1px 1px 0 var(--ink); } .conn-acts .ib svg { width: 13px; height: 13px; } .conn.editing .ib[data-conn="edit"] { background: var(--sun); }
+.conn-edit { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem 1rem; padding: .6rem 0 .2rem; border-top: 2px dashed var(--line); }
+.conn-edit label { display: grid; gap: .2rem; font-size: 12px; font-weight: 600; color: var(--ink-2); } .conn-edit input.txt { font-size: 14px; padding: .3rem .5rem; } .conn-edit input:invalid { box-shadow: 0 0 0 3px var(--red-soft); }
+.conns .empty { color: var(--ink-3); margin: 0; }
+@media (max-width: 40rem) { .conn { grid-template-columns: auto 1fr; } .conn-vis, .conn-acts { grid-column: 2; } .conn-acts { justify-content: flex-end; } }
 .door small { font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
-.door .v { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: .5rem; font: 500 13px/1.45 var(--mono); } .door .v span { min-width: 0; overflow-wrap: anywhere; }
+.door .v { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; font: 500 13px/1.45 var(--mono); } .door .v span { min-width: 0; white-space: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
 .door .ib { width: 24px; height: 24px; box-shadow: 1px 1px 0 var(--ink); flex: 0 0 auto; } .door .ib svg { width: 12px; height: 12px; }
 #peoplesec { background: var(--peach); }
 .dir { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -43,10 +67,10 @@ main { max-width: 64rem; }
 .invoice { margin-top: 1rem; border: 2px dashed var(--ink); border-radius: 12px; padding: .9rem 1rem; background: var(--paper); }
 .invoice p { margin: 0 0 .6rem; color: var(--ink-2); font-size: 14px; } .invoice .state { font-size: 13px; color: var(--forest); }
 .invoice textarea { margin-top: .7rem; min-height: 3.4rem; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
-details.disclosure summary { cursor: pointer; font: 400 1.6rem/1 var(--display); list-style: none; display: flex; align-items: center; gap: .5rem; }
-details.disclosure summary::-webkit-details-marker { display: none; }
+details.disclosure > summary { cursor: pointer; font: 400 1.6rem/1 var(--display); list-style: none; display: flex; align-items: center; gap: .5rem; }
+details.disclosure > summary::-webkit-details-marker { display: none; }
 .folds details + details, .folds #frontsec:not(.hidden) + details { border-top: 2px solid var(--line); margin-top: 1.2rem; padding-top: 1.2rem; } .folds #frontsec .metarow { margin-bottom: 0; } .folds .doors { margin-top: 1rem; } .folds > details > .block:first-of-type { margin-top: 1.4rem; }
-details.disclosure summary::before { content: "+"; font: 700 1.4rem var(--mono); width: 1.4rem; } details.disclosure[open] summary::before { content: "–"; }
+details.disclosure > summary::before { content: "+"; font: 700 1.4rem var(--mono); width: 1.4rem; } details.disclosure[open] > summary::before { content: "–"; }
 .about { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .6rem 1.2rem; margin-top: 1rem; font-size: 14px; }
 .about small { display: block; color: var(--ink-3); font-size: 12px; } .about div > div { overflow-wrap: anywhere; }
 .console { margin-top: 3rem; }
@@ -101,6 +125,8 @@ td input.txt { padding: .25rem .5rem; font-size: 14px; } td select.role { width:
 @media (max-width: 40rem) { .events:not(#kinds):not(#jobs) th:first-child, .events:not(#kinds):not(#jobs) td:first-child { display: none; } }
 
 .slegend { justify-content: flex-start; margin: 0 0 1.2rem; }
+/* The storage bar follows the list-history block, so it keeps a block's distance. */
+#listhistoryblock + .kbar { margin-top: 1.8rem; }
 #s-totals { margin-bottom: .4rem; }
 td.keep { white-space: nowrap; } td.keep input { width: 5.5rem; display: inline-block; margin-right: .3rem; } td.keep input::placeholder { color: var(--ink-3); }
 #kinds tr.any td:first-child { font-weight: 600; }

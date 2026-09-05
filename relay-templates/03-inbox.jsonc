@@ -35,5 +35,9 @@
       "kind": null,
       "days": 90
     }
+  ],
+  "connections": [
+    {"template": "find-me", "visibility": "public"},
+    {"template": "notes", "visibility": "public"}
   ]
 }

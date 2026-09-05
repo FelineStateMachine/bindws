@@ -40,7 +40,8 @@ docs: main takes commits, not pull requests
 
 - **The area** is the module, folder or concern the change belongs to:
   `views`, `kinds`, `config`, `routes`, `console`, `docs`, `test`, `ci`,
-  `host`, `rules`, `relay-templates`, `scripts`, `tidy`.
+  `host`, `rules`, `relay-templates`, `connection-templates`, `connections`,
+  `scripts`, `tidy`.
 - **No imperative mood and no Conventional Commits.** There is no `feat:`,
   `fix:`, `chore:`, and no "add", "update" or "refactor" opening a subject.
 - **Length is not a constraint.** The median subject is 75 characters and the
@@ -55,7 +56,7 @@ Each commit typechecks on its own.
 
 ## Documentation
 
-- `docs/` is numbered with two digits: `00` to `05` for users, `10` to `16`
+- `docs/` is numbered with two digits: `00` to `05` for users, `10` to `17`
   for developers, `20` and up for draft NIPs the repository implements ahead
   of upstream.
 - Each file opens with frontmatter naming its `title` and its `audience`
@@ -164,6 +165,7 @@ file means adding its row.
 | Catalog | Where | Enforced |
 |---|---|---|
 | one row per template | `relay-templates/README.md` | yes, the build fails without it |
+| one row per connection template | `connection-templates/README.md` | yes, the build fails without it |
 | one link per doc | `README.md` | by review |
 | one entry per generated file | `src/gen/` staleness check | yes, in `npm run typecheck` |
 | every door | `test/object/exposure.test.ts` | by review |

@@ -50,8 +50,12 @@
     </div>
     <details class="disclosure" id="aboutsec" name="page"><summary>About, for clients</summary><div id="about" class="about"></div></details>
     <details class="disclosure" id="connectsec" name="page"><summary>Connect</summary>
+    <div class="door relay"><small>nostr relay</small><div class="v"><span id="d-ws"></span><button class="ib" data-copy="ws" title="Copy relay URL" aria-label="Copy relay URL"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
+    <p class="note">Each shortcut hands this relay to an app, with a QR code for a phone. Whichever app, add the relay URL above under its relay settings to post here.</p>
+    <div class="appgrid" id="apps"></div>
+    <p class="note" id="apps-note"></p>
+    <details class="sub" id="conn-details"><summary>Connection details</summary>
     <div class="doors">
-      <div class="door"><small>nostr relay</small><div class="v"><span id="d-ws"></span><button class="ib" data-copy="ws" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
       <div class="door"><small>Blossom media</small><div class="v"><span id="d-blossom"></span><button class="ib" data-copy="blossom" title="Copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button></div></div>
       <div class="door"><small>names</small><div class="v"><span id="d-nip05"></span></div></div>
       <div class="door"><small>HTTP bridge, NIP-98</small><div class="v"><span>POST /events, /query, /count</span></div></div>
@@ -65,12 +69,7 @@
         <p class="note">To host your own, use a Nostr Git client to publish your repository and signed branch state to this relay before pushing to the same remote. <a href="https://github.com/FelineStateMachine/bindws/blob/main/docs/22-grasp-01-git-hosting.md">Git hosting guide</a>.</p>
       </div>
     </div>
-    <div class="block">
-      <h3>Open it in an app</h3>
-      <p class="note">Relay apps open this relay as a place. Feed apps do not: they find the owner here through a profile link that carries this relay as the hint, and learn the relay from that. Either way, add <span class="mono" id="apps-ws"></span> under the app's relay settings to post here.</p>
-      <div class="apps" id="apps"></div>
-      <div class="phones" id="phones"></div>
-    </div>
+    </details>
     </details>
   </section>
 
@@ -112,6 +111,7 @@
       <a href="#moderation" data-tab="moderation">Moderation<span class="count" id="tc-reports"></span></a>
       <a href="#rules" data-tab="rules">Rules</a>
       <a href="#identity" data-tab="identity">Identity</a>
+      <a href="#connect" data-tab="connect">Connect</a>
       <a href="#data" data-tab="data">Data</a>
       <a href="#sync" data-tab="sync">Sync</a>
       <a href="#views" data-tab="views">Views</a>
@@ -322,6 +322,21 @@
             <div class="row"><button class="btn" id="copynaddr">Copy naddr</button><button class="btn" id="copyembed">Copy embed</button></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="connect">
+      <h2>Connect</h2>
+      <p class="lead">The shortcuts on the Connect fold: which apps, in what order, and who sees each.</p>
+      <div class="block">
+        <div class="conn-bar"><h3>Shortcuts</h3><span class="note" id="connnote"></span><button type="button" id="connsave" class="btn pri" disabled>Save shortcuts</button></div>
+        <p class="note">Top to bottom is the order visitors see. Edit sets a title of your own and the template's inputs; a shortcut whose feature is off waits until it is switched on.</p>
+        <div id="conns" class="conns"></div>
+      </div>
+      <div class="block">
+        <h3>Library</h3>
+        <p class="note">One template per app, from the repository's connection-templates folder; the relay URL, the owner's profile and the viewer's own key fill in when the page opens.</p>
+        <div id="connlib" class="appgrid"></div>
       </div>
     </section>
 

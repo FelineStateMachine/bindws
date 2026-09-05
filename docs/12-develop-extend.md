@@ -27,6 +27,7 @@ src/
   audit.ts      the moderation log: one row per change from manage.ts or groups.ts
   presets.ts    the templates as one-click presets, some with a standing pull
   config.ts     the configuration document: parse, plan, apply, export
+  connections.ts the Connect fold's app shortcuts: the library's parser, the owner's list, /connect.json
   manage.ts     NIP-86 methods over NIP-98
   domains.ts    custom hostnames: the Cloudflare client and the KV mapping
   dumps.ts      scheduled JSONL dumps to R2
@@ -59,6 +60,7 @@ src/
   console/      console.html, console.css, console.js: the console as written
   gen/signer.ts generated: the NIP-46 client library the console loads from /signer.js
   gen/templates.ts generated from relay-templates/
+  gen/connections.ts generated from connection-templates/
   landing.ts    the apex, rendered from config
   ui.ts         the shared look
 test/
@@ -68,11 +70,14 @@ test/
   conformance/  black-box suite for any relay URL, one file per NIP, files included
 relay-templates/      one relay configuration per template, the presets the console offers
 relay-config.schema.json  the configuration file's schema, served at the apex
+connection-templates/ one app shortcut per template, the library the Connect tab offers
+connection-template.schema.json  a connection template's schema, served at the apex
 scripts/
   build/   build-signer.mjs signer-entry.js   bundle nostr-tools for the console's remote signing
            build-console.mjs                  fold src/console into src/gen/console.ts
            build-templates.mjs                fold relay-templates/ into src/gen/templates.ts
-  check/   check-console.mjs check-celld.mjs check-config.mjs   run by npm run typecheck; check-config also checks any file
+           build-connections.mjs              fold connection-templates/ into src/gen/connections.ts
+  check/   check-console.mjs check-celld.mjs check-connections.mjs check-config.mjs   run by npm run typecheck; check-config also checks any file
   dev/     dev-signer.mjs seed.mjs stage.mjs junk.mjs shot.mjs zaptest.mjs   npm run dev:signer, dev:seed, dev:stage, dev:junk, dev:shot, dev:zaptest
   ops/     margin.mjs network.mjs relay.mjs    npm run margin; npm run test:network; npm run relay check|plan|push|pull
 
@@ -157,9 +162,11 @@ To look at what you changed: `npm run dev`, then `npm run dev:signer`, open `htt
 
 Rules that hold across pages: no middle dots, no purposeless subtext, tables scroll inside their card on narrow screens, decorative elements are not selectable, a multi-field form uses the labelled grid rather than one row of inputs, and the copy above a block is one sentence.
 
+The Connect fold on the relay's page and the Connect tab in the owner's console are clients of `/connect.json` and the `listconnectiontemplates`, `listconnections` and `setconnections` methods. What they show is a library of files in `connection-templates/`, folded into `src/gen/connections.ts` by `npm run build:connections` the way the presets are; the file format, the placeholders, the owner's list and how to add a template are in [Connection templates](17-connection-templates.md).
+
 ## Screenshots
 
-`npm run dev:shot <url> <out.png> [width] [height]` renders a page with phone or desktop emulation over the Chrome debugging protocol and prints the layout's scroll width, which should equal the viewport width.
+`npm run dev:shot <url> <out.png> [width] [height] [--nostr] [--eval <js>]` renders a page with phone or desktop emulation over the Chrome debugging protocol and prints the layout's scroll width, which should equal the viewport width. `--nostr` signs in as the dev signer's key (`npm run dev:signer` must be running), so the owner's console is in the picture; `--eval` runs a snippet after the page has loaded, such as opening a fold or a tab, before the shot. The pictures in `docs/img/` come from a relay staged with `npm run dev:stage`.
 
 ## Pull requests
 

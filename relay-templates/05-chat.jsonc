@@ -26,5 +26,8 @@
     ],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "group", "visibility": "public"}
+  ]
 }

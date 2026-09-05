@@ -20,5 +20,10 @@
       1059
     ]
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "notes", "visibility": "public"},
+    {"template": "find-me", "visibility": "public"},
+    {"template": "blog", "visibility": "public"}
+  ]
 }

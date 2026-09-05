@@ -1,0 +1,15 @@
+// The relay as a feed: everything posted here, in Jumble, which opens a
+// relay by URL. The QR carries the same link for a phone.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Notes",
+  "about": "Everything posted on this relay as one feed.",
+  "app": "Jumble",
+  "where": "web",
+  "icon": "notes",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://jumble.social/?r={relay:url|enc}" }
+  ]
+}

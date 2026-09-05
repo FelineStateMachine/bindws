@@ -144,7 +144,9 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 - `stats`: counts, connections, name, owner and fuel.
 - `getpolicy`: the whole policy.
-- `listpresets`: preset names, descriptions and whether one needs a source.
+- `listpresets`: preset names, descriptions, whether one needs a source, and the Connect fold's shortcuts a preset sets when it has them.
+- `listconnectiontemplates`: the Connect fold's library, each template with `available`, whether the feature it needs is on.
+- `listconnections`: the owner's shortcut list, or the defaults while there is none.
 - `listmembers`, `listpeople`, `listallowedpubkeys`: the member list in three shapes.
 - `listbannedpubkeys`, `listbannedevents`, `listblockedips`: the bans.
 - `listinvites`: detailed invite records, including expired and exhausted entries; a member under the invite rule sees only their own.
@@ -191,6 +193,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 - `setretention kind|null days`, `purgekind kind|null days`.
 - `resetrules`: the defaults, kind rules and keep-for cleared.
 - `applypreset name {source?}`: a bundle; `search` needs a source, `articles` takes one.
+- `setconnections [list]`: the Connect fold's shortcuts, the whole list in the order shown, each `{template, visibility?, title?, about?, inputs?}`, up to 24; an entry that does not fit fails the call with `invalid:` and the reason. See [Connection templates](17-connection-templates.md).
 
 **Identity**
 
@@ -210,7 +213,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 
 **Config**
 
-- `exportconfig`, `importconfig document [{dryRun: true}]`: rules, identity, members, bans, address blocks, kind rules and retention as one document (format `bind.ws/relay-config/2`). A section the document leaves out is left alone. With `dryRun`, the answer is `{ changes, warnings }`: what applying would change, section by section with a `summary` line each, and the entries the relay would not take; nothing is applied or logged.
+- `exportconfig`, `importconfig document [{dryRun: true}]`: rules, identity, members, bans, address blocks, kind rules, retention and the Connect fold's shortcuts as one document (format `bind.ws/relay-config/2`). A section the document leaves out is left alone. With `dryRun`, the answer is `{ changes, warnings }`: what applying would change, section by section with a `summary` line each, and the entries the relay would not take; nothing is applied or logged.
 
 **Jobs**
 
@@ -239,7 +242,7 @@ per live Durable Object instance, so eviction or restart resets it.
 
 ## The configuration file
 
-`exportconfig` is a document, and a document can live in a repository. The format is `bind.ws/relay-config/2`: `policy`, `members`, `bans`, `addresses`, `banned_events`, `kinds` and `retention`, each a section, and a section the file leaves out is left alone when it is applied, so a file may carry the rules and nothing about people. The schema is at `https://bind.ws/relay-config.schema.json`; put it in `$schema` and the editor checks the file as you type. JSONC is fine: comments and trailing commas.
+`exportconfig` is a document, and a document can live in a repository. The format is `bind.ws/relay-config/2`: `policy`, `members`, `bans`, `addresses`, `banned_events`, `kinds`, `retention` and `connections`, each a section, and a section the file leaves out is left alone when it is applied, so a file may carry the rules and nothing about people. `connections` is the Connect fold's shortcuts, in order, each naming a template from the repository's `connection-templates/` folder with who sees it and the template's inputs ([Connection templates](17-connection-templates.md)). The schema is at `https://bind.ws/relay-config.schema.json`; put it in `$schema` and the editor checks the file as you type. JSONC is fine: comments and trailing commas.
 
 Four verbs, run from a checkout of the repository with `RELAY_SK` holding the owner's key as hex or nsec:
 

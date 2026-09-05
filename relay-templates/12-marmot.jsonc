@@ -18,5 +18,8 @@
     "allow": [10002, 10050, 1059, 30443, 445],
     "block": []
   },
-  "retention": []
+  "retention": [],
+  "connections": [
+    {"template": "marmot", "visibility": "public"}
+  ]
 }

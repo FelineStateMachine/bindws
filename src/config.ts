@@ -3,12 +3,15 @@
 // an operator's repository holds. parseConfig checks the shape and says
 // what it dropped; planConfig says what applying it would change; applyConfig
 // does. A section that is absent is left alone, so a template carries the
-// rules and nothing about people.
-import { DEFAULT_POLICY, policyPatch, validIP, type Policy, type Settings } from "./settings.ts";
+// rules and nothing about people. The connections section is the Connect
+// fold's app shortcuts, so a template can set the rules and the shortcuts
+// that go with them in one click.
+import { DEFAULT_POLICY, policyPatch, validIP, type Connection, type Policy, type Settings } from "./settings.ts";
+import { parseConnections } from "./connections.ts";
 
 export const FORMAT = "bind.ws/relay-config/2";
 const FORMATS = new Set(["bind.ws/relay-config/1", FORMAT]);
-export const SECTIONS = ["policy", "members", "bans", "addresses", "banned_events", "kinds", "retention"] as const;
+export const SECTIONS = ["policy", "members", "bans", "addresses", "banned_events", "kinds", "retention", "connections"] as const;
 export type Section = (typeof SECTIONS)[number];
 // What an export leaves out: the owner's own, and the platform's.
 const NOT_IN_A_FILE = new Set(["owner", "lease", "succession", "customHosts"]);
@@ -39,6 +42,8 @@ export interface Config {
   banned_events: { id: string; reason: string }[];
   kinds: { allow: number[]; block: number[] };
   retention: { kind: number | null; days: number }[];
+  // The Connect fold's app shortcuts (connections.ts), in order.
+  connections: Connection[];
   // Entries the document had that no relay would take, one line each.
   warnings: string[];
 }
@@ -55,7 +60,7 @@ export function parseConfig(raw: unknown, cur: Policy = DEFAULT_POLICY): Config 
   if (!c || typeof c !== "object" || Array.isArray(c)) return "invalid: not a bind.ws relay configuration";
   if (!FORMATS.has(c.format as string)) return "invalid: format must be " + FORMAT;
   const warnings: string[] = [];
-  const out: Config = { name: str(c.name, 64), sections: [], policy: {}, members: [], bans: [], addresses: [], banned_events: [], kinds: { allow: [], block: [] }, retention: [], warnings };
+  const out: Config = { name: str(c.name, 64), sections: [], policy: {}, members: [], bans: [], addresses: [], banned_events: [], kinds: { allow: [], block: [] }, retention: [], connections: [], warnings };
   if (c.template && typeof c.template === "object") {
     const t = c.template as Record<string, unknown>;
     const template: Template = { title: str(t.title, 80), about: str(t.about, 400) };
@@ -128,6 +133,13 @@ export function parseConfig(raw: unknown, cur: Policy = DEFAULT_POLICY): Config 
     if ((kind === null || kindOK(kind)) && Number.isInteger(x.days) && (x.days as number) > 0 && (x.days as number) <= 36500) out.retention.push({ kind: kind as number | null, days: x.days as number });
     else warnings.push(`retention[${i}]: needs a kind (or null) and days from 1 to 36500`);
   }
+  if (c.connections !== undefined) {
+    const parsed = parseConnections(c.connections);
+    if (typeof parsed === "string") return parsed;
+    out.connections = parsed.list;
+    warnings.push(...parsed.warnings);
+    out.sections.push("connections");
+  }
   return out;
 }
 
@@ -139,6 +151,7 @@ export interface Changes {
   banned_events: { add: string[]; remove: string[] };
   kinds: { allow: { add: number[]; remove: number[] }; block: { add: number[]; remove: number[] } };
   retention: { add: { kind: number | null; days: number }[]; remove: { kind: number | null; days: number }[] };
+  connections: { add: Connection[]; remove: Connection[]; reordered: boolean };
   // One line per change, for a person; empty when applying would change nothing.
   summary: string[];
 }
@@ -161,7 +174,7 @@ const show = (v: unknown) => {
 // sections the document has are compared.
 export function planConfig(s: Settings, cfg: Config): Changes {
   const has = (k: Section) => cfg.sections.includes(k);
-  const ch: Changes = { policy: [], members: { add: [], remove: [], change: [] }, bans: { add: [], remove: [] }, addresses: { add: [], remove: [] }, banned_events: { add: [], remove: [] }, kinds: { allow: { add: [], remove: [] }, block: { add: [], remove: [] } }, retention: { add: [], remove: [] }, summary: [] };
+  const ch: Changes = { policy: [], members: { add: [], remove: [], change: [] }, bans: { add: [], remove: [] }, addresses: { add: [], remove: [] }, banned_events: { add: [], remove: [] }, kinds: { allow: { add: [], remove: [] }, block: { add: [], remove: [] } }, retention: { add: [], remove: [] }, connections: { add: [], remove: [], reordered: false }, summary: [] };
   if (has("policy")) {
     for (const [k, to] of Object.entries(cfg.policy)) {
       const from = (s.policy as unknown as Record<string, unknown>)[k];
@@ -206,6 +219,16 @@ export function planConfig(s: Settings, cfg: Config): Changes {
     const say = (r: { kind: number | null; days: number }) => `${r.kind === null ? "everything" : "kind " + r.kind} ${r.days} days`;
     if (d.add.length || d.remove.length) ch.summary.push(`retention: ${[...d.add.map((r) => "+" + say(r)), ...d.remove.map((r) => "-" + say(r))].join(", ")}`);
   }
+  if (has("connections")) {
+    // A shortcut is the whole of its entry: the same template with another
+    // visibility or input is one removed and one added.
+    const cur = s.connections();
+    const d = diff(cur, cfg.connections, (c) => JSON.stringify(c));
+    ch.connections = { ...d, reordered: d.add.length === 0 && d.remove.length === 0 && JSON.stringify(cur) !== JSON.stringify(cfg.connections) };
+    const say = (c: Connection) => c.template + (c.visibility === "public" ? "" : " (" + c.visibility + ")");
+    if (d.add.length || d.remove.length) ch.summary.push(`connections: ${[...d.add.map((c) => "+" + say(c)), ...d.remove.map((c) => "-" + say(c))].join(", ")}`);
+    else if (ch.connections.reordered) ch.summary.push("connections: reordered");
+  }
   return ch;
 }
 
@@ -241,6 +264,7 @@ export function applyConfig(s: Settings, cfg: Config, now: number) {
     for (const r of s.listRetention()) s.setRetention(r.kind, 0);
     for (const r of cfg.retention) s.setRetention(r.kind, r.days);
   }
+  if (has("connections")) s.setConnections(cfg.connections);
 }
 
 // exportConfig writes the relay as a document, every section, lists in a
@@ -258,5 +282,6 @@ export function exportConfig(s: Settings, name: string) {
     addresses: byKey(s.listIPBlocks(), (a) => a.ip),
     kinds: { allow: [...s.listKinds("allow")].sort((a, b) => a - b), block: [...s.listKinds("block")].sort((a, b) => a - b) },
     retention: s.listRetention(),
+    connections: s.connections(),
   };
 }

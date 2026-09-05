@@ -10,6 +10,7 @@ import { now } from "./event.ts";
 import { clientIP, customHost, hostnameKnown, leaseAllowed, siteHost } from "./edge.ts";
 import { customTarget } from "./domains.ts";
 import schema from "../relay-config.schema.json";
+import connectionSchema from "../connection-template.schema.json";
 
 // The entry module exports the handler and the object only: workerd
 // refuses any other kind of export here.
@@ -86,6 +87,8 @@ export default {
       if (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") return new Response(FAVICON_SVG, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } });
       // The configuration file's schema, for editors: relay-config.schema.json in the repository.
       if (url.pathname === "/relay-config.schema.json") return Response.json(schema, { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=3600" } });
+      // The connection template's schema: connection-template.schema.json in the repository.
+      if (url.pathname === "/connection-template.schema.json") return Response.json(connectionSchema, { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=3600" } });
       if (url.pathname === "/lease" && req.method === "POST") return lease(req, env, url);
       if (url.pathname === "/lease" && req.method === "OPTIONS") {
         return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "POST, OPTIONS" } });

@@ -1,0 +1,21 @@
+// The owner's photos on this relay's Blossom store, in bouquet, a media
+// manager for Blossom and NIP-96 servers (flox1an/bouquet README). No
+// client here encrypts blobs, and the owner-only start hides only the
+// shortcut: who may read the files is the relay's read rule, which a blob
+// follows like an event. bouquet has no server URL parameter
+// (src/main.tsx), so the store's address is a copy link.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Photo library",
+  "about": "The owner's photos on this relay's file store, in a media manager that takes the store as a server; the read rule says who may see the files.",
+  "app": "bouquet",
+  "where": "web",
+  "icon": "photo",
+  "feature": "files",
+  "visibility": "owner",
+  "links": [
+    { "label": "Open", "href": "https://bouquet.slidestr.net/" },
+    { "label": "Copy Blossom server URL", "copy": "{relay:web}" }
+  ]
+}

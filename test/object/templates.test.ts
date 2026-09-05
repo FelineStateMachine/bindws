@@ -26,7 +26,7 @@ describe("templates", () => {
       for (const f of FEATURE_NAMES) for (const n of FEATURE_NIPS[f]) expect(doc.supported_nips.includes(n), `${p.name}: NIP-${n}`).toBe(featureOn(policy, f));
       expect((await get(host, "/.well-known/nostr/nip96.json")).status).toBe(features.files ? 200 : 404);
       expect((await get(host, "/feed.xml")).status).toBe(features.pages && p.reads === "open" ? 200 : 404);
-      const dry = (await rpc(host, owner, "importconfig", p.config === undefined ? {} : { format: "bind.ws/relay-config/2", policy: p.config.policy, kinds: p.config.kinds, retention: p.config.retention }, { dryRun: true })).result;
+      const dry = (await rpc(host, owner, "importconfig", p.config === undefined ? {} : { format: "bind.ws/relay-config/2", policy: p.config.policy, kinds: p.config.kinds, retention: p.config.retention, ...(p.config.sections.includes("connections") ? { connections: p.config.connections } : {}) }, { dryRun: true })).result;
       expect(dry.changes.summary, p.name).toEqual([]);
       expect(dry.warnings, p.name).toEqual([]);
     }

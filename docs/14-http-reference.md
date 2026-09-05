@@ -21,6 +21,7 @@ management stay open.
 | `/lease` | POST | NIP-98 optional | `{ name, url, console, expires_at, days, holder?, claim }`; a signature reserves the claim for that key | 201; 401 bad signature; 429 rate limited, five a minute per address, 60 overall; 503 no free name |
 | `/favicon.svg` | GET | none | the icon | 200 |
 | `/relay-config.schema.json` | GET | none | the JSON Schema of a relay configuration file, for `$schema` ([Scripts and agents](13-scripts-and-agents.md#the-configuration-file)) | 200 |
+| `/connection-template.schema.json` | GET | none | the JSON Schema of a connection template, for `$schema` ([Connection templates](17-connection-templates.md)) | 200 |
 | `/.well-known/bindws/hostname?domain=<host>` | GET, on any host | none | whether the hostname is one of ours: the apex, a valid name under it, or a mapped custom hostname; no body. For a proxy issuing certificates on demand ([Hosting without Cloudflare](16-hosting-without-cloudflare.md)) | 200 ours; 404 not |
 
 ## Relay page and information
@@ -192,6 +193,12 @@ Only while reads are open. Otherwise every path here answers 404, and an unclaim
 | `/card.nostr` | GET | the same facts as a kind 30078 signed by the relay's key | 200; 404 no owner |
 | `/card.svg` | GET | a 600 by 315 picture with the naddr as a QR | 200 |
 | `/qr.svg?text=` | GET | any text up to 512 bytes as a QR | 200; 400 empty; 413 too long |
+
+## Connect
+
+| Path | Method | Auth | Answers | Status |
+|---|---|---|---|---|
+| `/connect.json` | GET | NIP-98 optional | `{ relay: { url, host, web, name }, viewer, connections }`: the Connect fold's shortcuts the asker may see, links filled in for them, each `{ template, title, about, app, where, icon, visibility, links, qr, needsUser }`. Unsigned, the public ones, with the links that need a viewer left out and `needsUser` set, cached a minute; signed, that key's view, `no-store` ([Connection templates](17-connection-templates.md)) | 200; 401 bad signature |
 
 ## People, invites and names
 

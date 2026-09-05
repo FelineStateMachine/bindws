@@ -1,0 +1,21 @@
+// NIP-5A sites: a root site lives at https://<npub>.<domain>, so the
+// owner's and the viewer's own are plain links (docs/20-nip-5a-static-websites.md).
+// The publish command is nsyte's, with this relay as both the relay and
+// the Blossom server; the -r/--relays and -s/--servers flags are read from
+// sandwichfarm/nsyte src/commands/deploy.ts on 2026-09-05.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Sites",
+  "about": "Static sites this relay hosts, and the command that publishes one here.",
+  "app": "nsyte",
+  "where": "web, terminal",
+  "icon": "site",
+  "feature": "sites",
+  "visibility": "public",
+  "links": [
+    { "label": "Open the owner's site", "href": "https://{owner:npub}.{relay:domain}" },
+    { "label": "Open your site", "href": "https://{user:npub}.{relay:domain}" },
+    { "label": "Copy publish command", "copy": "nsyte deploy ./dist --relays {relay:url} --servers {relay:web}" }
+  ]
+}

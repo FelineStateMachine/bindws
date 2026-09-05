@@ -46,5 +46,6 @@ export function describe(cfg) {
   if (cfg.sections.includes("banned_events")) lines.push(`banned events: ${cfg.banned_events.length}`);
   if (cfg.sections.includes("kinds")) lines.push(`kinds: allow ${cfg.kinds.allow.length ? cfg.kinds.allow.join(", ") : "every kind"}; block ${cfg.kinds.block.join(", ") || "none"}`);
   if (cfg.sections.includes("retention")) lines.push(`retention: ${cfg.retention.map((r) => `${r.kind === null ? "everything" : "kind " + r.kind} ${r.days} days`).join(", ") || "none"}`);
+  if (cfg.sections.includes("connections")) lines.push(`connections: ${cfg.connections.map((c) => c.template + (c.visibility === "public" ? "" : " (" + c.visibility + ")")).join(", ") || "none"}`);
   return lines;
 }

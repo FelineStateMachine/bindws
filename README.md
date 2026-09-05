@@ -21,8 +21,8 @@ That answers with a relay at a memorable name, open to anyone for 14 days. Claim
 - **Encrypted group transport.** Opt-in Marmot KeyPackages and opaque MLS group messages, with account admission and storage caps for ephemeral authors. Clients manage encryption and group membership.
 - **A Git host.** Opt-in GRASP-01 Smart HTTP, backed by [ntig](https://github.com/FelineStateMachine/ntig). Signed NIP-34 state authorizes branch and tag changes; events wait for their Git objects before publication. Hosting has [explicit storage limits](docs/22-grasp-01-git-hosting.md#git-http), and the owner can request a bounded read-only inventory without authorizing deletion.
 - **A file host.** Blossom and NIP-96 on the same bucket, with mirroring, pre-flight checks and file reports.
-- **A console.** Nine tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica, a media host or a quiet relay with every costly feature off, in one click. The template collection also includes static sites, public or member-published Marmot transport and Git repositories.
-- **A file.** Everything the console sets, as one document with a schema: check it offline, see what applying would change, apply it, pull it back. Keep your relay in your repository. The presets are the same files, in `relay-templates/`.
+- **A console.** Ten tabs on the relay's own page, signed by a browser extension or a remote signer app on a phone. Presets set up an outbox, an inbox, a private relay, a chat, a search replica, a media host, a quiet relay with every costly feature off or a home with sites, files and Git on, in one click, with the app shortcuts to match. The template collection also includes static sites, public or member-published Marmot transport and Git repositories. The Connect fold shows those shortcuts to anyone who opens the page: the right app, the relay already attached, a QR for a phone.
+- **A file.** Everything the console sets, the app shortcuts included, as one document with a schema: check it offline, see what applying would change, apply it, pull it back. Keep your relay in your repository. The presets are the same files, in `relay-templates/`, and the shortcuts they name are files in `connection-templates/`.
 - **Jobs.** Pull another relay in, keep a standing mirror, fetch your own history from your relay list, rebroadcast to other relays, and dump everything to a file on a schedule.
 - **Your own domain.** `wss://relay.example.com` onto your relay with one CNAME, or a custom hostname targeting one of your static sites.
 - **Succession.** Name an heir. If your key goes silent, the relay warns you for a month and then hands itself over.
@@ -55,6 +55,7 @@ Site hosting and mirroring are on by default; Marmot and GRASP are off until ena
 - [Hosting bind.ws](docs/11-hosting-bindws.md): run your own on your own domain, and watch it through logs, traces and metrics.
 - [Hosting without Cloudflare](docs/16-hosting-without-cloudflare.md): the same Worker on celld, with your own bucket and proxy, and what "supported" promises.
 - [Develop and extend](docs/12-develop-extend.md): layout, tests, adding methods and NIPs, the console, the templates.
+- [Connection templates](docs/17-connection-templates.md): the app shortcuts on the Connect fold, the template file, its placeholders, the owner's list, `/connect.json`, and how to add one.
 - [Costs and margins](docs/15-costs-and-margins.md): application budgets, retained storage, inventory interpretation and deployment margins.
 
 ### Draft NIPs

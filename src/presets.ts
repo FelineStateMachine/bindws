@@ -1,13 +1,14 @@
 // Presets: the templates in relay-templates/, one click each. A template is
 // a relay configuration with the rules sections only (policy, kinds and
-// retention), so applying one sets writes, reads, the directory, the
-// features, the kind rules and the keep-for rules together and leaves
+// retention, and the Connect fold's shortcuts when it names them), so
+// applying one sets writes, reads, the directory, the features, the kind
+// rules, the keep-for rules and the app shortcuts together and leaves
 // limits, identity, people and bans alone. Haven's four relays are the
 // first four: names are cheap here, so one name per role is the way to get
 // the same split.
 import { TEMPLATES } from "./gen/templates.ts";
 import { applyConfig, parseConfig, type Config } from "./config.ts";
-import type { Policy, Settings } from "./settings.ts";
+import type { Connection, Policy, Settings } from "./settings.ts";
 
 export interface Preset {
   name: string;
@@ -19,6 +20,9 @@ export interface Preset {
   allow: number[];
   block: number[];
   retention: { kind: number | null; days: number }[];
+  // The Connect fold's shortcuts the template sets, when it has a
+  // connections section; left out, the shortcuts stay as they are.
+  connections?: Connection[];
   // A replica keeps itself in step with a source relay through a standing
   // pull of its kinds. "required" presets refuse to apply without one.
   source?: "required" | "optional";
@@ -30,7 +34,7 @@ export const PRESETS: Preset[] = TEMPLATES.map(({ name, document }) => {
   const config = parseConfig(document);
   if (typeof config === "string" || !config.template) throw new Error(`template ${name}: ${typeof config === "string" ? config : "no template block"}`);
   const p = config.policy;
-  return { name, title: config.template.title, about: config.template.about, source: config.template.source, every: config.template.every, writes: p.writes ?? "open", reads: p.reads ?? "open", directoryPublic: p.directoryPublic ?? true, allow: config.kinds.allow, block: config.kinds.block, retention: config.retention, config };
+  return { name, title: config.template.title, about: config.template.about, source: config.template.source, every: config.template.every, writes: p.writes ?? "open", reads: p.reads ?? "open", directoryPublic: p.directoryPublic ?? true, allow: config.kinds.allow, block: config.kinds.block, retention: config.retention, ...(config.sections.includes("connections") ? { connections: config.connections } : {}), config };
 });
 
 export function findPreset(name: string): Preset | undefined {

@@ -1,0 +1,19 @@
+// Marmot (MLS over Nostr) group chat: White Noise is the reference client,
+// on iOS by TestFlight and Android by Zapstore or GitHub (whitenoise.chat
+// and its /download page, checked 2026-09-05). The app has no relay URL
+// form, so the links are its site and the relay URL for its settings.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Encrypted groups",
+  "about": "End-to-end encrypted group chat over this relay, in White Noise.",
+  "app": "White Noise",
+  "where": "phone",
+  "icon": "lock",
+  "feature": "marmot",
+  "visibility": "public",
+  "links": [
+    { "label": "Open", "href": "https://whitenoise.chat/" },
+    { "label": "Get the app", "href": "https://whitenoise.chat/download" }
+  ]
+}

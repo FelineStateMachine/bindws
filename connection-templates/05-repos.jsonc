@@ -1,0 +1,25 @@
+// The relay's Git repositories: GitWorkshop has a relay page by host, the
+// pattern the console already uses. The clone command names the signed-in
+// viewer, since a repository here lives at <relay>/<npub>/<repo>.git
+// (docs/22-grasp-01-git-hosting.md), so a visitor sees that link left out.
+// The owner fills in the repository name when adding the shortcut; the
+// input's pattern keeps it to letters, digits, dot, dash and underscore,
+// since the value lands inside a quoted shell command and a URL path.
+{
+  "$schema": "https://bind.ws/connection-template.schema.json",
+  "format": "bind.ws/connection-template/1",
+  "title": "Repos",
+  "about": "This relay's Git repositories, and the clone command for yours.",
+  "app": "GitWorkshop",
+  "where": "web, terminal",
+  "icon": "git",
+  "feature": "grasp",
+  "visibility": "public",
+  "inputs": [
+    { "name": "repo", "label": "Repository name", "placeholder": "my-project", "default": "<repo>", "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\-]{0,63}$" }
+  ],
+  "links": [
+    { "label": "Open", "href": "https://gitworkshop.dev/relay/{relay:host|enc}" },
+    { "label": "Copy clone command", "copy": "git clone '{relay:web}/{user:npub}/{input:repo}.git'" }
+  ]
+}
