@@ -44,4 +44,59 @@ describe("private list recovery", () => {
     });
     expect((await rpc(host, owner, "listlisthistory")).result).toEqual([]);
   });
+
+  it("caps an owner's history across distinct bookmark sets", async () => {
+    const host = "list-history-owner-cap.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await runInDurableObject(env.RELAY.getByName("list-history-owner-cap"), (relay: Relay) => {
+      const base = now();
+      for (let i = 0; i < 100; i++) {
+        expect(relay.store.save(ev(owner, 30003, "old-" + i, [["d", "set-" + i]], base + i * 2), base + i * 2)).toBe("");
+        expect(relay.store.save(ev(owner, 30003, "new-" + i, [["d", "set-" + i]], base + i * 2 + 1), base + i * 2 + 1)).toBe("");
+      }
+      expect(relay.sql.exec<{ n: number }>(`SELECT count(*) AS n FROM list_history WHERE owner=?`, pk(owner)).one().n).toBe(96);
+    });
+  });
+
+  it("keeps member history private and clears colon-containing address history on deletion", async () => {
+    const host = "list-history-privacy.bind.ws";
+    const owner = generateSecretKey();
+    const member = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await rpc(host, owner, "setmember", pk(member));
+    let ownerHistoryID = "";
+    await runInDurableObject(env.RELAY.getByName("list-history-privacy"), (relay: Relay) => {
+      const base = now();
+      relay.store.save(ev(owner, 10002, "owner-old", [], base), base);
+      const ownerCurrent = ev(owner, 10002, "owner-new", [], base + 1);
+      relay.store.save(ownerCurrent, base + 1);
+      ownerHistoryID = ownerCurrent.id;
+      relay.store.save(ev(member, 10002, "member-old", [], base + 2), base + 2);
+      relay.store.save(ev(member, 10002, "member-new", [], base + 3), base + 3);
+      relay.store.save(ev(owner, 30003, "set-old", [["d", "set:with:colon"]], base + 4), base + 4);
+      relay.store.save(ev(owner, 30003, "set-new", [["d", "set:with:colon"]], base + 5), base + 5);
+    });
+    const memberHistory = (await rpc(host, member, "listlisthistory")).result as any[];
+    expect(memberHistory).toHaveLength(1);
+    expect(memberHistory[0].kind).toBe(10002);
+    expect((await rpc(host, member, "restorelist", ownerHistoryID)).status).toBe(404);
+    await runInDurableObject(env.RELAY.getByName("list-history-privacy"), (relay: Relay) => {
+      const deletion = ev(owner, 5, "", [["a", `30003:${pk(owner)}:set:with:colon`]], now() + 10);
+      expect(relay.store.save(deletion, deletion.created_at)).toBe("");
+      expect(relay.sql.exec<{ n: number }>(`SELECT count(*) AS n FROM list_history WHERE owner=? AND kind=30003`, pk(owner)).one().n).toBe(0);
+    });
+  });
+
+  it("does not restore an expired saved list", async () => {
+    const host = "list-history-expiry.bind.ws";
+    const owner = generateSecretKey();
+    await rpc(host, owner, "claim");
+    await runInDurableObject(env.RELAY.getByName("list-history-expiry"), (relay: Relay) => {
+      const base = now();
+      relay.store.save(ev(owner, 10003, "expired", [["expiration", String(base - 1)]], base), base);
+      relay.store.save(ev(owner, 10003, "current", [], base + 1), base + 1);
+    });
+    expect((await rpc(host, owner, "listlisthistory")).result).toEqual([]);
+  });
 });
