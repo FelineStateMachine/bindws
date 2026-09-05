@@ -26,7 +26,6 @@ import { addDomain, checkDomain, listDomains, removeDomain, setDomainSite } from
 import { verifyNIP98 } from "./auth.ts";
 import { SITE_KINDS, checkSite, siteLabel, sitePaths } from "./sites.ts";
 import { gitStorage } from "./git-storage.ts";
-import { listHistory, restoreHistory } from "./list-history.ts";
 
 // A call: the relay and the request, who is calling and as what, the
 // parameters with their readers, and how to answer.
@@ -260,13 +259,13 @@ export const METHODS: Record<string, Method> = {
   },
   listlisthistory: {
     action: "read", reads: true, ownListHistory: true,
-    run: ({ relay, caller, reply }) => reply({ result: listHistory(relay.sql, caller) }),
+    run: ({ relay, caller, reply }) => reply({ result: relay.store.listHistory(caller) }),
   },
   restorelist: {
     action: "read", reads: true, ownListHistory: true,
     run: ({ relay, caller, params, str, hex64, reply }) => {
       if (params.length !== 1 || !hex64(str(0))) return reply({ error: "invalid: give one saved list event id" }, 400);
-      const restored = restoreHistory(relay.sql, caller, str(0));
+      const restored = relay.store.restoreHistory(caller, str(0));
       return typeof restored === "string" ? reply({ error: restored }, 404) : reply({ result: restored });
     },
   },

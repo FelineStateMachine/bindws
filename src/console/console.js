@@ -973,10 +973,14 @@
     if (act === "downloaddump") { b.disabled = true; try { await downloadDump(id); } catch (e) { toast(e.message); } finally { b.disabled = false; } return; }
     if (act === "restorelist") {
       if (!signer.ready()) { toast(NO_SIGNER); return; }
-      if (!confirm("Restore this list version? It will be signed and published as the newest version.")) return;
       try {
-        const draft = await rpc("restorelist", id);
-        const signed = await signer.signEvent(draft);
+        const preview = await rpc("restorelist", id);
+        const d = preview.diff || {};
+        const added = (d.addedTags || []).map((t) => "+ " + JSON.stringify(t)).join("\n");
+        const removed = (d.removedTags || []).map((t) => "- " + JSON.stringify(t)).join("\n");
+        const changes = [added, removed, d.contentChanged ? "content changed" : "content unchanged"].filter(Boolean).join("\n");
+        if (!confirm("Restore this list version?\n\n" + (changes || "No tag or content changes") + "\n\nIt will be signed and published as the newest version.")) return;
+        const signed = await signer.signEvent(preview.draft);
         const result = await bridge("/events", signed);
         if (!result.accepted) throw new Error(result.message || "The relay refused the restored list.");
         toast("List restored"); await loadListHistory(); await loadStorage();

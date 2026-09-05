@@ -10,8 +10,8 @@ describe("private list recovery", () => {
     const owner = generateSecretKey();
     const other = generateSecretKey();
     await rpc(host, owner, "claim");
+    const base = now();
     await runInDurableObject(env.RELAY.getByName("list-history"), (relay: Relay) => {
-      const base = now();
       for (let i = 0; i < 14; i++) expect(relay.store.save(ev(owner, 10002, "v" + i, [["r", "wss://relay" + i]], base + i), base + i)).toBe("");
       expect(relay.store.save(ev(other, 10002, "other", [], base + 20), base + 20)).toBe("");
       expect(relay.store.save(ev(owner, 10003, "bookmarks", [], base + 21), base + 21)).toBe("");
@@ -22,10 +22,15 @@ describe("private list recovery", () => {
     expect((await rpc(host, other, "listlisthistory")).status).toBe(403);
     const chosen = history.find((x) => x.kind === 10002);
     const restored = (await rpc(host, owner, "restorelist", chosen.event_id)).result;
-    expect(restored).toMatchObject({ kind: 10002, content: expect.stringMatching(/^v/) });
-    expect(restored).not.toHaveProperty("sig");
-    expect(restored).not.toHaveProperty("pubkey");
+    expect(restored.draft).toMatchObject({ kind: 10002, content: expect.stringMatching(/^v/) });
+    expect(restored.draft).not.toHaveProperty("sig");
+    expect(restored.draft).not.toHaveProperty("pubkey");
+    expect(restored.diff).toMatchObject({ contentChanged: true });
+    expect(restored.draft.created_at).toBeGreaterThanOrEqual(base + 14);
     expect((await rpc(host, other, "restorelist", chosen.event_id)).status).toBe(403);
+    await runInDurableObject(env.RELAY.getByName("list-history"), (relay: Relay) => {
+      expect(relay.sql.exec<{ n: number }>(`SELECT count(*) AS n FROM list_history WHERE owner=?`, pk(owner)).one().n).toBeLessThanOrEqual(96);
+    });
   });
 
   it("clears prior versions when the author vanishes", async () => {
