@@ -1230,7 +1230,7 @@
   });
   // The folds are a group: opening one closes the rest. Browsers with the
   // details name attribute do this themselves; this covers the others.
-  $$(".folds details").forEach((d) => d.addEventListener("toggle", () => { if (d.open) $$(".folds details").forEach((o) => { if (o !== d && o.open) o.open = false; }); }));
+  $$(".folds > details").forEach((d) => d.addEventListener("toggle", () => { if (d.open) $$(".folds > details").forEach((o) => { if (o !== d && o.open) o.open = false; }); }));
   document.addEventListener("click", async (ev) => {
     const b = ev.target.closest("button[data-copytext]"); if (!b) return;
     try { await navigator.clipboard.writeText(b.dataset.copytext); toast("copied"); } catch { /* no clipboard */ }
