@@ -29,7 +29,7 @@
     "@noble/hashes": "^2.4.0",
     "fflate": "0.8.3",
     "nostr-tools": "^2.25.1",
-    "ntig": "file:vendor/ntig-0.6.0.tgz"
+    "ntig": "file:vendor/ntig-0.6.1.tgz"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

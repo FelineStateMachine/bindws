@@ -23,6 +23,27 @@ export class RepositoryAccess {
     finally { this.release(lease); }
   }
 
+  // Fuel receipts are provider-signed credits, not ordinary relay writes.
+  // They may be recorded while a Git transfer holds the long-lived lease so
+  // a payment can unblock that transfer. Other exclusive operations still
+  // fence them, and an idle relay uses the normal event lease.
+  async runFuel<T>(work: () => Promise<T> | T, refused: () => Promise<T> | T): Promise<T> {
+    if (this.active && this.active.kind !== "git") {
+      // Preserve the existing nested-work behavior for a caller that already
+      // owns control (for example, the authenticated bridge route). A
+      // separate caller remains fenced by the active operation.
+      if (this.owned) return this.run("event", work, refused);
+      return refused();
+    }
+    if (this.active?.kind === "git") {
+      const lease = this.active;
+      lease.holders++;
+      try { return await this.context.run(lease, work); }
+      finally { this.release(lease); }
+    }
+    return this.run("event", work, refused);
+  }
+
   // A streamed Git response still reads repository state after fetch returns.
   // Carry authority into each pull, and release it on EOF, error or disconnect.
   async response(kind: Kind, work: () => Promise<Response>, refused: () => Response): Promise<Response> {

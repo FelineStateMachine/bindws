@@ -1012,11 +1012,14 @@ export class Relay extends DurableObject<Env> {
   // acceptAny routes the special kinds (zap receipts, NIP-56 reports) and
   // falls back to the ordinary write path. Callers broadcast when stored.
   async acceptAny(e: Event, conn: ConnState): Promise<{ ok: boolean; msg: string; stored: boolean }> {
+    if (e.kind === 9735) {
+      const receipt = await this.repositoryAccess.runFuel(
+        () => acceptReceipt(this, e, conn.host),
+        () => null,
+      );
+      if (receipt) return receipt;
+    }
     return this.repositoryAccess.run("event", async () => {
-      if (e.kind === 9735) {
-        const r = await acceptReceipt(this, e, conn.host);
-        if (r) return r;
-      }
       if (e.kind === KIND_REPORT) return this.acceptReport(e, conn.host);
       if (isGroupManagement(e.kind) && (hasTag(e, "h") || isNIP43Request(e.kind))) return this.acceptGroup(e, conn);
       return this.accept(e, conn);

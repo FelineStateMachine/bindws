@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from "nostr-tools/pure";
 import { getToken } from "nostr-tools/nip98";
 import type { Relay } from "../../src/relay.ts";
-import { now, ev, rpc } from "../helpers/relay.ts";
+import { now, ev, pk, rpc } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 
 const SERVICE = "ab".repeat(32);
@@ -45,6 +45,43 @@ function receipt(req: Event, bolt11: string, signer = provider, p = SERVICE) {
 }
 
 describe("fuel", () => {
+  it("credits a provider receipt while a Git response is streaming", async () => {
+    const host = "fuel-stream.bind.ws";
+    await mockProvider("fuel-stream");
+    const owner = generateSecretKey();
+    const payer = generateSecretKey();
+    await claim(host, owner);
+    const req = zapRequest(payer, host, 1_000_000);
+    const good = receipt(req, "lnbc10u1streaminvoice");
+    const forged = receipt(req, "lnbc10u1forgedinvoice", generateSecretKey());
+    const stub = env.RELAY.getByName("fuel-stream");
+
+    await runInDurableObject(stub, async (relay: Relay) => {
+      const response = await relay.repositoryAccess.response(
+        "git",
+        async () => new Response(new ReadableStream<Uint8Array>({ start() {} })),
+        () => new Response("busy", { status: 429 }),
+      );
+      expect(relay.repositoryAccess.busy).toBe(true);
+
+      const credited = await relay.acceptAny(good, relay.virtualConn(host, pk(provider)));
+      expect(credited.ok).toBe(true);
+      expect(credited.msg).toBe("fuel: credited 1000 sats");
+      expect(relay.fuelStatus().creditedMsats).toBe(1_000_000);
+
+      const ordinary = await relay.acceptAny(ev(owner, 1, "during Git"), relay.virtualConn(host, pk(owner)));
+      expect(ordinary.ok).toBe(false);
+      expect(ordinary.msg).toContain("relay operation in progress");
+
+      const invalid = await relay.acceptAny(forged, relay.virtualConn(host, pk(owner)));
+      expect(invalid.ok).toBe(false);
+      expect(invalid.msg).toContain("relay operation in progress");
+
+      await response.body!.cancel();
+      expect(relay.repositoryAccess.busy).toBe(false);
+    });
+  });
+
   it("issues invoices, credits valid receipts once, ignores forgeries, and lifts the out-of-fuel restriction", async () => {
     const host = "fuel-a.bind.ws";
     await mockProvider("fuel-a");

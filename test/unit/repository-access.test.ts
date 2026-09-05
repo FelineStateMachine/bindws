@@ -63,6 +63,64 @@ describe("Repository admission", () => {
     expect(access.busy).toBe(false);
   });
 
+  it("admits provider fuel receipts during Git but fences them during other work", async () => {
+    const access = new RepositoryAccess();
+    const entered = latch();
+    const finish = latch();
+    const active = access.run<string>("git", async () => {
+      entered.release();
+      await finish.promise;
+      return "done";
+    }, refused);
+    await entered.promise;
+    expect(await access.runFuel(() => "credited", refused)).toBe("credited");
+    finish.release();
+    await active;
+
+    const controlEntered = latch();
+    const controlFinish = latch();
+    const control = access.run<string>("control", async () => {
+      controlEntered.release();
+      await controlFinish.promise;
+      return "done";
+    }, refused);
+    await controlEntered.promise;
+    expect(await access.runFuel(() => "unexpected", refused)).toBe("refused");
+    controlFinish.release();
+    await control;
+    await access.run<void>("control", async () => {
+      expect(await access.runFuel(() => "nested", refused)).toBe("nested");
+    }, () => undefined);
+    expect(access.busy).toBe(false);
+  });
+
+  it("keeps the Git lease alive until a concurrent fuel receipt finishes", async () => {
+    const access = new RepositoryAccess();
+    const gitEntered = latch();
+    const gitFinish = latch();
+    const fuelEntered = latch();
+    const fuelFinish = latch();
+    const git = access.run<string>("git", async () => {
+      gitEntered.release();
+      await gitFinish.promise;
+      return "done";
+    }, refused);
+    await gitEntered.promise;
+    const fuel = access.runFuel(async () => {
+      fuelEntered.release();
+      await fuelFinish.promise;
+      return "credited";
+    }, refused);
+    await fuelEntered.promise;
+    gitFinish.release();
+    await git;
+    expect(access.busy).toBe(true);
+    expect(await access.run("teardown", () => "unexpected", refused)).toBe("refused");
+    fuelFinish.release();
+    expect(await fuel).toBe("credited");
+    expect(access.busy).toBe(false);
+  });
+
   it("releases synchronous and asynchronous owners after failures", async () => {
     const access = new RepositoryAccess();
     expect(() => access.sync("event", () => { throw new Error("sync"); }, refused)).toThrow("sync");
