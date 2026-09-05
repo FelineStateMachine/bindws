@@ -181,8 +181,11 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
   const membersOnly = relay.settings.policy.reads === "members";
   let more = false, failed = "", reached = 0;
   const legacyCursor = job.cursor;
+  // Materialize every target's starting point before any target can advance
+  // the legacy cursor. This is the compatibility bridge for old jobs.
+  for (const url of job.relays) if (job.targetCursors[url] === undefined) job.targetCursors[url] = legacyCursor;
   for (const url of job.relays) {
-    const cursor = job.targetCursors[url] ?? legacyCursor ?? 0;
+    const cursor = job.targetCursors[url] ?? 0;
     const rows = relay.store.after(cursor, f, PUSH_BATCH, now());
     if (rows.length === 0) { job.targetStatus[url] = { status: "accepted", error: "", at: now() }; continue; }
     more = more || rows.length === PUSH_BATCH;
@@ -201,6 +204,7 @@ async function runPushRound(relay: Relay, job: Job): Promise<{ more: boolean; er
     } catch (err) {
       failed = url + ": " + (err instanceof Error ? err.message : String(err));
       job.targetStatus[url] = { status: "pending", error: failed, at: now() };
+      more = true;
     }
   }
   if (reached === 0 && failed) return { more: true, error: failed };
@@ -234,7 +238,7 @@ async function pushTo(relay: Relay, url: string, events: Event[], job: Job): Pro
         job.refused += pending.size;
         throw new Error("the relay stopped answering");
       }
-      if (refusedInARow >= REFUSALS_PER_TARGET) return;
+      if (refusedInARow >= REFUSALS_PER_TARGET) throw new Error("target refused too many events");
     }
   } finally {
     sock.close();
