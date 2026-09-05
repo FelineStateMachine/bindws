@@ -13,8 +13,7 @@
   "visibility": "public",
   "links": [
     { "label": "Open", "href": "https://primal.net/p/{owner:nprofile}" },
-    { "label": "Open in app", "href": "nostr:{owner:nprofile}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Open in app", "href": "nostr:{owner:nprofile}" }
   ],
   "qr": "nostr:{owner:nprofile}"
 }

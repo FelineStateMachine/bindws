@@ -44,7 +44,8 @@
           "name": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,23}$", "description": "the {input:name} placeholder it fills" },
           "label": { "type": "string", "minLength": 1, "maxLength": 60 },
           "placeholder": { "type": "string", "maxLength": 200 },
-          "default": { "type": "string", "maxLength": 500, "description": "the value when the owner leaves it blank" }
+          "default": { "type": "string", "maxLength": 500, "description": "the value when the owner leaves it blank" },
+          "pattern": { "type": "string", "maxLength": 200, "description": "a regular expression the owner's value must match; a value that lands in a URL path or a shell command names one" }
         }
       }
     }

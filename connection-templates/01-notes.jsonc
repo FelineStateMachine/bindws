@@ -10,7 +10,6 @@
   "icon": "notes",
   "visibility": "public",
   "links": [
-    { "label": "Open", "href": "https://jumble.social/?r={relay:url|enc}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Open", "href": "https://jumble.social/?r={relay:url|enc}" }
   ]
 }

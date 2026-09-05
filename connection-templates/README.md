@@ -14,7 +14,7 @@ relay fills in for whoever is looking. One good template works for anyone.
 | [repos](05-repos.jsonc) | the relay hosts Git repositories; GitWorkshop opens them and the clone command names yours. |
 | [sites](06-sites.jsonc) | the relay hosts NIP-5A sites: the owner's, the viewer's own, and the nsyte command that publishes one. |
 | [bookmarks](07-bookmarks.jsonc) | signed-in viewers keep bookmarks and lists here and Listr should manage them. |
-| [photos](08-photos.jsonc) | the owner's photos live on this relay's file store and only the owner should see the shortcut. |
+| [photos](08-photos.jsonc) | the owner's photos live on this relay's file store and only the owner should see the shortcut; the read rule, not the shortcut, says who may see the files. |
 | [files](09-files.jsonc) | members keep files on this relay's Blossom store and bouquet should manage them. |
 | [dm](10-dm.jsonc) | the relay is a DM inbox and people should message the owner privately from here. |
 | [marmot](11-marmot.jsonc) | the relay carries Marmot groups and White Noise is the app. |
@@ -27,7 +27,11 @@ A template is a JSON document (`$schema` names the copy served at
 `../connection-template.schema.json`) with a title, one sentence about it,
 the app, where the app runs, an icon, the links, and optionally the feature
 the shortcut needs, the visibility it starts with, what its QR carries and
-the inputs the owner fills in when adding it.
+the inputs the owner fills in when adding it. An input whose value lands in
+a URL path or a shell command names a `pattern` the value must match, so
+what the owner types cannot change the link or the command around it. The
+fold has one relay URL copy control of its own, so a template does not
+carry one.
 
 Links and the QR text carry placeholders:
 

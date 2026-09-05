@@ -14,10 +14,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open",
           "href": "https://jumble.social/?r={relay:url|enc}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }
@@ -40,10 +36,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open in app",
           "href": "nostr:{owner:nprofile}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ],
       "qr": "nostr:{owner:nprofile}"
@@ -94,10 +86,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open in app",
           "href": "nostr:{owner:nprofile}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ],
       "qr": "nostr:{owner:nprofile}"
@@ -108,7 +96,7 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
     "document": {
       "format": "bind.ws/connection-template/1",
       "title": "Repos",
-      "about": "This relay's Git repositories in GitWorkshop, and the clone command for yours.",
+      "about": "This relay's Git repositories, and the clone command for yours.",
       "app": "GitWorkshop",
       "where": "web, terminal",
       "icon": "git",
@@ -119,7 +107,8 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
           "name": "repo",
           "label": "Repository name",
           "placeholder": "my-project",
-          "default": "<repo>"
+          "default": "<repo>",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\-]{0,63}$"
         }
       ],
       "links": [
@@ -130,10 +119,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Copy clone command",
           "copy": "git clone '{relay:web}/{user:npub}/{input:repo}.git'"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }
@@ -161,10 +146,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Copy publish command",
           "copy": "nsyte deploy ./dist --relays {relay:url} --servers {relay:web}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }
@@ -187,10 +168,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open in noStrudel",
           "href": "https://nostrudel.ninja/bookmarks/{user:nprofile}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }
@@ -200,7 +177,7 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
     "document": {
       "format": "bind.ws/connection-template/1",
       "title": "Photo library",
-      "about": "The owner's photos on this relay's file store, in a media manager that takes the store as a server.",
+      "about": "The owner's photos on this relay's file store, in a media manager that takes the store as a server; the read rule says who may see the files.",
       "app": "bouquet",
       "where": "web",
       "icon": "photo",
@@ -259,10 +236,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open in app",
           "href": "nostr:{owner:nprofile}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ],
       "qr": "nostr:{owner:nprofile}"
@@ -287,10 +260,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Get the app",
           "href": "https://whitenoise.chat/download"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }
@@ -309,10 +278,6 @@ export const CONNECTION_LIBRARY: { name: string; document: unknown }[] = [
         {
           "label": "Open",
           "href": "https://coracle.social/relays/{relay:host|enc}"
-        },
-        {
-          "label": "Copy relay URL",
-          "copy": "{relay:url}"
         }
       ]
     }

@@ -39,6 +39,10 @@ export interface ConnectionInput {
   label: string;
   placeholder: string;
   default: string; // the value when the owner leaves it blank
+  // A regular expression the owner's value must match, or "" for any text.
+  // A value that lands in a URL path or a shell command names one, so what
+  // the owner types cannot change the link or the command around it.
+  pattern: string;
 }
 export interface ConnectionTemplate {
   name: string;
@@ -114,7 +118,15 @@ export function parseConnectionTemplate(name: string, raw: unknown): ConnectionT
       if (inputs.some((o) => o.name === iname)) return `input ${iname} is declared twice`;
       const label = str(i.label, 60).trim();
       if (!label) return `input ${iname} needs a label`;
-      inputs.push({ name: iname, label, placeholder: str(i.placeholder, 200), default: str(i.default, 500) });
+      const pattern = str(i.pattern, 200);
+      if (pattern) {
+        try {
+          new RegExp(pattern);
+        } catch {
+          return `input ${iname} has a pattern that does not compile`;
+        }
+      }
+      inputs.push({ name: iname, label, placeholder: str(i.placeholder, 200), default: str(i.default, 500), pattern });
     }
   }
   const names = inputs.map((i) => i.name);
@@ -186,9 +198,12 @@ export function parseConnections(raw: unknown, label = "connections"): { list: C
       else {
         const inputs: Record<string, string> = {};
         for (const [k, v] of Object.entries(c.inputs as Record<string, unknown>)) {
-          if (!t.inputs.some((d) => d.name === k)) warnings.push(`${label}[${i}].inputs.${k}: ${t.name} has no such input`);
+          const declared = t.inputs.find((d) => d.name === k);
+          if (!declared) warnings.push(`${label}[${i}].inputs.${k}: ${t.name} has no such input`);
           else if (typeof v !== "string") warnings.push(`${label}[${i}].inputs.${k}: must be a string`);
-          else if (v.trim() !== "") inputs[k] = v.trim().slice(0, 500);
+          else if (v.trim() === "") continue;
+          else if (declared.pattern && !new RegExp(declared.pattern).test(v.trim().slice(0, 500))) warnings.push(`${label}[${i}].inputs.${k}: must match ${declared.pattern}`);
+          else inputs[k] = v.trim().slice(0, 500);
         }
         if (Object.keys(inputs).length) out.inputs = inputs;
       }

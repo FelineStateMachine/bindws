@@ -14,7 +14,6 @@
   "visibility": "public",
   "links": [
     { "label": "Open", "href": "https://whitenoise.chat/" },
-    { "label": "Get the app", "href": "https://whitenoise.chat/download" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Get the app", "href": "https://whitenoise.chat/download" }
   ]
 }

@@ -14,8 +14,7 @@
   "visibility": "public",
   "links": [
     { "label": "Open", "href": "https://yakihonne.com/profile/{owner:nprofile}" },
-    { "label": "Open in app", "href": "nostr:{owner:nprofile}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Open in app", "href": "nostr:{owner:nprofile}" }
   ],
   "qr": "nostr:{owner:nprofile}"
 }

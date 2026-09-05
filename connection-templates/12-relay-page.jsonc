@@ -11,7 +11,6 @@
   "icon": "feed",
   "visibility": "public",
   "links": [
-    { "label": "Open", "href": "https://coracle.social/relays/{relay:host|enc}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Open", "href": "https://coracle.social/relays/{relay:host|enc}" }
   ]
 }

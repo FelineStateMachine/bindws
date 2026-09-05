@@ -16,7 +16,6 @@
   "links": [
     { "label": "Open the owner's site", "href": "https://{owner:npub}.{relay:domain}" },
     { "label": "Open your site", "href": "https://{user:npub}.{relay:domain}" },
-    { "label": "Copy publish command", "copy": "nsyte deploy ./dist --relays {relay:url} --servers {relay:web}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Copy publish command", "copy": "nsyte deploy ./dist --relays {relay:url} --servers {relay:web}" }
   ]
 }

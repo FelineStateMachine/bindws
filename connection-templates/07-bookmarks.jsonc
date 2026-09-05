@@ -14,7 +14,6 @@
   "visibility": "auth",
   "links": [
     { "label": "Open", "href": "https://listr.lol/{user:npub}" },
-    { "label": "Open in noStrudel", "href": "https://nostrudel.ninja/bookmarks/{user:nprofile}" },
-    { "label": "Copy relay URL", "copy": "{relay:url}" }
+    { "label": "Open in noStrudel", "href": "https://nostrudel.ninja/bookmarks/{user:nprofile}" }
   ]
 }
