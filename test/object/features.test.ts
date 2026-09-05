@@ -10,12 +10,12 @@ import { upload } from "../helpers/media.ts";
 const status = async (host: string, path: string) => (await get(host, path)).status;
 
 describe("features", () => {
-  it("are all on by default, and setpolicy takes a map that survives export and import", async () => {
+  it("have explicit defaults, and setpolicy takes a map that survives export and import", async () => {
     const host = "feat-default.bind.ws";
     const owner = generateSecretKey();
     await rpc(host, owner, "claim");
     const p = (await rpc(host, owner, "getpolicy")).result;
-    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false, push: false });
+    expect(p.features).toEqual({ search: "prose", sync: true, count: true, discovery: true, names: true, files: true, pages: true, signer: true, sites: { enabled: true, mirror: true }, marmot: false, grasp: false, grasp02: false, grasp03: false, grasp05: false, grasp06: false, push: false });
     for (const n of [5, 45, 46, 50, 66, 77]) expect((await info(host)).supported_nips).toContain(n);
     const r = await rpc(host, owner, "setpolicy", { features: { search: "full", sync: false, bogus: true, count: "no" } });
     expect(r.result.features).toMatchObject({ search: "full", sync: false, count: true });

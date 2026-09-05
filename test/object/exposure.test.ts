@@ -52,6 +52,10 @@ async function seed(host: string): Promise<Fixture> {
 function doors(f: Fixture): { path: string; host?: string; method?: string; gated: boolean; blossom?: string }[] {
   return [
     { path: `/${npubEncode(pk(f.eve))}/member.git`, gated: false },
+    { path: `/prs/${npubEncode(pk(f.eve))}/member.git`, gated: false },
+    { path: `/prs/${npubEncode(pk(f.eve))}/member.git/info/refs?service=git-upload-pack`, gated: false },
+    { path: `/prs/${npubEncode(pk(f.eve))}/member.git/git-upload-pack`, method: "POST", gated: false },
+    { path: `/prs/${npubEncode(pk(f.eve))}/member.git/git-receive-pack`, method: "POST", gated: false },
     { host: f.siteHost, path: "/", gated: true },
     { host: f.siteHost, path: "/index.html", method: "HEAD", gated: true },
     { host: f.siteHost, path: "/.well-known/nsite/auth", gated: true },
@@ -114,6 +118,8 @@ describe("the read rule at every door", () => {
     expect((await rpc(host, stranger, "gitstorage", pk(owner), "missing")).status).toBe(403);
     const methods = (await rpc(host, owner, "supportedmethods")).result as string[];
     expect(methods).toContain("gitstorage");
+    expect((await rpc(host, stranger, "storagestats")).status).toBe(403);
+    expect((await rpc(host, owner, "storagestats")).result.graspSync).toMatchObject({ enabled: false, partial: false, events: { jobs: 0, failed: 0, history: 0 }, git: { jobs: 0, failed: 0 } });
   });
 
   it("shows a stranger nothing of a member, her note or her file", async () => {

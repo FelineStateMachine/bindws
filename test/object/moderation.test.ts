@@ -62,8 +62,9 @@ describe("report thresholds", () => {
     const note = ev(author, 1, "contested");
     expect((await c.ok(note)).ok).toBe(true);
     const report = (sk: Uint8Array) => ev(sk, 1984, "nope", [["e", note.id, "spam"], ["p", pk(author)]]);
-    expect((await c.ok(report(r1))).ok).toBe(true);
-    expect((await c.ok(report(r1))).ok).toBe(true); // the same reporter twice counts once
+    const firstReport = report(r1);
+    expect((await c.ok(firstReport)).ok).toBe(true);
+    expect((await c.ok(firstReport)).ok).toBe(true); // retry the same signed report across clock ticks
     expect((await c.req({ ids: [note.id] })).length).toBe(1);
     expect((await c.ok(report(r2))).ok).toBe(true);
     // Hidden everywhere stored events are read.
