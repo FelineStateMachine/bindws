@@ -1123,7 +1123,6 @@ export class Relay extends DurableObject<Env> {
 
   async alarm() {
     await pushTick(this);
-    const deliveryAt = await deliveryTick(this);
     return this.repositoryAccess.run("alarm", async () => {
       this.touch();
       const t = now();
@@ -1132,6 +1131,7 @@ export class Relay extends DurableObject<Env> {
         await this.teardown();
         return;
       }
+      const deliveryAt = await deliveryTick(this);
       const graspAt = await graspTick(this);
       await this.syncSites();
       await queueMirrors(this);

@@ -29,7 +29,13 @@ The Jobs table exposes **Source results** with mode, status, counts and any refu
 
 **Fetch my history** pulls your own events from every relay in your relay list, if a client has published that list here. Or give it relays to fetch from, separated by commas.
 
-**Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. A target that refuses five events in a row is left alone for that round. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
+**Rebroadcast** sends what your relay holds to other relays. Choose kinds and a window in days, or leave both blank for everything. As a standing job it forwards only what arrived since the last run. Each target has its own saved cursor and status, so a failing destination cannot skip history because another succeeded. A target that refuses five events in a row is left alone for that round; unacknowledged history remains available for a later retry. Events that only their author may publish are never sent, and a members-only relay never sends private messages.
+
+## Automatic delivery
+
+Enable **Automatic NIP-65 delivery** on the Rules tab to send newly accepted public events by you and your members to the author's write relays and tagged people's read relays. Routing uses the kind 10002 relay lists already stored here. It is off by default, with eight targets per event and a configurable maximum of one through sixteen.
+
+The Sync tab shows recent event/target results: pending, accepted or rejected, attempts and the last error. Each target gets up to four attempts. The queue holds at most 512 pending deliveries and 1,024 terminal results, kept for at most seven days. A full queue can omit new deliveries. This is best effort and costs fuel. Private kinds, protected events, imports and relay-generated events are excluded. Members-only relays never route automatically. Pending deliveries recheck the current event, membership and routing before sending.
 
 ## Import a file
 

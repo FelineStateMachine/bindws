@@ -337,6 +337,7 @@
         <h3>Jobs</h3>
         <p class="note">Work the relay does on its own, one round at a time. A pull copies what another relay has and this one lacks. Fetch my history pulls your own events from the relays in your relay list. Rebroadcast sends what is here to other relays. Bans and kind rules apply to what arrives.</p>
         <div class="scroll"><table id="jobs" class="events"><thead><tr><th>Job</th><th>Relays</th><th>Filter</th><th>Schedule</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+
         <form id="pullform" class="addrow"><input class="txt mono" name="url" placeholder="wss://other.relay" required><select class="txt" name="every" style="max-width:9rem"><option value="0">once</option><option value="1">every hour</option><option value="6">every 6 hours</option><option value="24">every day</option></select><button class="btn">Pull</button></form>
         <form id="backfillform" class="addrow"><input class="txt mono" name="relays" placeholder="relays, comma separated; blank uses your relay list"><button class="btn">Fetch my history</button></form>
         <form id="pushform">
@@ -348,6 +349,11 @@
           </div>
           <div class="actions"><button class="btn">Rebroadcast</button></div>
         </form>
+      </div>
+      <div class="block">
+        <h3>Automatic delivery</h3>
+        <p class="note">Recent per-target results for automatic NIP-65 delivery.</p>
+        <div class="scroll"><table id="deliveries"><thead><tr><th>Event</th><th>Target</th><th>Status</th><th>Attempts</th><th>Last error</th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="block">
         <h3>Fork this relay</h3>

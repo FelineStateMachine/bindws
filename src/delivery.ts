@@ -1,6 +1,6 @@
 // NIP-65 delivery: a small, durable, opt-in fanout queue. This is deliberately
 // separate from NIP-9a callbacks: targets are Nostr relays and receive EVENT.
-import { isPrivate, now, tagValues, type Event } from "./event.ts";
+import { expiration, isPrivate, now, tagValues, type Event } from "./event.ts";
 import { dial, Socket, checkPullURL } from "./pull.ts";
 import type { Relay } from "./relay.ts";
 
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS delivery_queue (
 CREATE INDEX IF NOT EXISTS delivery_due ON delivery_queue(status,due);
 `;
 const MAX_QUEUE = 512, MAX_ATTEMPTS = 4, TIMEOUT = 5000, BATCH = 4;
-const rows = <T extends Record<string, any>>(r: Relay, q: string, ...a: any[]): T[] => r.sql.exec<T>(q, ...a).toArray();
+const rows = <T extends Record<string, any>>(r: Relay, q: string, ...a: any[]): T[] => { const c = r.sql.exec<T>(q, ...a); const out = c.toArray(); r.meterPush(c.rowsRead, c.rowsWritten); return out; };
 const exec = (r: Relay, q: string, ...a: any[]) => { const c = r.sql.exec(q, ...a); r.meterPush(c.rowsRead, c.rowsWritten); return c; };
 
 function list(r: Relay, pk: string): { read: string[]; write: string[] } {
@@ -25,7 +25,7 @@ function list(r: Relay, pk: string): { read: string[]; write: string[] } {
     for (const t of (JSON.parse(row) as Event).tags) {
       if (t[0] !== "r" || !t[1]) continue;
       let u: URL; try { u = new URL(t[1]); } catch { continue; }
-      if (u.protocol !== "wss:" && u.protocol !== "ws:") continue;
+      if ((u.protocol !== "wss:" && u.protocol !== "ws:") || u.username || u.password || u.hash) continue;
       // NIP-65 is user supplied egress. Refuse obvious loopback/private
       // destinations; public DNS names remain the interoperable path.
       const h = u.hostname.toLowerCase();
@@ -55,7 +55,7 @@ function targets(r: Relay, e: Event): string[] {
 
 export function queueDelivery(r: Relay, e: Event): boolean {
   const p = r.settings.policy.delivery;
-  if (!p?.enabled || e.pubkey === r.identity.pubkey || !r.settings.isAllowed(e.pubkey) || isPrivate(e.kind) || e.tags.some((t: string[]) => t[0] === "-")) return false;
+  if (!p?.enabled || r.settings.policy.reads === "members" || r.settings.leaseExpired(now()) || e.pubkey === r.identity.pubkey || r.settings.isBanned(e.pubkey) || !r.settings.isAllowed(e.pubkey) || isPrivate(e.kind) || e.tags.some((t: string[]) => t[0] === "-")) return false;
   const ts = targets(r, e);
   if (!ts.length) return false;
   let n = rows<{ n: number }>(r, `SELECT count(*) n FROM delivery_queue WHERE status='pending'`)[0]?.n ?? 0;
@@ -75,13 +75,13 @@ async function send(r: Relay, target: string, e: Event): Promise<{ ok: boolean; 
     s.send("EVENT", e);
     const end = Date.now() + TIMEOUT;
     while (Date.now() < end) {
-      const m = await Promise.race([s.recv(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), Math.max(1, end - Date.now()))) ]);
+      const m = await s.recv(end - Date.now());
       if (m[0] !== "OK" || m[1] !== e.id) continue;
       if (m[2] === true || String(m[3] ?? "").startsWith("duplicate:")) return { ok: true, error: "" };
-      return { ok: false, error: String(m[3] ?? "rejected") };
+      return { ok: false, error: String(m[3] ?? "rejected").slice(0, 300) };
     }
     return { ok: false, error: "timeout" };
-  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+  } catch (e) { return { ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) }; }
   finally { s?.close(); }
 }
 
@@ -96,7 +96,7 @@ export async function deliveryTick(r: Relay): Promise<number> {
     const ev = rows<{ raw: string }>(r, `SELECT raw FROM events WHERE id=? AND pubkey=? AND kind NOT IN (4,1059,21059,24133)`, j.event_id, author)[0];
     if (!ev) { exec(r, `UPDATE delivery_queue SET status='rejected',error='event unavailable',updated_at=? WHERE event_id=? AND target=?`, t, j.event_id, j.target); continue; }
     const event = JSON.parse(ev.raw) as Event;
-    if (!r.settings.isAllowed(author) || !targets(r, event).includes(j.target)) { exec(r, `UPDATE delivery_queue SET status='rejected',error='routing no longer permitted',updated_at=? WHERE event_id=? AND target=?`, t, j.event_id, j.target); continue; }
+    if (r.settings.policy.reads === "members" || r.settings.isBanned(author) || !r.settings.isAllowed(author) || isPrivate(event.kind) || event.tags.some((t) => t[0] === "-") || (expiration(event) > 0 && expiration(event) <= now()) || !targets(r, event).includes(j.target)) { exec(r, `UPDATE delivery_queue SET status='rejected',error='routing no longer permitted',updated_at=? WHERE event_id=? AND target=?`, t, j.event_id, j.target); continue; }
     exec(r, `UPDATE delivery_queue SET attempts=attempts+1,due=?,updated_at=? WHERE event_id=? AND target=?`, t + 60, t, j.event_id, j.target);
     const result = await send(r, j.target, event);
     const attempts = j.attempts + 1;

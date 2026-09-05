@@ -156,6 +156,7 @@ The bridge takes the same header. `POST /events` answers `{ event_id, accepted, 
 - `pullfrom url`, `pullstatus`: copy one relay and follow it.
 - `addjob {kind, relays, filter?, every?, label?}`: a `pull` or `push`, once or every 1, 6 or 24 hours. Up to 10 relays; filters take up to 50 authors and 50 kinds and a `since`.
 - `removejob id`, `runjob id`, `listjobs`. Pull jobs expose `pullSources` while running and `last.sources` after finishing: each source carries its URL, mode, status, stored/skipped/blob counts, retry count, error and coverage warning. Query window progress is persisted with the job.
+- `deliverystatus`: recent automatic NIP-65 per-event target status, attempts and last error. Enable with `setpolicy {delivery: {enabled: true, maxTargets: 8}}`.
 - `backfill [relays?]`: your own events from your kind 10002 here, or from the list.
 
 **Transfer**

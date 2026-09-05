@@ -612,6 +612,12 @@
     let jobs;
     try { jobs = await rpc("listjobs"); } catch { return; }
     $("#jobs tbody").innerHTML = jobs.length ? jobs.map(fmtJob).join("") : '<tr><td colspan="6" class="muted">no jobs yet</td></tr>';
+    if (isOwner) {
+      try {
+        const deliveries = await rpc("deliverystatus");
+        $("#deliveries tbody").innerHTML = deliveries.length ? deliveries.map((d) => '<tr><td class="mono" title="' + esc(d.event_id) + '">' + esc(d.event_id.slice(0, 12)) + '</td><td class="mono">' + esc(d.target) + '</td><td>' + esc(d.status) + '</td><td>' + d.attempts + '</td><td>' + esc(d.error || "") + '</td></tr>').join("") : '<tr><td colspan="5" class="muted">no automatic deliveries yet</td></tr>';
+      } catch { /* unavailable to non-owners */ }
+    }
     if (jobs.some((j) => j.running || (j.nextRun && j.nextRun <= Math.floor(Date.now() / 1000) + 1))) jobsTimer = setTimeout(pollJobs, 3000);
   }
   const urls = (s) => s.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
