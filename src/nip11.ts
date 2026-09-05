@@ -94,7 +94,7 @@ export function nip11(relay: Relay, host: string) {
       : access[p.writes];
     const guests = p.writes !== "open" && p.openKinds.length ? ` Guest write exceptions apply to kinds ${p.openKinds.join(", ")}.` : "";
     const listing = featureOn(p, "grasp05") ? "Archive preview accepts repository announcements without naming this service in clone and relays." : "Repository announcements name this service in clone and relays.";
-    doc.repo_acceptance_criteria = `${eligibility} ${listing} State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 16 MiB packed history and 128 Git transactions per unmigrated format-1 repository. Explicitly migrated format-2 repositories retain at most 128 unique packs.`;
+    doc.repo_acceptance_criteria = `${eligibility} ${listing} State and collaboration events follow the relay write rule (${p.writes}) and kind rules; bans, proof of work and fuel apply.${guests} At most 16 repositories, 4 MiB per pack, 4 MiB per object, 16 MiB decoded per operation, and 16 MiB compressed objects plus 16 MiB metadata per repository. Git storage shares the relay SQLite allowance.`;
     if (p.writes !== "open" || p.blockedWords.length) doc.curation = "The relay's configured write rule and blocked topics apply to Nostr repository and collaboration events.";
   }
   if (featureOn(p, "sites")) doc.nsites = {

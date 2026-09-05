@@ -1,6 +1,6 @@
 // GRASP-02 Git reconciliation uses signed event targets and one bounded source
 // attempt per alarm. Durable due times survive restarts and rotate failed sources.
-import { fetchGitPack, readObjects, objectLinks, encodePack, sha256, classifyError } from "ntig";
+import { fetchGitPack, encodePack, sha256, classifyError } from "ntig";
 import { now, tag, type Event } from "./event.ts";
 import { featureOn } from "./settings.ts";
 import { KIND_GIT_PR, KIND_GIT_PR_UPDATE } from "./kinds.ts";
@@ -9,6 +9,7 @@ import { authorizedRepository, alternativePrAddress, gitRepository, promote } fr
 import { localName } from "./pull.ts";
 import type { RepositoryAnnouncement } from "./grasp-policy.ts";
 import type { Relay } from "./relay.ts";
+import { gitGraph, gitObjects } from "./git-objects.ts";
 
 interface Task { id: string; repo: RepositoryAnnouncement; eventId: string; event?: Event; refs: Record<string, string>; sources: string[]; }
 const HOUR = 3600;
@@ -66,9 +67,11 @@ async function reconcile(relay: Relay, task: Task, attempt: number): Promise<boo
   if (!task.event) for (const name of Object.keys(snapshot.refs)) if (!name.startsWith("refs/nostr/")) names.add(name);
   const updates = [...names].filter(name => (snapshot.refs[name] ?? null) !== (task.refs[name] ?? null)).map(name => ({ name, old: snapshot.refs[name] ?? null, new: task.refs[name] ?? null }));
   if (!updates.length) { await promote(relay, task.repo, wal); return true; }
-  const current = await wal.load();
-  const objects = await readObjects(current.packs);
-  const missing = [...new Set(Object.values(task.refs))].filter(oid => !objects.has(oid));
+  const objects = await gitObjects(wal);
+  const missing: string[] = [];
+  for (const oid of new Set(Object.values(task.refs))) {
+    if (!(await objects.info(oid))) missing.push(oid);
+  }
   let pack: Uint8Array | undefined;
   if (missing.length && task.event) {
     // A contributor may have uploaded here through GRASP-06. Copy its
@@ -78,21 +81,8 @@ async function reconcile(relay: Relay, task: Task, attempt: number): Promise<boo
       const local = await gitRepository(relay, address, true);
       const ref = `refs/nostr/${task.event.id}`;
       if ((await local.loadRefs()).refs[ref] === tag(task.event, "c")) {
-        const available = await readObjects((await local.load()).packs);
-        const needed = new Set<string>(), queue = new Set(missing);
-        while (queue.size) {
-          const oid = queue.values().next().value!;
-          queue.delete(oid);
-          if (needed.has(oid)) continue;
-          const object = available.get(oid);
-          if (!object) throw new Error("Local PR object graph is incomplete");
-          needed.add(oid);
-          for (const link of objectLinks(object)) {
-            if (!available.has(link.oid)) throw new Error("Local PR dependency is missing");
-            if (!needed.has(link.oid)) queue.add(link.oid);
-          }
-        }
-        pack = await encodePack([...needed].map(oid => available.get(oid)!));
+        const available = await gitGraph(local, missing);
+        pack = await encodePack(available);
       }
     }
   }

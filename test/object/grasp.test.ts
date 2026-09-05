@@ -11,6 +11,7 @@ import { gitRepositoryPath } from "../../src/grasp-policy.ts";
 import { ev, info, pk, rpc, sleep } from "../helpers/relay.ts";
 import { WS } from "../helpers/ws.ts";
 import { decodePack, encodePack } from "ntig";
+import { GitSqliteRepository } from "../../src/git-sqlite.ts";
 
 const encoder = new TextEncoder();
 const packet = (value: string | Uint8Array) => {
@@ -252,11 +253,9 @@ describe("GRASP", () => {
     late.ws.close();
   });
 
-  it("replays a hidden PR correction after checkpointing and more than 128 later transactions", async () => {
-    const host = "grasp-pr-checkpoint.bind.ws";
-    const owner = generateSecretKey();
-    const first = await tinyRepository();
-    const next = await tinyRepository("corrected PR\n");
+  it("replays a hidden PR correction after more than 128 SQL transactions", async () => {
+    const host = "grasp-pr-sql-retry.bind.ws", owner = generateSecretKey();
+    const first = await tinyRepository(), next = await tinyRepository("corrected PR\n");
     await rpc(host, owner, "claim");
     await rpc(host, owner, "applypreset", "grasp");
     const c = await WS.connect(host);
@@ -264,108 +263,24 @@ describe("GRASP", () => {
     expect((await c.ok(ev(owner, KIND_REPO_STATE, "", [["d", "correction"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", first.commitID]]))).ok).toBe(true);
     c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "correction");
-    expect(await (await receiveSettled(path, host, null, first.commitID, "refs/heads/main", first.pack, "benchmark-initial")).text()).toContain("ok refs/heads/main");
-    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:correction`], ["c", next.commitID]]);
-    const ref = `refs/nostr/${pr.id}`;
-    expect(await (await receiveSettled(path, host, null, first.commitID, ref, undefined, "benchmark-unknown")).text()).toContain(`ok ${ref}`);
+    expect(await (await receiveSettled(path, host, null, first.commitID, "refs/heads/main", first.pack, "sql-initial")).text()).toContain("ok refs/heads/main");
+    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:correction`], ["c", next.commitID]]), ref = `refs/nostr/${pr.id}`;
+    expect(await (await receiveSettled(path, host, null, first.commitID, ref, undefined, "sql-unknown")).text()).toContain(`ok ${ref}`);
     const publisher = await WS.connect(host);
-    expect((await publisher.ok(pr)).ok).toBe(true);
-    publisher.ws.close();
-    const hidden = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
-    expect(await hidden.text()).not.toContain(ref);
-
-    const stub = env.RELAY.getByName("grasp-pr-checkpoint");
-    await runInDurableObject(stub, async (relay) => {
-      await relay.repositoryAccess.run("git", async () => {
-        const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
-        expect((await wal.checkpoint()).changed).toBe(true);
-      }, () => { throw new Error("Git scope unexpectedly refused"); });
-    });
-    const metadata = await runInDurableObject(stub, async (relay) => {
-      const bucket = relay.media;
-      const keys: string[] = [];
-      const observed = new Proxy(bucket, { get(target, name) {
-        if (name === "get") return (key: string, options?: R2GetOptions) => { keys.push(key); return target.get(key, options); };
-        const value = Reflect.get(target, name, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      } });
-      Object.defineProperty(relay, "media", { value: observed, configurable: true });
-      try {
-        const response = await relay.fetch(new Request(`http://${host}${path}/info/refs?service=git-upload-pack`));
-        expect(response.status).toBe(200);
-        return { body: await response.text(), keys };
-      } finally { Reflect.deleteProperty(relay, "media"); }
-    });
-    expect(metadata.keys).toHaveLength(2);
-    expect(metadata.keys[0]).toMatch(/\/root.json$/);
-    expect(metadata.keys[1]).toContain("/manifests/");
-    expect(metadata.body).toContain("symref=HEAD:refs/heads/main");
-    expect(metadata.body).not.toContain(ref);
-    const requestId = "hidden-pr-correction";
-    expect(await (await receiveSettled(path, host, null, next.commitID, ref, next.pack, requestId)).text()).toContain(`ok ${ref}`);
-    const sequence = await runInDurableObject(stub, async (relay) => {
-      return relay.repositoryAccess.run("git", async () => {
-        const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
-        for (let i = 0; i < 130; i++) await wal.commit({ id: `later-${i}`, updates: [{ name: `refs/tags/later-${i}`, old: null, new: first.commitID }] });
-        const snapshot = await wal.load();
-        expect(snapshot.records).toHaveLength(1);
-        expect(snapshot.records[0].id).not.toBe(requestId);
-        return snapshot.sequence;
-      }, () => { throw new Error("Git scope unexpectedly refused"); });
-    });
-    // Pending work for another repository does not reload this one's packs.
-    const other = await WS.connect(host);
-    expect((await other.ok(repository(owner, host, "other"))).ok).toBe(true);
-    expect((await other.ok(ev(owner, KIND_REPO_STATE, "", [["d", "other"], ["HEAD", "ref: refs/heads/main"], ["refs/heads/main", first.commitID]]))).ok).toBe(true);
-    other.ws.close();
-    const retried = await runInDurableObject(stub, async (relay) => {
-      const bucket = relay.media;
-      const counters = { gets: 0, getBytes: 0, puts: 0, heads: 0 };
-      const observed = new Proxy(bucket, { get(target, name) {
-        if (name === "get") return async (key: string, options?: R2GetOptions) => {
-          counters.gets++;
-          const object = await target.get(key, options);
-          counters.getBytes += object?.size ?? 0;
-          return object;
-        };
-        if (name === "put" || name === "head") return (...args: unknown[]) => {
-          if (name === "put") counters.puts++; else counters.heads++;
-          return Reflect.apply(target[name], target, args);
-        };
-        const value = Reflect.get(target, name, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      } });
-      Object.defineProperty(relay, "media", { value: observed, configurable: true });
-      try {
-        const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
-          method: "POST",
-          headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
-          body: concat(packet(`${"0".repeat(40)} ${next.commitID} ${ref}\0report-status\n`), flush(), next.pack),
-        }));
-        return { body: await response.text(), counters };
-      } finally { Reflect.deleteProperty(relay, "media"); }
-    });
-    expect(retried.body).toContain(`ok ${ref}`);
-    expect(retried.counters.puts).toBe(0);
-    expect(retried.counters.gets).toBe(11);
-    expect(retried.counters.getBytes).toBeLessThan(47_529);
-    console.info("checkpoint old PR correction HTTP retry", JSON.stringify({ sequence, ...retried.counters }));
-    await runInDurableObject(stub, async (relay) => {
-      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
-      expect((await wal.load()).sequence).toBe(sequence);
-    });
-    const visible = await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`);
-    const body = await visible.text();
-    expect(body).toContain(`${next.commitID} ${ref}`);
-    expect(body).toContain("symref=HEAD:refs/heads/main");
-    // A new request must recheck authority even when its receipt is committed.
+    expect((await publisher.ok(pr)).ok).toBe(true); publisher.ws.close();
+    expect(await (await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`)).text()).not.toContain(ref);
+    const stub = env.RELAY.getByName("grasp-pr-sql-retry");
+    const before = await runInDurableObject(stub, async (relay) => relay.repositoryAccess.run("git", async () => {
+      const git = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
+      for (let i = 0; i < 130; i++) await git.commit({ id: `sql-later-${i}`, updates: [{ name: `refs/tags/later-${i}`, old: null, new: first.commitID }] });
+      return (await git.loadRefs()).sequence;
+    }, () => { throw new Error("Git scope unexpectedly refused"); }));
+    expect(await (await receiveSettled(path, host, null, next.commitID, ref, next.pack, "sql-correction")).text()).toContain(`ok ${ref}`);
+    const after = await runInDurableObject(stub, async (relay) => relay.repositoryAccess.run("git", async () => (await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!)).loadRefs().then((snapshot) => snapshot.sequence), () => { throw new Error("Git scope unexpectedly refused"); }));
+    expect(after).toBeGreaterThan(before);
+    expect(await (await SELF.fetch(`http://${host}${path}/info/refs?service=git-upload-pack`)).text()).toContain(`${next.commitID} ${ref}`);
     await runInDurableObject(stub, (relay) => relay.settings.setEvent(pr.id, "hide"));
-    const revoked = await receiveSettled(path, host, null, next.commitID, ref, next.pack, requestId);
-    expect(await revoked.text()).toContain(`ng ${ref}`);
-    await runInDurableObject(stub, async (relay) => {
-      const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "correction")!);
-      expect((await wal.load()).sequence).toBe(sequence);
-    });
+    expect(await (await receiveSettled(path, host, null, next.commitID, ref, next.pack, "sql-correction")).text()).toContain(`ng ${ref}`);
   });
 
   it.each(["expired", "moderated"])("an identical Git retry completes interrupted promotion and rechecks %s candidates", async (mode) => {
@@ -379,7 +294,9 @@ describe("GRASP", () => {
     const c = await WS.connect(host);
     expect((await c.ok(announcement)).ok).toBe(true);
     expect((await c.ok(state)).ok).toBe(true);
-    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:promotion`], ["c", pack.commitID]]);
+    // Keep the PR candidate pending: its advertised tip is not in this
+    // repository, so promotion must recheck expiry/moderation before release.
+    const pr = ev(owner, KIND_GIT_PR, "", [["a", `30617:${pk(owner)}:promotion`], ["c", "f".repeat(40)]]);
     expect((await c.ok(pr)).ok).toBe(true);
     c.ws.close();
     const path = gitRepositoryPath(npubEncode(pk(owner)), "promotion");
@@ -391,26 +308,22 @@ describe("GRASP", () => {
       while (relay.repositoryAccess.busy && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
       return relay.repositoryAccess.run("git", async () => {
         await context.storage.deleteAlarm();
-        // Both phases share one owner so an alarm cannot heal the injected
-        // interruption before the identical HTTP retry proves recovery.
+        const published: string[] = [];
+        const broadcast = relay.broadcast.bind(relay);
+        Object.defineProperty(relay, "broadcast", { configurable: true, value: (event: Parameters<typeof relay.broadcast>[0]) => {
+          published.push(event.id);
+          broadcast(event);
+        } });
+        // The SQL commit is durable before the injected caller failure, so the
+        // identical request exercises receipt replay without an R2 root.
         {
-          const bucket = relay.media;
+          const originalCommit = GitSqliteRepository.prototype.commit;
           let published = false;
-          let failed = false;
-          const observed = new Proxy(bucket, { get(target, name) {
-            if (name === "get") return (key: string, options?: R2GetOptions) => {
-              if (published && key.endsWith("/root.json")) { failed = true; throw new Error("publication succeeded before promotion read failed"); }
-              return target.get(key, options);
-            };
-            if (name === "put") return async (...args: unknown[]) => {
-              const result = await Reflect.apply(target.put, target, args);
-              if (String(args[0]).endsWith("/root.json") && result) published = true;
-              return result;
-            };
-            const value = Reflect.get(target, name, target);
-            return typeof value === "function" ? value.bind(target) : value;
-          } });
-          Object.defineProperty(relay, "media", { value: observed, configurable: true });
+          GitSqliteRepository.prototype.commit = async function (request, beforeCommit) {
+            await originalCommit.call(this, request, beforeCommit);
+            published = true;
+            throw new Error("publication succeeded before response failed");
+          };
           try {
             const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
               method: "POST",
@@ -419,48 +332,38 @@ describe("GRASP", () => {
             }));
             expect(await response.text()).not.toContain("ok refs/heads/main");
             expect(published).toBe(true);
-            expect(failed).toBe(true);
-          } finally { Reflect.deleteProperty(relay, "media"); }
+          } finally { GitSqliteRepository.prototype.commit = originalCommit; }
           const wal = await gitRepository(relay, storedRepository(relay, pk(owner), "promotion")!);
           expect((await wal.load()).sequence).toBe(1);
-          expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toHaveLength(2);
+          // SQLite promotion commits the pending pair atomically before the
+          // injected caller failure, so the retry must recover from receipts.
+          expect(relay.sql.exec("SELECT id FROM grasp_pending WHERE id IN (?,?)", announcement.id, state.id).toArray()).toEqual([]);
         }
         {
-          const bucket = relay.media;
-          let roots = 0;
-          const published: string[] = [];
-          const broadcast = relay.broadcast.bind(relay);
-          Object.defineProperty(relay, "broadcast", { configurable: true, value: (event: Parameters<typeof relay.broadcast>[0]) => {
-            published.push(event.id);
-            broadcast(event);
-          } });
-          const observed = new Proxy(bucket, { get(target, name) {
-            if (name === "get") return (key: string, options?: R2GetOptions) => {
-              // The replay loads the WAL, then promotion loads it again. Change
-              // eligibility only after promotion's initial candidate check.
-              if (key.endsWith("/root.json") && ++roots === 2) {
-                if (mode === "expired") relay.sql.exec("UPDATE events SET expires=1 WHERE id=?", pr.id);
-                else relay.settings.setEvent(pr.id, "hide");
-              }
-              return target.get(key, options);
-            };
-            const value = Reflect.get(target, name, target);
-            return typeof value === "function" ? value.bind(target) : value;
-          } });
-          Object.defineProperty(relay, "media", { value: observed, configurable: true });
+          let reads = 0;
+          const originalLoadRefs = GitSqliteRepository.prototype.loadRefs;
+          // A receipt replay returns the durable SQL result without reopening
+          // the repository. Change the candidate authority before retry so
+          // the pending PR remains hidden in either expiry or moderation mode.
+          if (mode === "expired") relay.sql.exec("UPDATE events SET expires=1 WHERE id=?", pr.id);
+          else relay.settings.setEvent(pr.id, "hide");
+          GitSqliteRepository.prototype.loadRefs = async function () {
+            const result = await originalLoadRefs.call(this);
+            ++reads;
+            return result;
+          };
           try {
             const response = await relay.fetch(new Request(`http://${host}${path}/git-receive-pack`, {
               method: "POST",
               headers: { "content-type": "application/x-git-receive-pack-request", "X-Git-Request-Id": requestId },
               body: concat(packet(`${"0".repeat(40)} ${pack.commitID} refs/heads/main\0report-status\n`), flush(), pack.pack),
             }));
-            expect(roots).toBeGreaterThanOrEqual(2);
             expect(published).toContain(announcement.id);
             expect(published).toContain(state.id);
             expect(published).not.toContain(pr.id);
             return await response.text();
           } finally {
-            Reflect.deleteProperty(relay, "media");
+            GitSqliteRepository.prototype.loadRefs = originalLoadRefs;
             Reflect.deleteProperty(relay, "broadcast");
           }
         }

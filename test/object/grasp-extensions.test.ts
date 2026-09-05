@@ -55,7 +55,7 @@ describe("GRASP extension transport", () => {
       const path = `/prs/${npubEncode(pk(owner))}/with%3Acolon.git`;
       const e = ev(owner, KIND_GIT_PR, "", [["a", `30617:${"b".repeat(64)}:${identifier}`], ["clone", "https://foreign.example/repo.git", `https://${host}${path}`], ["c", tip]]);
       expect(await advertisement(relay, host, path)).toContain("capabilities^{}");
-      expect(relay.sql.exec("SELECT * FROM grasp_objects").toArray()).toHaveLength(0);
+      expect(relay.sql.exec("SELECT * FROM git_sqlite_objects").toArray()).toHaveLength(0);
       const accept = () => relay.accept(e, relay.virtualConn(host, pk(owner)));
       if (order === "event-first") expect(accept().ok).toBe(true);
       expect(await post(relay, host, path, `refs/nostr/${e.id}`, tip, pack)).toContain(`ok refs/nostr/${e.id}`);
@@ -79,7 +79,7 @@ describe("GRASP extension transport", () => {
         const r = await relay.fetch(new Request(`https://${host}${path}${suffix}`, { method }));
         expect(r.status).toBe(403);
       }
-      expect(relay.sql.exec("SELECT * FROM grasp_objects").toArray()).toHaveLength(0);
+      expect(relay.sql.exec("SELECT * FROM git_sqlite_objects").toArray()).toHaveLength(0);
     });
   });
 
