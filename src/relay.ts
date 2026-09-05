@@ -4,9 +4,11 @@
 import { callbackOrigins } from "./push-policy.ts";
 import { pushTick, queuePush, nextPush, PUSH_SCHEMA } from "./push.ts";
 import { BACKUP_SCHEMA, backupBytes } from "./backups.ts";
+import { GIT_SQLITE_SCHEMA } from "./git-sqlite.ts";
+import { GIT_CATALOG_SCHEMA } from "./git-catalog.ts";
 import { DELIVERY_SCHEMA, deliveryTick, queueDelivery } from "./delivery.ts";
 import { graspTick, isGitPath, graspCORS } from "./grasp.ts";
-import { graspBytes, holdGrasp, graspVisible } from "./grasp-state.ts";
+import { holdGrasp, graspVisible } from "./grasp-state.ts";
 import { queueMirrors } from "./site-mirror.ts";
 import { syncSiteIndex, forgetSites, serveSite } from "./sites.ts";
 import { DurableObject } from "cloudflare:workers";
@@ -160,6 +162,8 @@ export class Relay extends DurableObject<Env> {
       this.sql.exec(PUSH_SCHEMA);
       this.sql.exec(DELIVERY_SCHEMA);
       this.sql.exec(BACKUP_SCHEMA);
+      this.sql.exec(GIT_SQLITE_SCHEMA);
+      this.sql.exec(GIT_CATALOG_SCHEMA);
       this.store.hidden = this.settings.hiddenEvents;
       this.store.searchMode = () => this.settings.policy.features.search;
       this.fuel.init();
@@ -504,6 +508,8 @@ export class Relay extends DurableObject<Env> {
     this.sql.exec(PUSH_SCHEMA);
     this.sql.exec(DELIVERY_SCHEMA);
     this.sql.exec(BACKUP_SCHEMA);
+    this.sql.exec(GIT_SQLITE_SCHEMA);
+    this.sql.exec(GIT_CATALOG_SCHEMA);
     this.store.hidden = this.settings.hiddenEvents;
     this.store.searchMode = () => this.settings.policy.features.search;
     this.fuel.init();
@@ -764,14 +770,14 @@ export class Relay extends DurableObject<Env> {
     });
   }
 
-  // Events live in the object's SQLite database; media in R2. Priced apart.
+  // Events and SQL Git share the physical SQLite meter, including indexes.
   eventBytes(): number {
     return this.store.databaseSize;
   }
 
-  // Files and dumps both live in R2 and both cost media storage.
+  // Files and archives remain in R2. SQL Git is counted above.
   mediaBytes(): number {
-    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + graspBytes(this) + backupBytes(this);
+    return blobBytes(this.sql) + dumpBytes(this.sql) + importBytes(this.sql) + backupBytes(this);
   }
 
   fuelStatus() {
