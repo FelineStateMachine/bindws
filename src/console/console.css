@@ -125,6 +125,8 @@ td input.txt { padding: .25rem .5rem; font-size: 14px; } td select.role { width:
 @media (max-width: 40rem) { .events:not(#kinds):not(#jobs) th:first-child, .events:not(#kinds):not(#jobs) td:first-child { display: none; } }
 
 .slegend { justify-content: flex-start; margin: 0 0 1.2rem; }
+/* The storage bar follows the list-history block, so it keeps a block's distance. */
+#listhistoryblock + .kbar { margin-top: 1.8rem; }
 #s-totals { margin-bottom: .4rem; }
 td.keep { white-space: nowrap; } td.keep input { width: 5.5rem; display: inline-block; margin-right: .3rem; } td.keep input::placeholder { color: var(--ink-3); }
 #kinds tr.any td:first-child { font-weight: 600; }
