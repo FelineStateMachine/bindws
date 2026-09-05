@@ -33,6 +33,8 @@ async function seed(host: string): Promise<Fixture> {
   const stranger = generateSecretKey();
   await rpc(host, owner, "claim");
   expect((await rpc(host, owner, "setmember", pk(eve), { name: "evelynq7" })).status).toBe(200);
+  // Two shortcuts with the owner's own titles: one for members, one for the owner alone.
+  expect((await rpc(host, owner, "setconnections", [{ template: "notes", visibility: "public" }, { template: "group", visibility: "members", title: "membersroomq7" }, { template: "find-me", visibility: "owner", title: "ownerdeskq7" }])).status).toBe(200);
   const body = new TextEncoder().encode("eve's quarterly numbers");
   const sha = bytesToHex(sha256(body));
   const up = await SELF.fetch(`http://${host}/upload`, { method: "PUT", headers: { authorization: blossomToken(eve, "upload", sha), "content-type": "text/plain" }, body });
@@ -45,7 +47,7 @@ async function seed(host: string): Promise<Fixture> {
   await runInDurableObject(env.RELAY.getByName(host.split(".")[0]), (r) => r.syncSites());
   c.ws.close();
   await rpc(host, owner, "setpolicy", { reads: "members", writes: "allowlist", directoryPublic: false });
-  return { host, siteHost: siteLabel(site) + ".bind.ws", owner, eve, stranger, sha, noteId: note.id, secrets: [pk(eve), npubEncode(pk(eve)), note.id, sha, "evelynq7"] };
+  return { host, siteHost: siteLabel(site) + ".bind.ws", owner, eve, stranger, sha, noteId: note.id, secrets: [pk(eve), npubEncode(pk(eve)), note.id, sha, "evelynq7", "membersroomq7", "ownerdeskq7"] };
 }
 
 // Every HTTP path a relay answers that could carry something of a member's.
@@ -78,6 +80,7 @@ function doors(f: Fixture): { path: string; host?: string; method?: string; gate
     { path: "/card.json", gated: false },
     { path: "/card.nostr", gated: false },
     { path: "/card.svg", gated: false },
+    { path: "/connect.json", gated: false },
     { path: `/e/${f.noteId}`, gated: false },
     { path: `/feed.xml?author=${pk(f.eve)}`, gated: false },
     { path: "/terms", gated: false },
@@ -229,6 +232,12 @@ describe("the read rule at every door", () => {
     }
     r = await get(`/people`, await nip98(f.eve, url(`/people`)));
     expect(JSON.parse(r.text).people.map((m: any) => m.pubkey)).toContain(pk(f.eve));
+    // The Connect fold shows her the members' shortcut and not the owner's.
+    r = await get(`/connect.json`, await nip98(f.eve, url(`/connect.json`)));
+    expect(r.status).toBe(200);
+    const titles = JSON.parse(r.text).connections.map((c: any) => c.title);
+    expect(titles).toContain("membersroomq7");
+    expect(titles).not.toContain("ownerdeskq7");
     const c = await WS.connect(f.host);
     await c.auth(f.eve, f.host);
     expect((await c.open("r", { authors: [pk(f.eve)], kinds: [1] })).events.map((e) => e.id)).toEqual([f.noteId]);
