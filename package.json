@@ -28,19 +28,19 @@
   "dependencies": {
     "@noble/hashes": "^2.4.0",
     "fflate": "0.8.3",
-    "nostr-tools": "^2.25.1",
+    "nostr-tools": "^2.25.2",
     "ntig": "file:vendor/ntig-0.6.1.tgz"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260902.1",
-    "@types/ws": "^8.18.0",
+    "@cloudflare/workers-types": "^5.20261005.1",
+    "@types/ws": "^8.18.2",
     "ajv": "^8.20.0",
     "jsqr": "^1.4.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.128.0",
-    "ws": "^8.21.0"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0",
+    "ws": "^8.22.0"
   },
   "allowScripts": {
     "workerd@1.20260815.1": true,
